@@ -328,7 +328,9 @@
     // texture is mapped straight down from above, so the arrow points at the player (= down on the screen). Hidden on
     // the title (START sits there), pops up for the game. The game puts an invisible HTML button over it for taps.
     const DOWN_R = 0.68, DOWN_CAP = 0.55, DOWN_H = 0.27, DOWN_Z = -0.06, CAP_Y = 0.17;
+    const DOWN_SX = 1.4;                                         // wider than deep: an oval (user: "가로 사이즈를 더 늘려줘")
     const down = grp(panel, 0, 0.02, DOWN_Z);
+    down.scale.x = DOWN_SX;
     const downIn = grp(down);                                    // scaled in/out
     mesh(new T.CylinderGeometry(DOWN_R, DOWN_R * 1.03, 0.1, 72), M.plastic('#b9c6d4', { rough: 0.35, clear: 0.5 }), downIn, [0, 0.04, 0]);
     mesh(new T.CylinderGeometry(DOWN_R - 0.06, DOWN_R - 0.045, 0.16, 72), M.plastic('#f2f6fa', { rough: 0.3, clear: 0.6 }), downIn, [0, 0.1, 0]);
@@ -351,8 +353,9 @@
       gr.addColorStop(0, '#b6ff9a'); gr.addColorStop(0.12, '#8ff27c'); gr.addColorStop(0.42, '#4fdc5a'); gr.addColorStop(0.78, '#22a83a'); gr.addColorStop(1, '#178a2c');
       g.fillStyle = gr; g.fillRect(0, 0, w, h / sy);
       g.restore();
-      // the arrow (the old button's SVG: a 48-grid, round ends), bolder, with its dark-green shadow under it
-      const k = w * 0.56 / 48, ky = k * sy * 1.12, ox = w * 0.5 - 24 * k, oy = h * 0.5 - 22.5 * ky;
+      // the arrow (the old button's SVG: a 48-grid, round ends), bolder, with its dark-green shadow under it — drawn
+      // narrower by DOWN_SX, so it isn't stretched on the oval
+      const ky = w * 0.56 / 48 * sy * 1.12, k = w * 0.56 / 48 / DOWN_SX * 1.12, ox = w * 0.5 - 24 * k, oy = h * 0.5 - 22.5 * ky;
       const arrow = (dy, col) => {
         g.save(); g.translate(ox, oy + dy); g.scale(k, ky);
         g.strokeStyle = col; g.lineWidth = 8.5; g.lineCap = 'round'; g.lineJoin = 'round';
