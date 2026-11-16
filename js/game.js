@@ -460,7 +460,6 @@
   function setTarget(L) {
     const up = L.toUpperCase();
     $('#tgLetter').textContent = up + L;
-    $('#tgSub').textContent = `CATCH THE ‘${up}’!`;
     const tg = $('#target'); tg.classList.remove('swap'); void tg.offsetWidth; tg.classList.add('swap');
     const le = $('#tgLetter'); le.classList.remove('pop'); void le.offsetWidth; le.classList.add('pop');
   }
@@ -625,7 +624,7 @@
     A.sfxPlay('prize');
     await S.tween(700, k => {
       const pos = start.clone().lerp(end, k); pos.y += Math.sin(k * Math.PI) * 1.4;
-      p.root.position.copy(pos); p.root.scale.setScalar(lerp(0.5, 1.4, k));   // its cap stays under the CATCH banner p.root.rotation.y = (1 - k) * Math.PI * 2;
+      p.root.position.copy(pos); p.root.scale.setScalar(lerp(0.5, 1.4, k));   // its cap stays under the TARGET banner (no spin: a flat picture would show its edge)
     }, 'out', tok);
     p.root.lookAt(cam.position.x, p.root.position.y, cam.position.z);
     const mid = p.root.position.clone().add(V(0, p.top * p.root.scale.y * 0.5, 0));
