@@ -48,18 +48,21 @@
 
   <!-- game HUD (score · target · time), like the game mockup -->
   <div class="hud" aria-live="polite">
-    <div class="score"><span class="lbl">SCORE:</span><b id="score">0</b><i class="star" aria-hidden="true"></i></div>
+    <!-- one row, no word labels: score + the caught-friends tray (left), the target letter (middle), time (right) -->
+    <div class="hud-l">
+      <div class="score"><i class="star" aria-hidden="true"></i><b id="score" aria-label="Score">0</b></div>
+      <div class="tray" id="tray"></div>
+    </div>
     <div class="target" id="target">
       <div class="tg-main">
-        <span class="lbl">TARGET:</span><b class="tg-letter" id="tgLetter">M</b>
+        <b class="tg-letter" id="tgLetter">M</b>
         <button class="tg-snd" id="tgSnd" aria-label="Listen again"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.6L12 18.6V5.4L7.6 9.5z" fill="currentColor"/><path d="M15.4 8.6a4.6 4.6 0 0 1 0 6.8M17.9 6.2a8 8 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       </div>
     </div>
     <div class="time" id="timeBox">
       <i class="watch" aria-hidden="true"><svg viewBox="0 0 64 64"><rect x="26" y="2" width="12" height="7" rx="3" fill="#ff8a1f"/><path d="M12 14l6-5M52 14l-6-5" stroke="#ff8a1f" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="36" r="25" fill="#ffb53b" stroke="#e87a12" stroke-width="3"/><circle cx="32" cy="36" r="19" fill="#fffaf0"/><g stroke="#cfc3b0" stroke-width="2"><path d="M32 19v4M32 49v4M15 36h4M45 36h4"/></g><path id="watchHand" d="M32 36V22" stroke="#e8453c" stroke-width="3.4" stroke-linecap="round"/><path d="M32 36l8 5" stroke="#3b3b4f" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="36" r="2.6" fill="#3b3b4f"/></svg></i>
-      <div class="pill"><span class="lbl">TIME:</span><b id="time">45s</b></div>
+      <div class="pill"><b id="time" aria-label="Time">45s</b></div>
     </div>
-    <div class="tray" id="tray"></div>
   </div>
 
   <!-- sound · exit (every screen) -->
