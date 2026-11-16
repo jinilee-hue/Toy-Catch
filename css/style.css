@@ -109,7 +109,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .start:active { scale: .96; }
 #app:not([data-screen="title"]) .start, #app.inserting .start { opacity: 0; pointer-events: none; transform: scale(.6); }
 
-/* ── HUD: one row, no word labels (user: "상단 ui가 너무 복잡해") — score + caught-friends tray on the left, the target
+/* ── HUD (no lines inside the boxes — user: "상단에 박스들에 선 들어가있는건 삭제"): one row, no word labels (user: "상단 ui가 너무 복잡해") — score + caught-friends tray on the left, the target
    letter in the middle, time + sound / exit on the right; every piece centred on the same line (9.6u from the top) ── */
 .hud { position: absolute; inset: 0; z-index: 8; pointer-events: none; opacity: 0; transition: opacity .5s; }
 #app[data-screen="game"] .hud { opacity: 1; }
@@ -119,7 +119,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   position: relative; height: calc(10 * var(--u)); padding: 0 calc(3.4 * var(--u)) 0 calc(1.5 * var(--u));
   display: flex; align-items: center; gap: calc(1 * var(--u));
   border-radius: 999px; background: linear-gradient(#ffc04d, #ff9a1f 60%, #ff8510);
-  box-shadow: inset 0 0 0 calc(.55 * var(--u)) #fff1c2, inset 0 calc(-.9 * var(--u)) 0 calc(.55 * var(--u)) #e86d00, 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,60,10,.28);
+  box-shadow: inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(205,85,0,.45), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,60,10,.28);
   font: 800 calc(6.4 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.7 * var(--u)) #b8500a; paint-order: stroke fill;
   transform-origin: 30% 50%;
 }
@@ -134,10 +134,9 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   display: flex; align-items: center; gap: calc(1.8 * var(--u));
   background: linear-gradient(#55b6ff, #2b8ff0 55%, #1d6fd8);
   border-radius: 999px;
-  box-shadow: inset 0 calc(.6 * var(--u)) 0 rgba(255,255,255,.45), inset 0 calc(-1 * var(--u)) 0 #1858b8, 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
+  box-shadow: inset 0 calc(1 * var(--u)) calc(1.4 * var(--u)) rgba(255,255,255,.3), inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(10,60,160,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
   font: 800 calc(7 * var(--u)) / 1 var(--font); color: #ffe14a; -webkit-text-stroke: calc(.75 * var(--u)) #163d8f; paint-order: stroke fill;
 }
-.tg-main::before { content: ''; position: absolute; inset: calc(.45 * var(--u)); border-radius: 999px; border: calc(.4 * var(--u)) solid rgba(255,255,255,.7); pointer-events: none; }
 .tg-letter { font-size: calc(9.6 * var(--u)); color: #ff4fa3; -webkit-text-stroke: calc(.9 * var(--u)) #fff; text-shadow: 0 calc(.5 * var(--u)) 0 #b0186a; letter-spacing: .02em; }
 .tg-letter.pop { animation: letterPop .7s cubic-bezier(.3, 1.7, .5, 1); }
 @keyframes letterPop { 0% { scale: .2; rotate: -30deg; } 60% { scale: 1.25; rotate: 8deg; } 100% { scale: 1; rotate: 0; } }
@@ -145,7 +144,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   pointer-events: auto; width: calc(9 * var(--u)); height: calc(9 * var(--u)); border-radius: 50%;
   display: grid; place-items: center; color: #fff;
   background: radial-gradient(circle at 35% 30%, #ffd27a, #ff9a1f 60%, #f07800);
-  box-shadow: 0 0 0 calc(.5 * var(--u)) #fff, 0 calc(.6 * var(--u)) calc(1 * var(--u)) rgba(0,0,60,.3);
+  box-shadow: inset 0 calc(-.6 * var(--u)) calc(1 * var(--u)) rgba(190,80,0,.35), 0 calc(.5 * var(--u)) calc(1 * var(--u)) rgba(0,0,60,.28);
 }
 .tg-snd svg { width: 62%; height: 62%; margin-left: 6%; }
 .tg-snd.play { animation: bump .5s ease-out 2; }
@@ -159,18 +158,18 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   margin-left: calc(-3 * var(--u)); height: calc(10 * var(--u)); padding: 0 calc(3 * var(--u)) 0 calc(4 * var(--u));
   display: flex; justify-content: center; align-items: center;
   border-radius: 999px; background: linear-gradient(#55b6ff, #2b8ff0 55%, #1d6fd8);
-  box-shadow: inset 0 0 0 calc(.45 * var(--u)) rgba(255,255,255,.75), inset 0 calc(-1 * var(--u)) 0 calc(.45 * var(--u)) #1858b8;
+  box-shadow: inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(10,60,160,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
   font: 800 calc(6.2 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.6 * var(--u)) #163d8f; paint-order: stroke fill;
 }
 .time .pill b { min-width: 2.2em; text-align: center; }
-.time.low .pill { background: linear-gradient(#ff8a7a, #f0473c 60%, #d82f2a); box-shadow: inset 0 0 0 calc(.45 * var(--u)) rgba(255,255,255,.75), inset 0 calc(-1 * var(--u)) 0 calc(.45 * var(--u)) #b51f1a; }
+.time.low .pill { background: linear-gradient(#ff8a7a, #f0473c 60%, #d82f2a); box-shadow: inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(150,15,15,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,20,10,.25); }
 .time.low { animation: bump .5s ease-out infinite; }
 .time.paused .pill b { opacity: .75; }
 
 /* caught-friends tray: one solid plate (it floats over the marquee, so nothing see-through) */
 .tray { position: relative; display: flex; gap: calc(1 * var(--u)); padding: calc(.9 * var(--u)) calc(1.3 * var(--u));
   border-radius: 999px; background: linear-gradient(#ffffff, #eaf3ff);
-  box-shadow: inset 0 0 0 calc(.4 * var(--u)) #fff, inset 0 calc(-.8 * var(--u)) 0 #c9dcf6, 0 calc(.6 * var(--u)) calc(1.3 * var(--u)) rgba(30,60,120,.28); }
+  box-shadow: inset 0 calc(-.8 * var(--u)) calc(1.2 * var(--u)) rgba(120,160,220,.3), 0 calc(.6 * var(--u)) calc(1.3 * var(--u)) rgba(30,60,120,.28); }
 .tray .slot {
   width: calc(7.4 * var(--u)); height: calc(7.4 * var(--u)); border-radius: 50%;
   background: #dde9f8; box-shadow: inset 0 calc(.45 * var(--u)) calc(.7 * var(--u)) rgba(30,60,120,.22);
@@ -178,8 +177,8 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 }
 .tray .slot { position: relative; }
 .tray .slot img { position: absolute; left: 7%; top: 7%; width: 86%; height: 86%; object-fit: contain; filter: drop-shadow(0 calc(.3 * var(--u)) calc(.3 * var(--u)) rgba(0,0,0,.25)); }
-.tray .slot.got { background: radial-gradient(circle, #fff7d1, #ffd86a); box-shadow: inset 0 0 0 calc(.35 * var(--u)) #ffc93a; animation: bump .5s cubic-bezier(.3, 1.6, .5, 1); }
-.tray .slot.now { background: #fff8dc; box-shadow: inset 0 0 0 calc(.5 * var(--u)) #ffc93a, 0 0 calc(1.4 * var(--u)) rgba(255,201,58,.9); }
+.tray .slot.got { background: radial-gradient(circle, #fff7d1, #ffd86a); box-shadow: inset 0 calc(.4 * var(--u)) calc(.8 * var(--u)) rgba(190,130,0,.25); animation: bump .5s cubic-bezier(.3, 1.6, .5, 1); }
+.tray .slot.now { background: #fff3c4; box-shadow: 0 0 calc(1.4 * var(--u)) rgba(255,201,58,.95); }
 
 /* ── sound / exit ── */
 .sys { position: absolute; z-index: 40; right: calc(3 * var(--u)); top: calc(3 * var(--u)); display: flex; gap: calc(1.4 * var(--u)); }
