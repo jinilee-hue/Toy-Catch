@@ -84,6 +84,26 @@
       emissive: o.emissive ? C(o.emissive) : C('#000000'), emissiveIntensity: o.ei ?? 0,
     }));
   };
+  /* glossy candy plastic for the control-panel buttons and the joystick: NO clearcoat — at a button's edge the
+     clearcoat mirrors the dim room and dims what's under it, which drew a dark, crawling outline round every button
+     (user: "모든 버튼들에 테두리가 어두운색 컬러로 테두리가 우글거려"; the balls had the same, see machine.js). Instead a soft
+     light through the edge (as on the balls), so the edges stay the button's own colour, a little lighter.
+     o.map: a picture on it (not cached) */
+  M.candy = function (color, o = {}) {
+    const key = 'c' + color + (o.rough ?? '') + (o.emissive || '');
+    if (!o.map && cache[key]) return cache[key];
+    const m = new THREE.MeshStandardMaterial({
+      color, map: o.map || null, roughness: o.rough ?? 0.3, metalness: 0,
+      emissive: o.emissive ? C(o.emissive) : C('#000000'), emissiveIntensity: o.ei ?? 0,
+    });
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { float ndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+          totalEmissiveRadiance += diffuseColor.rgb * (0.06 + 0.32 * pow(1.0 - ndv, 2.2)); }`);
+    };
+    m.customProgramCacheKey = () => 'candy';
+    return o.map ? m : (cache[key] = m);
+  };
   M.chrome = () => cache.chrome || (cache.chrome = new THREE.MeshStandardMaterial({ color: '#eef2f6', metalness: 1, roughness: 0.2 }));
   M.darkMetal = () => cache.dmetal || (cache.dmetal = new THREE.MeshStandardMaterial({ color: '#3d4350', metalness: 0.7, roughness: 0.35 }));
   M.bead = () => cache.bead || (cache.bead = new THREE.MeshPhysicalMaterial({ color: '#17110e', roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 }));

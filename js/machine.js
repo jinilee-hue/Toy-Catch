@@ -11,6 +11,7 @@
   const rb = {};
   const rbox = (w, h, d, r) => { const k = [w, h, d, r].join('_'); return rb[k] || (rb[k] = new T.RoundedBoxGeometry(w, h, d, 4, r)); };
   const SPH = new T.SphereGeometry(1, 32, 20);
+  const SPH_HI = new T.SphereGeometry(1, 64, 40);           // (the buttons' caps and the joystick knob: smooth outlines)
   function mesh(geo, mat, parent, pos, o = {}) {
     const m = new T.Mesh(geo, mat);
     if (pos) m.position.set(pos[0], pos[1], pos[2]);
@@ -315,10 +316,11 @@
     mesh(rbox(W + 0.9, 0.34, 1.45, 0.16), blue, panel, [0, -0.17, 0]);
     mesh(rbox(W + 0.7, 0.05, 1.3, 0.03), M.plastic('#a8def7', { rough: 0.45, clear: 0.5 }), panel, [0, 0.005, -0.02], { cast: false });
     mesh(rbox(W + 0.95, 0.07, 0.07, 0.035), M.plastic('#ff8fd0', { rough: 0.2, clear: 0.9, emissive: '#ff5fc0', ei: 0.5 }), panel, [0, -0.27, 0.73], { cast: false });
+    // (buttons, the joystick and DOWN in M.candy — no clearcoat, no dark crawling outline; round parts in 64+ segments)
     const btn = (x, z, c, r = 0.2) => {
       const g = grp(panel, x, 0.02, z);
-      mesh(new T.CylinderGeometry(r * 1.25, r * 1.32, 0.08, 32), M.plastic('#e8eef5', { rough: 0.3 }), g, [0, 0.03, 0]);
-      const cap = mesh(SPH, M.plastic(c, { rough: 0.25, clear: 1 }), g, [0, 0.08, 0], { scale: [r, r * 0.45, r] });
+      mesh(new T.CylinderGeometry(r * 1.25, r * 1.32, 0.08, 72), M.candy('#e8eef5', { rough: 0.3 }), g, [0, 0.03, 0]);
+      const cap = mesh(SPH_HI, M.candy(c, { rough: 0.25 }), g, [0, 0.08, 0], { scale: [r, r * 0.45, r] });
       g.userData.cap = cap; return g;
     };
     // (spaced out from the middle, where START / the DOWN button sit — user: "간격을 벌려달라는거지")
@@ -332,13 +334,13 @@
     const down = grp(panel, 0, 0.02, DOWN_Z);
     down.scale.x = DOWN_SX;
     const downIn = grp(down);                                    // scaled in/out
-    mesh(new T.CylinderGeometry(DOWN_R, DOWN_R * 1.03, 0.1, 72), M.plastic('#b9c6d4', { rough: 0.35, clear: 0.5 }), downIn, [0, 0.04, 0]);
-    mesh(new T.CylinderGeometry(DOWN_R - 0.06, DOWN_R - 0.045, 0.16, 72), M.plastic('#f2f6fa', { rough: 0.3, clear: 0.6 }), downIn, [0, 0.1, 0]);
+    mesh(new T.CylinderGeometry(DOWN_R, DOWN_R * 1.03, 0.1, 96), M.candy('#c3cfdc', { rough: 0.35 }), downIn, [0, 0.04, 0]);
+    mesh(new T.CylinderGeometry(DOWN_R - 0.06, DOWN_R - 0.045, 0.16, 96), M.candy('#f2f6fa', { rough: 0.3 }), downIn, [0, 0.1, 0]);
     /* the dome's picture is projected onto it along a slant (36° up from the panel, from the player's side), not
        straight down: the game camera sees the panel at only ~26°, and a top-down arrow came out squashed onto the far
        half of the dome. Along the slant it sits in the middle of the dome as seen, still a little foreshortened (it
        lies on the button). The canvas covers the dome's outline seen along that slant. */
-    const capGeo = new T.SphereGeometry(1, 64, 28, 0, Math.PI * 2, 0, Math.PI / 2);
+    const capGeo = new T.SphereGeometry(1, 96, 32, 0, Math.PI * 2, 0, Math.PI / 2);
     const SL = 36 * Math.PI / 180, ev = [Math.cos(SL), -Math.sin(SL)];   // "up" in the slanted picture: (y, z) weights
     const vLo = -DOWN_CAP * Math.sin(SL), vHi = Math.hypot(DOWN_H * Math.cos(SL), DOWN_CAP * Math.sin(SL));
     { const p = capGeo.attributes.position, uv = capGeo.attributes.uv;
@@ -367,15 +369,17 @@
       arrow(0, '#ffffff');
     });
     capTex.anisotropy = 8;
-    const capMat = new T.MeshPhysicalMaterial({ map: capTex, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12 });
+    const capMat = M.candy('#ffffff', { map: capTex, rough: 0.28 });
     const downCap = mesh(capGeo, capMat, downIn, [0, CAP_Y, 0], { scale: [DOWN_CAP, DOWN_H, DOWN_CAP] });
     const downSt = { show: 0, k: 0, on: true, ready: false, press: 0, dim: 0 };
     // joystick: base, stick, red ball (tilts while driven)
     const joy = grp(panel, 1.97, 0.02, 0.05);
-    mesh(new T.CylinderGeometry(0.24, 0.27, 0.07, 32), M.darkMetal(), joy, [0, 0.03, 0]);
+    // (a soft grey dome base like the mockup's — the dark metal one read as a black outline under the stick)
+    mesh(new T.CylinderGeometry(0.24, 0.27, 0.07, 72), M.candy('#8f99a7', { rough: 0.35 }), joy, [0, 0.03, 0]);
+    mesh(SPH_HI, M.candy('#a9b2be', { rough: 0.3 }), joy, [0, 0.065, 0], { scale: [0.225, 0.06, 0.225] });
     const stick = grp(joy, 0, 0.06, 0);
-    mesh(new T.CylinderGeometry(0.035, 0.04, 0.42, 16), M.chrome(), stick, [0, 0.21, 0]);
-    const knob = mesh(SPH, M.plastic('#f0423c', { rough: 0.2, clear: 1, emissive: '#ff5a3c', ei: 0 }), stick, [0, 0.46, 0], { scale: 0.15 });
+    mesh(new T.CylinderGeometry(0.035, 0.04, 0.42, 24), M.chrome(), stick, [0, 0.21, 0]);
+    const knob = mesh(SPH_HI, M.candy('#f0423c', { rough: 0.2, emissive: '#ff5a3c', ei: 0 }), stick, [0, 0.46, 0], { scale: 0.15 });
     let knobGlow = 0, knobGlowOn = false;
     // the little screen
     const scr = screenCanvas(); drawScreen(scr, ['LEVEL 1', 'M A S T']);
