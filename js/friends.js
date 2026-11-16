@@ -7,6 +7,11 @@
  * Rig: root > hang (pivot at the head: the body swings under the claw) > seat (pivot at the bottom: sitting wobble,
  * hops) > face (turns to the camera) > picture (a little behind the claw's axis, so the prongs stay in front of it).
  * A 600-px-tall picture is 1.3 units tall; the game scales friends by 1.3 in the machine.
+ * The pictures are PUFFED into soft reliefs (user: "동물이미지들 디자인 같게해서 3d 모델링"): the silhouette inflated like a
+ * cushion — Poisson inflation, so wide parts (head, body) get thick and arms/ears/tails stay thin, all round at the
+ * edges — with the picture mapped straight on from the front and a soft light from the upper left (the key light's
+ * side). The cut-out edge is still the picture's own alpha, so the silhouette and the art stay exactly the user's.
+ * ?flat shows the old flat pictures (for comparison).
  */
 (function () {
   'use strict';
@@ -18,6 +23,79 @@
   const AW = 64;                                         // alpha grid for taps: 64 px wide
   const tmp = new T.Vector3(), tmpQ = new T.Quaternion(), tmpE = new T.Euler(0, 0, 0, 'YXZ');
   const ease = (cur, to, k) => cur + (to - cur) * k;
+  const FLAT = /[?&]flat\b/.test(location.search);
+  const PUFF = { cells: 72, depth: 1.6, sway: 0.13 };     // grid cells across a picture; depth (2 = a full hemisphere);
+                                                         // idle turn (rad) either way, so the volume shows
+  const geoCache = {};
+
+  /* the puffed relief of one picture, in the same frame as the old plane: x across (head middle at 0), y up from the
+     bottom, z toward the camera from the picture plane (-BACK) */
+  function puffGeo(kind, w, h, u) {
+    if (geoCache[kind]) return geoCache[kind];
+    const im = imgs[kind];
+    const nx = PUFF.cells, ny = Math.round(nx * im.height / im.width);
+    const c = document.createElement('canvas'); c.width = nx; c.height = ny;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, nx, ny);
+    const d = g.getImageData(0, 0, nx, ny).data;
+    const ins = new Uint8Array(nx * ny);
+    for (let i = 0; i < ins.length; i++) ins[i] = d[i * 4 + 3] > 96 ? 1 : 0;
+    // inflation: solve Δf = -1 inside the shape, f = 0 outside (SOR); sqrt(f) is round like a cushion
+    const f = new Float32Array(nx * ny);
+    for (let it = 0; it < 260; it++) {
+      for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) {
+        const i = y * nx + x; if (!ins[i]) continue;
+        f[i] += 1.9 * ((f[i - 1] + f[i + 1] + f[i - nx] + f[i + nx] + 1) * 0.25 - f[i]);
+      }
+    }
+    // vertices on the cell corners; a corner's height is from the cells around it
+    const cell = w / nx, cx = nx + 1, cy = ny + 1;
+    const pos = new Float32Array(cx * cy * 3), uv = new Float32Array(cx * cy * 2);
+    for (let y = 0; y < cy; y++) for (let x = 0; x < cx; x++) {
+      let sum = 0;
+      for (const [ax, ay] of [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]]) if (ax >= 0 && ay >= 0 && ax < nx && ay < ny) sum += f[ay * nx + ax];
+      const k = y * cx + x, ht = PUFF.depth * Math.sqrt(sum / 4) * cell;
+      pos[k * 3] = (x / nx - u) * w; pos[k * 3 + 1] = (1 - y / ny) * h; pos[k * 3 + 2] = -BACK + ht;
+      uv[k * 2] = x / nx; uv[k * 2 + 1] = 1 - y / ny;
+    }
+    // triangles on the cells in and around the shape (one cell wider: the alpha test trims the exact edge)
+    const idx = [];
+    for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      let near = 0;
+      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < nx && yy < ny && ins[yy * nx + xx]) { near = 1; break; }
+      }
+      if (!near) continue;
+      const a = y * cx + x, b = a + 1, e = a + cx, q = e + 1;
+      idx.push(a, e, b, b, e, q);
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new T.BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    return (geoCache[kind] = geo);
+  }
+
+  /* the soft light on the puffed relief: brighter where it faces the upper left, darker where it turns away and toward
+     the edges; facing the camera it is exactly the picture (so the art's colours stay as drawn) */
+  function puffShade(sh) {
+    sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying vec3 vPuffN;\nvoid main() {\n  vPuffN = normalize(normalMatrix * normal);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', 'varying vec3 vPuffN;\nvoid main() {')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      {
+        vec3 n = normalize(vPuffN);
+        if (!gl_FrontFacing) n = -n;
+        vec3 L = normalize(vec3(-0.36, 0.6, 0.71));
+        float shade = clamp(1.0 + 0.55 * (dot(n, L) - L.z), 0.6, 1.18);
+        shade *= mix(0.8, 1.0, smoothstep(0.0, 0.65, n.z));
+        diffuseColor.rgb *= shade;
+        diffuseColor.rgb += vec3(1.0, 0.97, 0.94) * pow(max(dot(n, normalize(L + vec3(0.0, 0.0, 1.0))), 0.0), 16.0) * 0.07;   // soft sheen
+        diffuseColor.rgb += vec3(1.0, 0.95, 0.97) * pow(1.0 - clamp(n.z, 0.0, 1.0), 3.0) * 0.1;                               // fuzzy rim
+      }`);
+  }
 
   function load() {
     return Promise.all(KINDS.map(k => new Promise((res) => {
@@ -61,9 +139,11 @@
     P.face = new T.Group(); P.seat.add(P.face);
     const tex = new T.Texture(im);
     tex.colorSpace = T.SRGBColorSpace; tex.anisotropy = 8; tex.needsUpdate = true;
-    const geo = new T.PlaneGeometry(w, h);
-    geo.translate((0.5 - u) * w, h / 2, -BACK);         // the head's middle over the root
+    let geo;
+    if (FLAT) { geo = new T.PlaneGeometry(w, h); geo.translate((0.5 - u) * w, h / 2, -BACK); }   // the head's middle over the root
+    else geo = puffGeo(kind, w, h, u);
     const mat = new T.MeshBasicMaterial({ map: tex, alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+    if (!FLAT) { mat.onBeforeCompile = puffShade; mat.side = T.DoubleSide; }   // (turned a little, the far edge shows its inside)
     const pic = new T.Mesh(geo, mat);
     pic.castShadow = true;
     pic.customDepthMaterial = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: tex, alphaTest: 0.5 });
@@ -119,7 +199,9 @@
         P.face.getWorldPosition(tmp);
         const want = Math.atan2(cam.position.x - tmp.x, cam.position.z - tmp.z);
         P.seat.getWorldQuaternion(tmpQ); tmpE.setFromQuaternion(tmpQ, 'YXZ');
-        P.face.rotation.y = want - tmpE.y;
+        // (puffed: a slow idle turn either way, a livelier one while it hangs from the claw — so the volume shows)
+        const sway = FLAT ? 0 : PUFF.sway * (Math.sin(t * 0.8 + ph) * sit + Math.sin(t * 2.1 + ph) * 1.1 * s.hk);
+        P.face.rotation.y = want - tmpE.y + sway;
       }
     };
     return P;
