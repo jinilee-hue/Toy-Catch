@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright
 base, out = sys.argv[1], sys.argv[2]
 W, H = map(int, (sys.argv[3] if len(sys.argv) > 3 else '1600x900').split('x'))
 os.makedirs(out, exist_ok=True)
-URL = base.rstrip('/') + '/?nohint&order=m,a,s,t,p&kinds=pig,seal,ant,turtle,monkey,turkey'
+URL = base.rstrip('/') + '/?nohint&order=m,a,s,t&kinds=cat,seal,ant,turtle,monkey,dog'
 errs = []
 
 
@@ -48,8 +48,8 @@ with sync_playwright() as p:
     wait(pg, "__claw.screen === 'game' && !__claw.busy")
     pg.wait_for_timeout(300)
     shot(pg, '03_game')
-    # wrong pick first: the pig (target m)
-    pg.evaluate("(() => { const p = __claw.inMachine.find(p => p.kind === 'pig'); __claw.aimX = p.x; })()")
+    # wrong pick first: the cat (target m)
+    pg.evaluate("(() => { const p = __claw.inMachine.find(p => p.kind === 'cat'); __claw.aimX = p.x; })()")
     pg.wait_for_timeout(2600)
     shot(pg, '04_aim_wrong')
     pg.evaluate("() => { __clawApi.drop(); }")

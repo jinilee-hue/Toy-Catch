@@ -155,7 +155,7 @@
     spots.forEach((s, i) => { mtx.makeTranslation(s[0], s[1], s[2]); im.setMatrixAt(i, mtx); im.setColorAt(i, col.set(ballCols[s[3]])); });
     im.castShadow = true; im.receiveShadow = true; group.add(im);
 
-    // chunky 3D letters lying in the pit (like the reference video's M A S T P)
+    // chunky 3D letters lying in the pit (like the reference video's letters)
     const letters = grp(group);
     try {
       const font = new T.FontLoader().parse(window.CLAW_FONT3D);
@@ -211,24 +211,23 @@
     const setGrip = (a) => { grip = a; prongs.forEach(p => (p.rotation.x = a)); };
     /* the most-closed angle at which no prong point is inside an ellipsoid head (world radii rx, ry) whose centre is
        `depth` below the hub top — the prongs close round the head and stop at its surface */
-    const gripAngle = (depth, rx, ry, pad = 1.02) => {
-      for (let a = SHUT; a >= OPEN; a -= 0.01) {
-        const c = Math.cos(a), sn = Math.sin(a);
-        let ok = true;
-        for (const q of SAMPLE) {
-          const y = q.y * c - q.z * sn, z = q.y * sn + q.z * c;               // rotate about x
-          const r = (PIV_R + z) * CLAW_S, h = (PIV_Y + y) * CLAW_S + depth;    // radial distance, height over the centre
-          if ((r / (rx + 0.045 * CLAW_S)) ** 2 + (h / (ry + 0.045 * CLAW_S)) ** 2 < pad) { ok = false; break; }
-        }
-        if (ok) return a;
-      }
-      return OPEN;
+    /* gripping a friend (a flat picture behind the claw's axis): the prongs close until their knuckles are at the
+       sides of the head (`hx` = its half-width), so the tips come in under the cheeks; knuckleDrop(a) = how far under
+       the hub top the knuckles are at that angle — the hub stops that far over the head's middle */
+    const KN = [-0.3, 0.28];                                                    // knuckle (y, out) in the prong frame
+    const knuckle = (a) => ({ r: (PIV_R + KN[0] * Math.sin(a) + KN[1] * Math.cos(a)) * CLAW_S, y: (PIV_Y + KN[0] * Math.cos(a) - KN[1] * Math.sin(a)) * CLAW_S });
+    const gripAngle = (hx) => {
+      const want = Math.max(0.36, Math.min(0.78, hx));
+      let best = OPEN, err = 1e9;
+      for (let a = OPEN; a <= SHUT; a += 0.005) { const e = Math.abs(knuckle(a).r - want); if (e < err) { err = e; best = a; } }
+      return best;
     };
+    const knuckleDrop = (a) => -knuckle(a).y;
     const angleFor = (r) => { r /= CLAW_S; let best = OPEN, err = 1e9; for (let a = OPEN; a <= SHUT; a += 0.01) { const z = PIV_R + (-0.64 * Math.sin(a) + 0.1 * Math.cos(a)); if (Math.abs(z - r) < err) { err = Math.abs(z - r); best = a; } } return best; };
     const HOME_Y = H - 0.72, CARRY_Y = H - 0.42;         // hub top: claw up (clears the back row) / carrying
     const claw = {
       x: 0, z: 0.3, y: HOME_Y, vx: 0, vz: 0, swingX: 0, swingZ: 0, svx: 0, svz: 0,
-      head, swing, hold, prongs, OPEN, SHUT, HOME_Y, CARRY_Y, CLAW_S, HOLD: 0.52 * CLAW_S, setGrip, angleFor, gripAngle,
+      head, swing, hold, prongs, OPEN, SHUT, HOME_Y, CARRY_Y, CLAW_S, HOLD: 0.52 * CLAW_S, setGrip, angleFor, gripAngle, knuckleDrop,
       get grip() { return grip; },
       set(x, y, z) {
         claw.x = x; claw.y = y; claw.z = z;
@@ -262,7 +261,7 @@
     mesh(new T.CylinderGeometry(0.035, 0.04, 0.42, 16), M.chrome(), stick, [0, 0.21, 0]);
     mesh(SPH, M.plastic('#f0423c', { rough: 0.2, clear: 1 }), stick, [0, 0.46, 0], { scale: 0.15 });
     // the little screen
-    const scr = screenCanvas(); drawScreen(scr, ['LEVEL 1', 'M A S T P']);
+    const scr = screenCanvas(); drawScreen(scr, ['LEVEL 1', 'M A S T']);
     const scrTex = new T.CanvasTexture(scr); scrTex.colorSpace = T.SRGBColorSpace;
     const sg = grp(panel, -1.75, 0.02, -0.08);
     sg.rotation.x = -0.55;

@@ -40,8 +40,8 @@ T_INS = ['Speak like a cheerful, energetic 7-year-old boy: bright and excited.',
          'Like a cheerful, energetic 7-year-old boy: bright, excited and clear.']
 TAKE_OF = {}                      # key → instruction variant, when a take reads back wrong
 
-WORDS = ['monkey', 'mouse', 'ant', 'seal', 'turkey', 'turtle', 'tiger', 'pig']
-SOUNDS = ['m', 'a', 's', 't', 'p']
+WORDS = ['monkey', 'mouse', 'ant', 'seal', 'turkey', 'turtle', 'cat', 'cow', 'dog', 'fish']
+SOUNDS = ['m', 'a', 's', 't', 'c', 'd', 'f']      # c d f: the wrong-answer friends ("It starts with /k/")
 REUSE_JENGA = ['pressstart', 'great3', 'uhoh', 'startswith', 'again', 'playagain']
 NEW = {
     'hello': 'Hi, friends! Welcome to Toy Catch!',

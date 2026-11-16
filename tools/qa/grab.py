@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 base, out, kind = sys.argv[1], sys.argv[2], sys.argv[3]
 W, H = map(int, (sys.argv[4] if len(sys.argv) > 4 else '1600x900').split('x'))
 os.makedirs(out, exist_ok=True)
-URL = base.rstrip('/') + '/?nohint&order=m,a,s,t,p&kinds=pig,seal,ant,turtle,monkey,turkey'
+URL = base.rstrip('/') + '/?nohint&order=m,a,s,t&kinds=cat,seal,ant,turtle,monkey,dog'
 STEP = """async (n) => { for (let i = 0; i < n; i++) { Stage.step(1 / 60); await new Promise(r => setTimeout(r, 0)); } }"""
 errs = []
 with sync_playwright() as p:

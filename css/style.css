@@ -166,7 +166,8 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   background: #dde9f8; box-shadow: inset 0 calc(.45 * var(--u)) calc(.7 * var(--u)) rgba(30,60,120,.22);
   display: grid; place-items: center; font: 800 calc(3.6 * var(--u)) / 1 var(--font); color: rgba(60,90,160,.45);
 }
-.tray .slot img { width: 118%; height: 118%; object-fit: contain; margin-top: -8%; filter: drop-shadow(0 calc(.3 * var(--u)) calc(.3 * var(--u)) rgba(0,0,0,.25)); }
+.tray .slot { position: relative; }
+.tray .slot img { position: absolute; left: 7%; top: 7%; width: 86%; height: 86%; object-fit: contain; filter: drop-shadow(0 calc(.3 * var(--u)) calc(.3 * var(--u)) rgba(0,0,0,.25)); }
 .tray .slot.got { background: radial-gradient(circle, #fff7d1, #ffd86a); box-shadow: inset 0 0 0 calc(.35 * var(--u)) #ffc93a; animation: bump .5s cubic-bezier(.3, 1.6, .5, 1); }
 .tray .slot.now { background: #fff8dc; box-shadow: inset 0 0 0 calc(.5 * var(--u)) #ffc93a, 0 0 calc(1.4 * var(--u)) rgba(255,201,58,.9); }
 
@@ -243,8 +244,6 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 /* ── prize word ── */
 .prize { position: absolute; inset: 0; z-index: 14; pointer-events: none; opacity: 0; transition: opacity .3s; }
 .prize.show { opacity: 1; }
-.prize .glow { position: absolute; left: 50%; top: 46%; width: calc(80 * var(--u)); height: calc(80 * var(--u)); translate: -50% -50%; border-radius: 50%;
-  background: repeating-conic-gradient(from 0deg, rgba(255,248,200,.55) 0 10deg, rgba(255,248,200,0) 10deg 20deg); mask: radial-gradient(circle, #000 20%, transparent 68%); animation: spin 9s linear infinite; }
 .prize .word {
   position: absolute; left: 50%; top: 77%; translate: -50% -50%; padding: calc(1.2 * var(--u)) calc(6 * var(--u)) calc(2 * var(--u));
   border-radius: calc(5 * var(--u)); background: #fff; box-shadow: 0 0 0 calc(.8 * var(--u)) #ffd23f, 0 calc(1.4 * var(--u)) calc(3 * var(--u)) rgba(40,40,90,.3);
@@ -281,7 +280,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 @keyframes starPop { 0% { scale: 0; rotate: -90deg; } 100% { scale: 1; rotate: 0; } }
 .caught { display: flex; gap: calc(2.2 * var(--u)); }
 .caught .slot { width: calc(15 * var(--u)); height: calc(15 * var(--u)); border-radius: 50%; background: #f3ead6; box-shadow: inset 0 calc(.6 * var(--u)) calc(1.2 * var(--u)) rgba(120,90,40,.2); display: grid; place-items: center; font: 800 calc(6 * var(--u)) / 1 var(--font); color: #d9cbb0; position: relative; }
-.caught .slot img { width: 120%; height: 120%; object-fit: contain; margin-top: -10%; }
+.caught .slot img { position: absolute; left: 6%; top: 1%; width: 88%; height: 88%; object-fit: contain; }   /* absolute: a % size in a grid cell has nothing to resolve against */
 .caught .slot.got { background: radial-gradient(circle, #fff7d1, #ffdf7a); }
 .caught .slot em { position: absolute; bottom: calc(-4.6 * var(--u)); font: 800 calc(3.8 * var(--u)) / 1 var(--font); font-style: normal; color: #6a5a8a; }
 .caught .slot em b { color: #ff4fa3; }

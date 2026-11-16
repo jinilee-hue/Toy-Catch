@@ -1,5 +1,5 @@
 /* Toy Catch (phonics claw machine) — game flow.
- * Title (logo, START) → coin goes in ("INSERTED! READY TO PLAY!") → 5 rounds, one per sound m a s t p in random order:
+ * Title (logo, START) → coin goes in ("INSERTED! READY TO PLAY!") → 4 rounds, one per sound m a s t in random order:
  * "Catch a friend that starts with /m/" → move the claw (joystick, drag, tap a plush, ← →) → DOWN → the claw drops,
  * grabs the plush under it and lifts it. Right sound: confetti, the others cheer, "/m/ /m/ monkey", it goes down the
  * chute and pops out as a prize. Wrong sound: "Uh-oh! turtle. It starts with /t/", it slips back. 45 s per round.
@@ -13,8 +13,9 @@
   const qs = new URLSearchParams(location.search);
   const V = (x, y, z) => new T.Vector3(x, y, z);
   const lerp = (a, b, k) => a + (b - a) * k;
-  const LETTERS = ['m', 'a', 's', 't', 'p'];
-  const POOL = { m: ['monkey', 'mouse'], a: ['ant'], s: ['seal'], t: ['turkey', 'turtle', 'tiger'], p: ['pig'] };
+  const LETTERS = ['m', 'a', 's', 't'];
+  const POOL = { m: ['monkey', 'mouse'], a: ['ant'], s: ['seal'], t: ['turkey', 'turtle'] };
+  const OTHERS = ['cat', 'cow', 'dog', 'fish'];          // c d f: never a target, always a wrong answer
   const ROUND_SEC = +(qs.get('sec') || 45);
   const PS = 1.3;                                       // plush scale in the machine
   const G = {
@@ -22,7 +23,7 @@
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
     icons: {}, shownSec: -1,
   };
-  let machine, claw, beam;
+  let machine, claw, beam, burst;
   window.__claw = G;
 
   /* ── boot ───────────────────────────────────────────────────────────────────────────────────────── */
@@ -36,11 +37,11 @@
     FX.init($('#fx'));
     bar.style.width = '55%';
     await A.sleep(20);
-    for (const k of Plush.KINDS) G.all[k] = Plush.build(k);
-    for (const k of Plush.KINDS) G.icons[k] = S.snapshot(G.all[k].root);
-    S.snapshotDone();
+    await Friends.load();
+    for (const k of Friends.KINDS) { G.all[k] = Friends.build(k); G.icons[k] = G.all[k].icon; }
     bar.style.width = '85%';
     beam = makeBeam(); machine.group.add(beam);
+    burst = makeBurst(); S.scene.add(burst);
     S.onResize = layout;
     S.resize();
     setupPlushes();
@@ -68,31 +69,60 @@
     return m;
   }
 
-  /* 7 plushies on the 7 seats: every sound at least once (m and t twice) */
+  /* the prize's sun-burst: turning rays behind the friend — in 3D, so the friend stays in front of it */
+  function makeBurst() {
+    const tex = Mats.tex(512, 512, (g, w, h) => {
+      g.save(); g.translate(w / 2, h / 2);
+      const n = 18;
+      g.fillStyle = 'rgba(255,244,176,0.95)';
+      for (let i = 0; i < n; i++) { g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, w / 2, i * 2 * Math.PI / n, (i * 2 + 1) * Math.PI / n); g.closePath(); g.fill(); }
+      g.globalCompositeOperation = 'destination-in';
+      const m = g.createRadialGradient(0, 0, 0, 0, 0, w / 2);
+      m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(0.35, 'rgba(0,0,0,0.85)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = m; g.fillRect(-w / 2, -h / 2, w, h);
+      g.globalCompositeOperation = 'source-over';
+      const glow = g.createRadialGradient(0, 0, 0, 0, 0, w / 2);
+      glow.addColorStop(0, 'rgba(255,252,226,0.9)'); glow.addColorStop(0.32, 'rgba(255,240,170,0.38)'); glow.addColorStop(1, 'rgba(255,240,170,0)');
+      g.fillStyle = glow; g.fillRect(-w / 2, -h / 2, w, h);
+      g.restore();
+    });
+    const grp = new T.Group();
+    const disc = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, opacity: 0 }));
+    disc.renderOrder = 3;
+    grp.add(disc); grp.visible = false; grp.userData.disc = disc;
+    return grp;
+  }
+  function burstTo(on) {
+    const m = burst.userData.disc.material, o0 = m.opacity;
+    if (on) burst.visible = true;
+    return S.tween(on ? 350 : 300, k => (m.opacity = lerp(o0, on ? 0.95 : 0, k)), on ? 'out' : 'in').then(() => { if (!on) burst.visible = false; });
+  }
+
+  /* 6 friends on the 6 seats: one for every sound (m a s t) + 2 more — at least one c/d/f friend, the other any of
+     the rest (the second m or t friend, or another c/d/f) */
   function setupPlushes() {
     for (const p of Object.values(G.all)) { if (p.root.parent) p.root.parent.remove(p.root); p.hold(false); p.st.cheer = 0; p.excite(0); }
-    const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+    const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
     const fixed = qs.get('kinds');
     let kinds;
     if (fixed) kinds = fixed.split(',');
     else {
-      const m2 = POOL.m.slice().sort(() => Math.random() - 0.5), t3 = POOL.t.slice().sort(() => Math.random() - 0.5);
-      kinds = ['ant', 'seal', 'pig', m2[0], t3[0], Math.random() < 0.5 ? m2[1] : t3[1]];
-      kinds.sort(() => Math.random() - 0.5);
+      const m2 = shuffle(POOL.m), t2 = shuffle(POOL.t), o = shuffle(OTHERS);
+      kinds = [m2[0], 'ant', 'seal', t2[0], o[0], shuffle([m2[1], t2[1], ...o.slice(1)])[0]];
+      kinds = shuffle(kinds);
     }
     G.inMachine = [];
     machine.slots.forEach((s, i) => {
       const p = G.all[kinds[i]];
       if (!p) return;
       p.root.position.set(s.x, s.y, s.z);
-      p.root.rotation.set(0, (s.x > 0 ? -1 : 1) * Math.min(0.22, Math.abs(s.x) * 0.06), 0);
+      p.root.rotation.set(0, 0, 0);                    // the picture turns to the camera by itself
       p.root.scale.setScalar(PS);
       p.home = { x: s.x, y: s.y, z: s.z, ry: p.root.rotation.y };
       p.x = s.x; p.z = s.z;
       machine.group.add(p.root);
       G.inMachine.push(p);
     });
-    void pick;
   }
   function buildTray() {
     $('#tray').innerHTML = LETTERS.map(() => '<div class="slot"></div>').join('');
@@ -140,7 +170,7 @@
       else if (!G.busy) p.lookAt(null);
     }
     if (cand) {
-      const top = cand.root.position.y + cand.top, tipY = claw.y - 0.8;
+      const top = cand.root.position.y + cand.top * PS, tipY = claw.y - 0.8;
       const hgt = Math.max(0.2, tipY - top + 0.1);
       beam.visible = true; beam.position.set(cand.x, top - 0.1 + hgt / 2, cand.z); beam.scale.set(0.9, hgt, 0.9);
       beam.material.opacity = lerp(beam.material.opacity, 0.5, Math.min(1, dt * 6));
@@ -167,6 +197,7 @@
       }
       if (G.time <= 0) { G.timerOn = false; timeUp(); }
     }
+    if (burst.visible) { burst.lookAt(S.camera.position); burst.userData.disc.rotation.z += dt * 0.45; }
     FX.tick(dt);
   }
   function candidate() {
@@ -214,8 +245,9 @@
     const xAt = (cx, cy) => { const p = S.onPlane(cx, cy, new T.Plane(V(0, 0, 1), -0.15)); return p ? machine.group.worldToLocal(p).x : null; };
     cv.addEventListener('pointerdown', e => {
       if (G.screen !== 'game' || G.busy) return;
-      const hits = S.hits(e.clientX, e.clientY, G.inMachine.map(p => p.root));
-      const p = hits.length ? hits[0].object.userData.plush : null;
+      // the first friend whose picture (not its see-through corner) is under the finger
+      const hit = S.hits(e.clientX, e.clientY, G.inMachine.map(p => p.root)).find(h => { const q = h.object.userData.plush; return q && q.alphaAt(h.uv) > 80; });
+      const p = hit ? hit.object.userData.plush : null;
       interact();
       if (p) { G.aimX = p.x; A.sfxPlay('tap'); drag = null; return; }
       const x = xAt(e.clientX, e.clientY);
@@ -330,9 +362,12 @@
     const cand = candidate();
     const x0 = claw.x, z0 = claw.z, g0 = claw.grip;
     const tx = cand ? cand.x : claw.x, tz = cand ? cand.z : claw.z;
-    // the hub stops just over the head; the prongs then close round it (stopping at its surface)
-    const hy = cand ? cand.headR[1] * PS : 0, hx = cand ? Math.max(cand.headR[0], cand.headR[2]) * PS : 0;
-    const yBot = cand ? cand.root.position.y + cand.gripY * PS + hy + 0.05 : 1.45;
+    // the prongs will close until their knuckles touch the sides of the head; the hub stops where that puts the
+    // knuckles level with the head's middle (and never lower than just over the head)
+    const hy = cand ? cand.headR[1] * PS : 0, hx = cand ? cand.headR[0] * PS : 0;
+    const shut = cand ? claw.gripAngle(hx * 1.02) : claw.SHUT;
+    const yHead = cand ? cand.root.position.y + cand.gripY * PS : 0;
+    const yBot = cand ? Math.max(yHead + claw.knuckleDrop(shut), yHead + hy + 0.03) : 1.45;
     if (cand) { cand.lookAt(claw.holdWorld()); cand.excite(1); }
     A.motor(true, 0.8);
     await S.tween(1300, k => {
@@ -343,7 +378,6 @@
     A.motor(false);
     if (tok !== G.tok) return;
     A.sfxPlay('grab');
-    const shut = cand ? claw.gripAngle(hy + 0.05, hx, hy) : claw.SHUT;
     await S.tween(360, k => claw.setGrip(lerp(claw.OPEN, shut, k)), 'out', tok);
     if (cand) attach(cand);
     await sleep(120);
@@ -425,9 +459,13 @@
     A.sfxPlay('prize');
     await S.tween(700, k => {
       const pos = start.clone().lerp(end, k); pos.y += Math.sin(k * Math.PI) * 1.4;
-      p.root.position.copy(pos); p.root.scale.setScalar(lerp(0.5, 1.55, k)); p.root.rotation.y = (1 - k) * Math.PI * 2;
+      p.root.position.copy(pos); p.root.scale.setScalar(lerp(0.5, 1.4, k));   // its cap stays under the CATCH banner p.root.rotation.y = (1 - k) * Math.PI * 2;
     }, 'out', tok);
     p.root.lookAt(cam.position.x, p.root.position.y, cam.position.z);
+    const mid = p.root.position.clone().add(V(0, p.top * p.root.scale.y * 0.5, 0));
+    burst.position.copy(mid).addScaledVector(mid.clone().sub(cam.position).normalize(), 0.9);
+    burst.scale.setScalar(p.top * p.root.scale.y * 2.3);
+    burstTo(true);
     const box = $('#prize'), wordEl = $('#prizeWord');
     wordEl.innerHTML = `<b>${p.word[0]}</b>${p.word.slice(1)}`;
     box.classList.add('show');
@@ -439,8 +477,8 @@
     bump(); await A.say(`s:${p.sound}`); await A.sleep(150);
     wordEl.classList.add('all'); await A.say(`w:${p.word}`);
     await sleep(500);
-    if (tok !== G.tok) { box.classList.remove('show'); return; }
-    box.classList.remove('show');
+    if (tok !== G.tok) { box.classList.remove('show'); burstTo(false); return; }
+    box.classList.remove('show'); burstTo(false);
     // into the tray
     const slot = $('#tray').children[G.caught.length - 1];
     const sr = slot.getBoundingClientRect();
@@ -509,9 +547,10 @@
     if (tok !== G.tok) return;
     setScreen('result');
     const n = G.caught.length;
-    const stars = n >= 5 ? 3 : n >= 3 ? 2 : n >= 1 ? 1 : 0;
+    const all = n >= LETTERS.length;
+    const stars = all ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0;
     [...$('#stars').children].forEach((s, i) => s.classList.toggle('on', i < stars));
-    $('#rbText').textContent = n >= 5 ? 'PERFECT!' : n >= 3 ? 'GREAT JOB!' : 'NICE TRY!';
+    $('#rbText').textContent = all ? 'PERFECT!' : n >= 2 ? 'GREAT JOB!' : 'NICE TRY!';
     $('#finalScore').textContent = G.score;
     $('#caught').innerHTML = G.targets.map((L, i) => {
       const k = G.caught.find(kind => G.all[kind].sound === L);
@@ -519,7 +558,7 @@
     }).join('');
     machine.setScreen(['GREAT', 'JOB!'], '#ffd23f'); machine.chase(4);
     A.sfxPlay('win'); FX.rain(160);
-    await A.say(n >= 5 ? 't:allcaught' : 't:result');
+    await A.say(all ? 't:allcaught' : 't:result');
     if (tok !== G.tok) return;
     await A.say('t:playagain');
     G.busy = false;
@@ -528,11 +567,11 @@
   function goTitle() {
     G.tok++; S.killTweens(); A.stopVoice(); A.motor(false);
     G.busy = false; G.timerOn = false; stopHint();
-    $('#prize').classList.remove('show');
+    $('#prize').classList.remove('show'); burst.visible = false; burst.userData.disc.material.opacity = 0;
     for (const p of Object.values(G.all)) { if (p.root.parent) p.root.parent.remove(p.root); }
     setupPlushes();
     claw.set(claw.x, claw.HOME_Y, 0.15); claw.setGrip(claw.OPEN * 0.55);
-    machine.setScreen(['LEVEL 1', 'M A S T P']);
+    machine.setScreen(['LEVEL 1', 'M A S T']);
     machine.coin.visible = false;
     app.classList.remove('coin');
     setScreen('title');
