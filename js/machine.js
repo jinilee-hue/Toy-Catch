@@ -244,9 +244,10 @@
     // ── the control panel: a ledge in front of the cabinet ─────────────────────────────────────────
     const panel = grp(group, 0, -0.05, D / 2 + 0.92);
     panel.rotation.x = 0.16;
-    mesh(rbox(W + 0.9, 0.34, 1.25, 0.16), blue, panel, [0, -0.17, 0]);
-    mesh(rbox(W + 0.7, 0.05, 1.1, 0.03), M.plastic('#a8def7', { rough: 0.45, clear: 0.5 }), panel, [0, 0.005, -0.02], { cast: false });
-    mesh(rbox(W + 0.95, 0.07, 0.07, 0.035), M.plastic('#ff8fd0', { rough: 0.2, clear: 0.9, emissive: '#ff5fc0', ei: 0.5 }), panel, [0, -0.27, 0.63], { cast: false });
+    // (1.45 deep: room for the big DOWN button in the middle)
+    mesh(rbox(W + 0.9, 0.34, 1.45, 0.16), blue, panel, [0, -0.17, 0]);
+    mesh(rbox(W + 0.7, 0.05, 1.3, 0.03), M.plastic('#a8def7', { rough: 0.45, clear: 0.5 }), panel, [0, 0.005, -0.02], { cast: false });
+    mesh(rbox(W + 0.95, 0.07, 0.07, 0.035), M.plastic('#ff8fd0', { rough: 0.2, clear: 0.9, emissive: '#ff5fc0', ei: 0.5 }), panel, [0, -0.27, 0.73], { cast: false });
     const btn = (x, z, c, r = 0.2) => {
       const g = grp(panel, x, 0.02, z);
       mesh(new T.CylinderGeometry(r * 1.25, r * 1.32, 0.08, 32), M.plastic('#e8eef5', { rough: 0.3 }), g, [0, 0.03, 0]);
@@ -254,6 +255,50 @@
       g.userData.cap = cap; return g;
     };
     const btnRed = btn(-3.2, 0.12, '#f0423c'), btnYel = btn(2.42, 0.2, '#ffcf2e', 0.17), btnRed2 = btn(3.0, -0.05, '#f0423c', 0.17);
+    // the big DOWN button: lies on the panel like the other buttons (user: "각도는 맞추고 크기를 지금처럼 크게"), with the
+    // look the flat HTML one had: a glossy green dome with a white arrow, a white bezel, a grey outer ring. The dome's
+    // texture is mapped straight down from above, so the arrow points at the player (= down on the screen). Hidden on
+    // the title (START sits there), pops up for the game. The game puts an invisible HTML button over it for taps.
+    const DOWN_R = 0.68, DOWN_CAP = 0.55, DOWN_H = 0.27, DOWN_Z = -0.06, CAP_Y = 0.17;
+    const down = grp(panel, 0, 0.02, DOWN_Z);
+    const downIn = grp(down);                                    // scaled in/out
+    mesh(new T.CylinderGeometry(DOWN_R, DOWN_R * 1.03, 0.1, 72), M.plastic('#b9c6d4', { rough: 0.35, clear: 0.5 }), downIn, [0, 0.04, 0]);
+    mesh(new T.CylinderGeometry(DOWN_R - 0.06, DOWN_R - 0.045, 0.16, 72), M.plastic('#f2f6fa', { rough: 0.3, clear: 0.6 }), downIn, [0, 0.1, 0]);
+    /* the dome's picture is projected onto it along a slant (36° up from the panel, from the player's side), not
+       straight down: the game camera sees the panel at only ~26°, and a top-down arrow came out squashed onto the far
+       half of the dome. Along the slant it sits in the middle of the dome as seen, still a little foreshortened (it
+       lies on the button). The canvas covers the dome's outline seen along that slant. */
+    const capGeo = new T.SphereGeometry(1, 64, 28, 0, Math.PI * 2, 0, Math.PI / 2);
+    const SL = 36 * Math.PI / 180, ev = [Math.cos(SL), -Math.sin(SL)];   // "up" in the slanted picture: (y, z) weights
+    const vLo = -DOWN_CAP * Math.sin(SL), vHi = Math.hypot(DOWN_H * Math.cos(SL), DOWN_CAP * Math.sin(SL));
+    { const p = capGeo.attributes.position, uv = capGeo.attributes.uv;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i) * DOWN_CAP, y = p.getY(i) * DOWN_H, z = p.getZ(i) * DOWN_CAP;
+        uv.setXY(i, 0.5 + x / (2 * DOWN_CAP), (y * ev[0] + z * ev[1] - vLo) / (vHi - vLo));
+      } }
+    const capTex = M.tex(512, 512, (g, w, h) => {
+      const sy = (2 * DOWN_CAP) / (vHi - vLo);          // canvas y → the same world size as canvas x
+      g.save(); g.scale(1, sy);
+      const gr = g.createRadialGradient(w * 0.38, h * 0.36 / sy, 0, w * 0.5, h * 0.5 / sy, w * 0.62);
+      gr.addColorStop(0, '#b6ff9a'); gr.addColorStop(0.12, '#8ff27c'); gr.addColorStop(0.42, '#4fdc5a'); gr.addColorStop(0.78, '#22a83a'); gr.addColorStop(1, '#178a2c');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h / sy);
+      g.restore();
+      // the arrow (the old button's SVG: a 48-grid, round ends), bolder, with its dark-green shadow under it
+      const k = w * 0.56 / 48, ky = k * sy * 1.12, ox = w * 0.5 - 24 * k, oy = h * 0.5 - 22.5 * ky;
+      const arrow = (dy, col) => {
+        g.save(); g.translate(ox, oy + dy); g.scale(k, ky);
+        g.strokeStyle = col; g.lineWidth = 8.5; g.lineCap = 'round'; g.lineJoin = 'round';
+        g.beginPath(); g.moveTo(24, 8); g.lineTo(24, 32); g.stroke();
+        g.beginPath(); g.moveTo(12, 24); g.lineTo(24, 37); g.lineTo(36, 24); g.stroke();
+        g.restore();
+      };
+      arrow(h * 0.03, 'rgba(0,90,20,.5)');
+      arrow(0, '#ffffff');
+    });
+    capTex.anisotropy = 8;
+    const capMat = new T.MeshPhysicalMaterial({ map: capTex, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12 });
+    const downCap = mesh(capGeo, capMat, downIn, [0, CAP_Y, 0], { scale: [DOWN_CAP, DOWN_H, DOWN_CAP] });
+    const downSt = { show: 0, k: 0, on: true, ready: false, press: 0, dim: 0 };
     // joystick: base, stick, red ball (tilts while driven)
     const joy = grp(panel, 1.55, 0.02, 0.05);
     mesh(new T.CylinderGeometry(0.24, 0.27, 0.07, 32), M.darkMetal(), joy, [0, 0.03, 0]);
@@ -293,6 +338,19 @@
       swing.rotation.z = claw.swingZ; swing.rotation.x = claw.swingX;
       joyK += (joyTarget - joyK) * Math.min(1, dt * 12);
       stick.rotation.z = -joyK * 0.45;
+      // the DOWN button: pops in/out (springy), pulses while the claw is right over a friend, sinks when pressed,
+      // goes dull while the claw is busy
+      const ds = downSt;
+      ds.k += (ds.show - ds.k) * Math.min(1, dt * 7);
+      const pop = ds.show ? 1 + Math.sin(Math.min(1, ds.k) * Math.PI) * 0.12 * (1 - ds.k) : ds.k;
+      downIn.scale.setScalar(Math.max(0.001, ds.show ? Math.min(1.12, pop * ds.k + (1 - ds.k) * 0.001) : ds.k));
+      down.visible = ds.k > 0.01;
+      ds.press = Math.max(0, ds.press - dt);
+      const pulse = ds.ready && ds.on ? 1 + 0.045 * Math.sin(t * 5.7) : 1;
+      downCap.scale.set(DOWN_CAP * pulse, DOWN_H * (ds.press > 0 ? 0.55 : 1), DOWN_CAP * pulse);
+      downCap.position.y = ds.press > 0 ? CAP_Y - 0.03 : CAP_Y;
+      ds.dim += ((ds.on ? 0 : 1) - ds.dim) * Math.min(1, dt * 8);
+      capMat.color.setRGB(1 - 0.42 * ds.dim, 1 - 0.36 * ds.dim, 1 - 0.42 * ds.dim);
     }
 
     const api = {
@@ -309,6 +367,10 @@
       setJoy(v) { joyTarget = Math.max(-1, Math.min(1, v)); },
       setScreen(lines, accent) { drawScreen(scr, lines, accent); scrTex.needsUpdate = true; },
       press(b) { const c = b.userData.cap; c.position.y = 0.04; setTimeout(() => (c.position.y = 0.08), 160); },
+      /* the DOWN button: setDown({ show, on, ready }), pressDown(); downRim() = its rim's points in world space */
+      setDown(o) { if ('show' in o) downSt.show = o.show ? 1 : 0; if ('on' in o) downSt.on = !!o.on; if ('ready' in o) downSt.ready = !!o.ready; },
+      pressDown() { downSt.press = 0.16; },
+      downRim: (n = 24) => { const out = []; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; out.push(down.localToWorld(V(Math.cos(a) * DOWN_R * 1.03, 0, Math.sin(a) * DOWN_R * 1.03)), down.localToWorld(V(Math.cos(a) * DOWN_CAP * 0.7, CAP_Y + DOWN_H * 0.7, Math.sin(a) * DOWN_CAP * 0.7))); } return out; },
       /* local points of the panel (for the HTML buttons over it) */
       dropPoint: () => panel.localToWorld(V(0, 0.05, 0.1)),
       joyPoint: () => joy.localToWorld(V(0, 0.45, 0)),

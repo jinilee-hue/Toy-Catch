@@ -61,7 +61,7 @@
       const span = (a.y - b.y) / 2;                               // fraction of the height
       const wl = wide[0].clone().project(cam), wr = wide[1].clone().project(cam);
       const wspan = (wr.x - wl.x) / 2;
-      const want = f.span * (1 + 0.06 * f.push);
+      const want = f.span * (1 + 0.04 * f.push);          // (game view: a little less zoom, so the DOWN button fits)
       const kH = span / want, kW = wspan / 0.95;
       d *= Math.max(kH, kW);
     }
@@ -69,7 +69,7 @@
     cam.lookAt(S.target); cam.updateMatrixWorld();
     const a = top.clone().project(cam);
     const yTop = (1 - a.y) / 2;                                  // where the marquee top lands now
-    cam.setViewOffset(w, h, 0, (yTop - f.top * (1 - 0.12 * f.push)) * h, w, h);
+    cam.setViewOffset(w, h, 0, (yTop - f.top * (1 - 0.22 * f.push)) * h, w, h);
     cam.updateProjectionMatrix();
     S.dist = d;
     if (S.onResize) S.onResize(w, h);

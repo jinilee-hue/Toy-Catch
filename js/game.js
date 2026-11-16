@@ -76,13 +76,18 @@
 
   /* the START button, after the intro mockup (design/intro_ref.png, the button at x 1050–1720, y 1300–1530): chunky
      block letters — a front face, a deep darker side under it, a thick round white outline with its own lavender side —
-     on a royal-blue slab with a darker front edge. Coordinates are the mockup's pixels in that crop (1 mu = 15.36 px);
-     every letter is drawn once into its own canvas (so the hops are cheap transforms), the slab into another. */
+     on a royal-blue slab with a darker front edge. The slab's top face and the letters lie on the panel together: one
+     perspective tilt (CSS .tilt) narrows both toward the top (user: "start 텍스트도 각도는 맞춰야지"). Coordinates are
+     the mockup's pixels in that crop (1 mu = 15.36 px). Every letter has two canvases: its white outline (all five under
+     all the letters, so the outlines merge into one — user: "흰색 라인은 같이 하나로 묶여있고") and the letter itself;
+     both swell and shrink together in a wave that keeps rolling along the word (CSS). */
   function buildStart() {
     const btn = $('#start');
     const BOX = [20, 6, 610, 216];                       // the button's box in crop px: x, y, w, h
     const K = 2.2;                                       // canvas pixels per crop px (sharp on big Retina screens)
-    const FS = 150, SX = 1.2, TRACK = -1, BASE = 118;    // font size, widening (the mockup font is wider), baseline
+    const FS = 161, SX = 1.2, TRACK = -1, BASE = 118;    // font size, widening (the mockup font is wider), baseline
+    // (FS 161: the word nearly as wide as the slab, standing well above its back edge like the mockup's — user:
+    //  "start 텍스트가 파란색 판보다 크잖아")
     const B = 7;                                         // extra weight: every layer gets a B-wide stroke (heavier than Baloo 800)
     const E = 28, O = 8, OS = 7;                         // letter side depth, white outline, the outline's own side
     const LET = [                                        // letter, face top, face bottom, side top, side bottom
@@ -104,30 +109,48 @@
     const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = Math.ceil(w * K); c.height = Math.ceil(h * K); const g = c.getContext('2d'); g.scale(K, K); return [c, g]; };
     const rr = (g, x0, y0, w, h, r) => { g.beginPath(); g.roundRect(x0, y0, w, h, r); };
     btn.innerHTML = '';
-    // the slab: soft shadow on the panel, the darker front edge, the top face
+    // the slab. Its front edge is an upright face: drawn flat, outside the tilt. Its top face and the letters lie on the
+    // panel under one perspective tilt (CSS .tilt, hinged at the top face's front edge, y 165), which turns the top face
+    // into the mockup's trapezoid (back edge x 45–610 at y 40, front edge x 27–626 at y 165). So the top face is drawn
+    // as the rectangle that tilts into it: 599 wide from y 32.5 (the tilt brings that edge down to 40, 565 wide).
+    const tilt = document.createElement('span'); tilt.className = 'tilt';
     {
       const [c, g] = canvas(BOX[2], BOX[3]);
       g.translate(-BOX[0], -BOX[1]);
       // (soft edges with shadowBlur, not ctx.filter: older iPad Safari has no canvas filter)
-      let gr = g.createLinearGradient(0, 150, 0, 212); gr.addColorStop(0, '#2b479b'); gr.addColorStop(1, '#1c3584');
+      const gr = g.createLinearGradient(0, 160, 0, 212); gr.addColorStop(0, '#3a6fd2'); gr.addColorStop(0.45, '#2b58b6'); gr.addColorStop(1, '#1b4594');
       g.save(); g.shadowColor = 'rgba(16,32,90,.42)'; g.shadowBlur = 14 * K; g.shadowOffsetY = 7 * K;
-      g.fillStyle = gr; rr(g, 28, 46, 594, 166, 32); g.fill(); g.restore();
-      gr = g.createLinearGradient(0, 38, 0, 182); gr.addColorStop(0, '#4c82f8'); gr.addColorStop(1, '#456ce0');
-      g.fillStyle = gr; rr(g, 28, 38, 594, 144, 30); g.fill();
-      g.strokeStyle = 'rgba(255,255,255,.2)'; g.lineWidth = 2; rr(g, 30, 40, 590, 140, 28); g.stroke();
+      g.fillStyle = gr; rr(g, 27, 130, 599, 82, 28); g.fill(); g.restore();
       c.className = 'plate'; place(c, BOX[0], BOX[1], BOX[2], BOX[3]); btn.appendChild(c);
     }
-    // the letters
+    {
+      const [c, g] = canvas(BOX[2], BOX[3]);
+      g.translate(-BOX[0], -BOX[1]);
+      const gr = g.createLinearGradient(0, 32.5, 0, 165); gr.addColorStop(0, '#4479f0'); gr.addColorStop(0.25, '#5a82ee'); gr.addColorStop(1, '#6386e4');
+      g.fillStyle = gr; rr(g, 27, 32.5, 599, 132.5, 26); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 2; rr(g, 29, 34.5, 595, 128.5, 24); g.stroke();
+      c.className = 'plate-top'; place(c, BOX[0], BOX[1], BOX[2], BOX[3]); tilt.appendChild(c);
+    }
+    btn.appendChild(tilt);
+    // the letters: outlines (appended first) and letters (appended after) — same box per letter, same wave
+    const outlines = [], letters = [];
     LET.forEach(([ch, f0, f1, s0, s1], i) => {
       const cx = x + adv[i] / 2, half = adv[i] / 2 + O + B + 10, top = BASE - FS * 0.82, h = FS * 0.82 + E + OS + O + B + 10;
+      const [oc, og] = canvas(half * 2, h);
+      og.translate(half, -top); og.scale(SX, 1);
+      og.font = font; og.textAlign = 'center'; og.textBaseline = 'alphabetic'; og.lineJoin = 'round';
+      const oLayer = (col, dy, lw) => { og.fillStyle = col; og.fillText(ch, 0, BASE + dy); og.strokeStyle = col; og.lineWidth = lw + B; og.strokeText(ch, 0, BASE + dy); };
+      // every stack in 0.5 px steps: coarser steps left ridges along the curves (user: "테두리가 깨져보이지 않게")
+      for (let dy = E + OS; dy >= E; dy -= 0.5) oLayer('#a9a1c2', dy, O * 2);                // the outline's own side
+      for (let dy = E; dy >= 0; dy -= 0.5) oLayer('#fbf4f6', dy, O * 2);                     // the white outline
+      oLayer('#fbf4f6', 0, O * 2);
+      oc.className = 'O'; oc.style.animationDelay = (i * 0.14) + 's';
+      place(oc, cx - half, top, half * 2, h); outlines.push(oc);
       const [c, g] = canvas(half * 2, h);
       g.translate(half, -top); g.scale(SX, 1);
       g.font = font; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round';
       const layer = (col, dy, lw) => { g.fillStyle = col; g.fillText(ch, 0, BASE + dy); g.strokeStyle = col; g.lineWidth = lw + B; g.strokeText(ch, 0, BASE + dy); };
-      for (let dy = E + OS; dy >= E; dy -= 2) layer('#a9a1c2', dy, O * 2);                   // the outline's own side
-      for (let dy = E; dy >= 0; dy -= 4) layer('#fbf4f6', dy, O * 2);                        // the white outline
-      layer('#fbf4f6', 0, O * 2);
-      for (let dy = E; dy >= 1; dy -= 1) layer(mix(s0, s1, Math.min(1, dy / (E * 0.35))), dy, 1.2);   // the letter's side
+      for (let dy = E; dy >= 0.5; dy -= 0.5) layer(mix(s0, s1, Math.min(1, dy / (E * 0.35))), dy, 1.2);   // the letter's side
       // the face, puffed: its own canvas, then a soft dark rim along the bottom edge and a light one along the top-left
       // (inner shadows: the shadow of everything OUTSIDE the letter, drawn only onto the letter)
       const [fc, fg] = canvas(half * 2, h), [ic, ig] = canvas(half * 2, h);
@@ -138,15 +161,17 @@
       ig.save(); ig.setTransform(1, 0, 0, 1, 0, 0); ig.fillStyle = '#000'; ig.fillRect(0, 0, ic.width, ic.height); ig.restore();
       ig.globalCompositeOperation = 'destination-out'; ig.fillText(ch, 0, BASE); ig.strokeText(ch, 0, BASE);
       fg.setTransform(1, 0, 0, 1, 0, 0); fg.globalCompositeOperation = 'source-atop';
-      fg.shadowColor = mix(s1, '#000000', 0.2).replace('rgb', 'rgba').replace(')', ',.45)'); fg.shadowBlur = 5 * K; fg.shadowOffsetY = -3.5 * K;
+      // (soft and wide: a tight dark rim read as a seam between the face and the side)
+      fg.shadowColor = mix(s1, '#000000', 0.1).replace('rgb', 'rgba').replace(')', ',.26)'); fg.shadowBlur = 9 * K; fg.shadowOffsetY = -5 * K;
       fg.drawImage(ic, 0, 0);
       fg.shadowColor = 'rgba(255,255,255,.42)'; fg.shadowBlur = 2.5 * K; fg.shadowOffsetX = 1.2 * K; fg.shadowOffsetY = 2.6 * K;
       fg.drawImage(ic, 0, 0);
       g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fc, 0, 0); g.restore();
-      c.className = 'L'; c.style.animationDelay = (i * 0.08) + 's';
-      place(c, cx - half, top, half * 2, h); btn.appendChild(c);
+      c.className = 'L'; c.style.animationDelay = (i * 0.14) + 's';
+      place(c, cx - half, top, half * 2, h); letters.push(c);
       x += adv[i] + TRACK;
     });
+    for (const c of [...outlines, ...letters]) tilt.appendChild(c);
   }
 
   /* the prize's sun-burst: turning rays behind the friend — in 3D, so the friend stays in front of it */
@@ -219,6 +244,11 @@
     const d = S.project(M.dropPoint()), j = S.project(M.joyPoint());
     st.setProperty('--dropX', d.x + 'px'); st.setProperty('--dropY', Math.min(h - 10 * mu, d.y) + 'px');
     st.setProperty('--joyX', j.x + 'px'); st.setProperty('--joyY', j.y + 'px');
+    // the 3D DOWN button's box on screen (for the invisible HTML button over it, the DOWN! hint and the hint glove)
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const v of M.downRim()) { const q = S.project(v); x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
+    st.setProperty('--downX', (x0 + x1) / 2 + 'px'); st.setProperty('--downY', (y0 + y1) / 2 + 'px');
+    st.setProperty('--downW', x1 - x0 + 'px'); st.setProperty('--downH', y1 - y0 + 'px');
   }
 
   /* ── per frame ──────────────────────────────────────────────────────────────────────────────────── */
@@ -266,7 +296,7 @@
     if (G.screen === 'game' && !G.busy) {
       G.idle += dt;
       $('#downHint').classList.toggle('show', zone === 'hold' && G.idle > (G.round === 0 && G.tries === 0 ? 1.0 : 3.5) && Math.abs(G.aimX - claw.x) < 0.02);
-      $('#drop').classList.toggle('ready', zone === 'hold');
+      $('#drop').classList.toggle('ready', zone === 'hold'); machine.setDown({ ready: zone === 'hold' });
     } else $('#downHint').classList.remove('show');
     // the round's clock
     if (G.timerOn) {
@@ -362,8 +392,8 @@
   function interact() { G.idle = 0; G.interacted = true; stopHint(); $('#downHint').classList.remove('show'); }
 
   /* ── flow ───────────────────────────────────────────────────────────────────────────────────────── */
-  function setScreen(s) { G.screen = s; app.dataset.screen = s; }
-  function setDrop(on) { $('#drop').classList.toggle('off', !on); }
+  function setScreen(s) { G.screen = s; app.dataset.screen = s; machine.setDown({ show: s === 'game' }); }
+  function setDrop(on) { $('#drop').classList.toggle('off', !on); machine.setDown({ on }); }
   const sleep = ms => S.wait(ms);
   function dolly(to, ms) {
     const from = S.frame.push;
@@ -446,7 +476,7 @@
     const tok = G.tok;
     G.busy = true; G.timerOn = false; interact(); setDrop(false);
     $('#timeBox').classList.add('paused');
-    const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150);
+    const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150); machine.pressDown();
     A.sfxPlay('tap');
     const cand = candidate();
     const zone = cand ? aimZone(cand) : 'none';
@@ -729,7 +759,7 @@
     while (tok === G.tok && !G.interacted && G.screen === 'game') {
       const mu = parseFloat(app.style.getPropertyValue('--mu')) || 8;
       const jx = parseFloat(app.style.getPropertyValue('--joyX')), jy = parseFloat(app.style.getPropertyValue('--joyY'));
-      const dx = parseFloat(app.style.getPropertyValue('--dropX')), dy = parseFloat(app.style.getPropertyValue('--dropY'));
+      const dx = parseFloat(app.style.getPropertyValue('--downX')), dy = parseFloat(app.style.getPropertyValue('--downY'));
       const W2 = hand.offsetWidth * 0.38;
       hand.classList.add('on');
       $('#joyHit').classList.add('hint');
