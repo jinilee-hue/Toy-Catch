@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>plush lineup (dev)</title>
+<link rel="stylesheet" href="../css/font.css">
+<style>html,body{margin:0;height:100%;background:#bfe3f7;overflow:hidden}canvas{display:block;width:100%;height:100%}.f{font:800 20px 'Baloo 2';position:absolute;opacity:0}</style>
+</head>
+<body>
+<span class="f">Mm</span>
+<canvas id="c"></canvas>
+<script src="../vendor/three.iife.js"></script>
+<script src="../js/mats.js"></script>
+<script src="../js/plush.js"></script>
+<script>
+(async function () {
+  await document.fonts.load('800 100px "Baloo 2"');
+  const canvas = document.getElementById('c');
+  const r = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  r.setPixelRatio(Math.min(2, devicePixelRatio)); r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.NeutralToneMapping;
+  r.shadowMap.enabled = true; r.shadowMap.type = THREE.VSMShadowMap;
+  const scene = new THREE.Scene();
+  const pm = new THREE.PMREMGenerator(r); scene.environment = pm.fromScene(new THREE.RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45;
+  scene.add(new THREE.HemisphereLight('#ffffff', '#e8d6c6', 1.0));
+  const key = new THREE.DirectionalLight('#fff3e2', 1.8); key.position.set(-3, 7, 6); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+  Object.assign(key.shadow.camera, { left: -7, right: 7, top: 4, bottom: -2, near: 1, far: 25 }); key.shadow.radius = 5; key.shadow.blurSamples = 12; key.shadow.bias = -0.0004; scene.add(key);
+  const fill = new THREE.DirectionalLight('#e6efff', 0.6); fill.position.set(5, 3, 4); scene.add(fill);
+  const rim = new THREE.DirectionalLight('#ffffff', 0.7); rim.position.set(0, 4, -6); scene.add(rim);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 10), new THREE.MeshStandardMaterial({ color: '#f4d5de', roughness: 0.9 }));
+  floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  const q = new URLSearchParams(location.search);
+  const kinds = (q.get('k') || Plush.KINDS.join(',')).split(',');
+  const yaw = +(q.get('yaw') || 0);
+  const list = kinds.map((k, i) => { const p = Plush.build(k); p.root.position.x = (i - (kinds.length - 1) / 2) * 1.5; p.root.rotation.y = yaw; scene.add(p.root); return p; });
+  const cam = new THREE.PerspectiveCamera(28, 1, 0.1, 100);
+  function size() {
+    const w = innerWidth, h = innerHeight; r.setSize(w, h, false); cam.aspect = w / h;
+    const span = kinds.length * 1.5 + 0.4, d = span / 2 / Math.tan(cam.fov * Math.PI / 360) / cam.aspect;
+    cam.position.set(0, 0.7 + d * 0.18, Math.max(d, 4)); cam.lookAt(0, 0.62, 0); cam.updateProjectionMatrix();
+  }
+  size(); addEventListener('resize', size);
+  const t0 = performance.now();
+  window.__frame = (t) => { list.forEach(p => p.update(1 / 60, t)); r.render(scene, cam); };
+  function loop(now) { requestAnimationFrame(loop); if (window.__freeze) return; const t = (now - t0) / 1000; list.forEach(p => p.update(1 / 60, t)); r.render(scene, cam); }
+  requestAnimationFrame(loop);
+  window.__plush = list; window.__ready = true;
+})();
+</script>
+</body>
+</html>

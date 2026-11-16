@@ -1,0 +1,324 @@
+/* Toy Catch — the machine: light-blue cabinet with a glass case, red marquee with chasing bulbs, ball pit,
+ * a two-colour shelf for the back row, the chute in the front-left corner, the claw (gantry, trolley, coiled cord,
+ * three chrome prongs) and the control panel (screen, joystick, buttons, coin slot) — after the user's mockups.
+ * Units: the glass case is W × H × D; its floor is y 0, its middle x 0 z 0; the player stands toward +z.
+ */
+(function () {
+  'use strict';
+  const T = THREE, M = Mats;
+  const W = 7.0, D = 3.4, H = 4.3;
+  const V = (x, y, z) => new T.Vector3(x, y, z);
+  const rb = {};
+  const rbox = (w, h, d, r) => { const k = [w, h, d, r].join('_'); return rb[k] || (rb[k] = new T.RoundedBoxGeometry(w, h, d, 4, r)); };
+  const SPH = new T.SphereGeometry(1, 32, 20);
+  function mesh(geo, mat, parent, pos, o = {}) {
+    const m = new T.Mesh(geo, mat);
+    if (pos) m.position.set(pos[0], pos[1], pos[2]);
+    if (o.rot) m.rotation.set(o.rot[0], o.rot[1], o.rot[2]);
+    if (o.scale != null) { if (typeof o.scale === 'number') m.scale.setScalar(o.scale); else m.scale.set(...o.scale); }
+    m.castShadow = o.cast ?? true; m.receiveShadow = o.recv ?? true;
+    if (parent) parent.add(m);
+    return m;
+  }
+  const grp = (parent, x = 0, y = 0, z = 0) => { const g = new T.Group(); g.position.set(x, y, z); parent && parent.add(g); return g; };
+
+  function backTex() {
+    return M.tex(1024, 640, (g, w, h) => {
+      const sky = g.createLinearGradient(0, 0, 0, h);
+      sky.addColorStop(0, '#a9dcfb'); sky.addColorStop(0.62, '#dff3ff'); sky.addColorStop(1, '#fbe9f1');
+      g.fillStyle = sky; g.fillRect(0, 0, w, h);
+      g.filter = 'blur(18px)';
+      for (const [x, y, r, c] of [[0.12, 0.22, 90, 'rgba(255,255,255,0.85)'], [0.24, 0.2, 70, 'rgba(255,255,255,0.8)'], [0.7, 0.16, 110, 'rgba(255,255,255,0.85)'], [0.84, 0.24, 80, 'rgba(255,255,255,0.75)'],
+        [0.08, 0.86, 120, 'rgba(126,200,120,0.55)'], [0.3, 0.9, 140, 'rgba(255,176,120,0.45)'], [0.55, 0.88, 130, 'rgba(120,190,255,0.4)'], [0.82, 0.9, 150, 'rgba(255,140,180,0.45)']]) {
+        g.fillStyle = c; g.beginPath(); g.arc(x * w, y * h, r, 0, Math.PI * 2); g.fill();
+      }
+      g.filter = 'blur(6px)';
+      const cols = ['#ffd84a', '#ff8fb8', '#8fe0ff', '#b6f28b', '#ffffff'];
+      for (let i = 0; i < 26; i++) {
+        g.fillStyle = cols[i % 5]; g.globalAlpha = 0.5;
+        g.beginPath(); g.arc((i * 97 % 1000) / 1000 * w, h * (0.42 + ((i * 53) % 30) / 100), 6 + (i % 4) * 4, 0, Math.PI * 2); g.fill();
+      }
+      g.globalAlpha = 1; g.filter = 'none';
+    });
+  }
+  function screenCanvas() {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 224;
+    return c;
+  }
+  function drawScreen(c, lines, accent) {
+    const g = c.getContext('2d'), w = c.width, h = c.height;
+    g.fillStyle = '#101a3a'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(80,140,255,0.18)'; g.lineWidth = 2;
+    for (let x = 0; x < w; x += 24) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+    for (let y = 0; y < h; y += 24) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = accent || '#5ff2ff'; g.shadowBlur = 18; g.fillStyle = '#d6fbff';
+    const n = lines.length;
+    lines.forEach((ln, i) => { g.font = `800 ${n > 1 ? 66 : 84}px ${M.FONT}`; g.fillText(ln, w / 2, h / 2 + (i - (n - 1) / 2) * 74); });
+    g.shadowBlur = 0;
+    g.strokeStyle = accent || '#ff6fd8'; g.lineWidth = 8; g.strokeRect(8, 8, w - 16, h - 16);
+  }
+  function coinTex() {
+    return M.tex(256, 256, (g, w, h) => {
+      const r = g.createRadialGradient(w * 0.4, h * 0.35, 10, w / 2, h / 2, w / 2);
+      r.addColorStop(0, '#fff3a6'); r.addColorStop(0.55, '#ffcf3a'); r.addColorStop(1, '#e09a10');
+      g.fillStyle = r; g.beginPath(); g.arc(w / 2, h / 2, w / 2, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#c98408'; g.lineWidth = 12; g.beginPath(); g.arc(w / 2, h / 2, w * 0.4, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#ffe680'; g.strokeStyle = '#c98408'; g.lineWidth = 6; g.beginPath();
+      for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? w * 0.13 : w * 0.3; g.lineTo(w / 2 + Math.cos(a) * rr, h / 2 + Math.sin(a) * rr); }
+      g.closePath(); g.fill(); g.stroke();
+    });
+  }
+
+  function build() {
+    const group = new T.Group();
+    const blue = M.plastic('#8fd2f3', { rough: 0.38, clear: 0.55 });
+    const blueDeep = M.plastic('#66b9e6', { rough: 0.38, clear: 0.55 });
+    const red = M.plastic('#f45d55', { rough: 0.32, clear: 0.7 });
+    const white = M.plastic('#ffffff', { rough: 0.4, clear: 0.5 });
+    const lav = M.plastic('#d4b4f2', { rough: 0.35, clear: 0.6 });
+
+    // cabinet under the prize floor, posts, rails round the glass, the band and roof on top
+    mesh(rbox(W + 0.72, 2.4, D + 0.72, 0.2), blue, group, [0, -1.2, 0]);
+    mesh(rbox(W + 0.5, 0.06, D + 0.5, 0.02), M.plastic('#f2e9ff', { rough: 0.7, clear: 0 }), group, [0, -0.02, 0], { cast: false });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) mesh(rbox(0.34, H + 0.3, 0.34, 0.12), blue, group, [sx * (W / 2 + 0.17), H / 2, sz * (D / 2 + 0.17)], { cast: false });
+    mesh(rbox(W + 0.62, 0.26, 0.32, 0.1), blue, group, [0, 0.06, D / 2 + 0.17]);
+    for (const sx of [-1, 1]) mesh(rbox(0.32, 0.26, D + 0.4, 0.1), blue, group, [sx * (W / 2 + 0.17), 0.06, 0]);
+    mesh(rbox(W + 0.74, 0.5, D + 0.74, 0.16), blue, group, [0, H + 0.2, 0], { cast: false });
+    mesh(rbox(W + 0.4, 0.14, D + 0.3, 0.06), blueDeep, group, [0, H + 0.5, -0.12], { cast: false });
+    // the marquee: a red band over the front with bulbs (two sets chase each other)
+    const marq = grp(group, 0, H + 0.66, D / 2 + 0.1);
+    mesh(rbox(W + 0.95, 0.7, 0.78, 0.24), red, marq, [0, 0, 0], { cast: false });
+    mesh(rbox(W + 0.75, 0.14, 0.82, 0.07), M.plastic('#ff8a80', { rough: 0.3, clear: 0.8 }), marq, [0, 0.3, 0], { cast: false });
+    const bulbCols = ['#ffd43b', '#7fe6ff', '#ffffff', '#ff9ecb', '#a6f28b'];
+    const bulbs = [];
+    const nB = 15;
+    for (let i = 0; i < nB; i++) {
+      const c = bulbCols[i % bulbCols.length];
+      const m = new T.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.6, roughness: 0.25 });
+      const b = mesh(SPH, m, marq, [-W / 2 - 0.1 + i * (W + 0.2) / (nB - 1), 0.02, 0.41], { scale: [0.13, 0.13, 0.08], cast: false });
+      bulbs.push(b);
+    }
+    // inside: back wall (soft blurred carnival), ceiling light box, glass panes with glints
+    const back = mesh(new T.PlaneGeometry(W, H), new T.MeshStandardMaterial({ map: backTex(), roughness: 0.95 }), group, [0, H / 2, -D / 2], { cast: false });
+    const ceil = mesh(new T.PlaneGeometry(W, D), M.plastic('#f6f0ff', { rough: 0.8, clear: 0 }), group, [0, H, 0], { rot: [Math.PI / 2, 0, 0], cast: false });
+    mesh(rbox(W * 0.7, 0.04, 0.5, 0.02), new T.MeshStandardMaterial({ color: '#ffffff', emissive: '#fff8e8', emissiveIntensity: 0.9 }), group, [0, H - 0.03, -0.2], { cast: false });
+    const glassF = mesh(new T.PlaneGeometry(W, H - 0.2), M.glass(0.07), group, [0, H / 2 + 0.1, D / 2 + 0.02], { cast: false, recv: false });
+    glassF.renderOrder = 10; glassF.userData.glass = true;
+    for (const sx of [-1, 1]) {
+      const sg = mesh(new T.PlaneGeometry(D, H), M.glass(0.12), group, [sx * W / 2, H / 2, 0], { rot: [0, Math.PI / 2, 0], cast: false, recv: false });
+      sg.renderOrder = 9; sg.userData.glass = true;
+    }
+    const glintM = new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.22, depthWrite: false });
+    for (const [x, w, o] of [[-2.2, 0.36, 0.2], [-1.75, 0.12, 0.16], [2.6, 0.28, 0.14]]) {
+      const gl = mesh(new T.PlaneGeometry(w, H * 1.1), glintM.clone(), group, [x, H / 2 + 0.1, D / 2 + 0.03], { rot: [0, 0, -0.42], cast: false, recv: false });
+      gl.material.opacity = o; gl.renderOrder = 11; gl.userData.glass = true;
+    }
+
+    // the back row's shelf (pink / teal blocks, like the mockup) and the floor under the balls
+    const SHELF_Y = 0.95, SHELF_Z0 = -D / 2, SHELF_Z1 = -0.42;
+    ['#f7a9bd', '#76d4c9', '#f7a9bd', '#76d4c9'].forEach((c, i) => {
+      mesh(rbox(W / 4 - 0.02, SHELF_Y, SHELF_Z1 - SHELF_Z0, 0.08), M.plastic(c, { rough: 0.55, clear: 0.3 }), group, [-W / 2 + W / 8 + i * W / 4, SHELF_Y / 2, (SHELF_Z0 + SHELF_Z1) / 2]);
+    });
+    mesh(new T.PlaneGeometry(W, D), M.plastic('#e9dcff', { rough: 0.8, clear: 0 }), group, [0, 0.005, 0], { rot: [-Math.PI / 2, 0, 0], cast: false });
+
+    // the chute: front-left corner, two low acrylic walls with a yellow rim, a dark hole
+    const CH = { x0: -W / 2, x1: -W / 2 + 1.3, z0: D / 2 - 1.4, z1: D / 2, h: 0.95 };
+    const chute = { x: (CH.x0 + CH.x1) / 2, z: (CH.z0 + CH.z1) / 2 + 0.05, floor: -0.9, box: CH };
+    mesh(new T.PlaneGeometry(CH.x1 - CH.x0, CH.z1 - CH.z0), new T.MeshStandardMaterial({ color: '#3a2f62', roughness: 0.9 }), group, [chute.x, 0.012, (CH.z0 + CH.z1) / 2], { rot: [-Math.PI / 2, 0, 0], cast: false });
+    const acr = new T.MeshPhysicalMaterial({ color: '#e8f6ff', transparent: true, opacity: 0.28, roughness: 0.1, clearcoat: 1, depthWrite: false, side: T.DoubleSide });
+    const wR = mesh(new T.PlaneGeometry(CH.z1 - CH.z0, CH.h), acr, group, [CH.x1, CH.h / 2, (CH.z0 + CH.z1) / 2], { rot: [0, Math.PI / 2, 0], cast: false, recv: false }); wR.renderOrder = 8;
+    const wB = mesh(new T.PlaneGeometry(CH.x1 - CH.x0, CH.h), acr, group, [chute.x, CH.h / 2, CH.z0], { cast: false, recv: false }); wB.renderOrder = 8;
+    const rim = M.plastic('#ffd23f', { rough: 0.3, clear: 0.8 });
+    mesh(rbox(0.09, 0.09, CH.z1 - CH.z0 + 0.04, 0.04), rim, group, [CH.x1, CH.h, (CH.z0 + CH.z1) / 2]);
+    mesh(rbox(CH.x1 - CH.x0 + 0.04, 0.09, 0.09, 0.04), rim, group, [chute.x, CH.h, CH.z0]);
+
+    // ball pit: glossy pastel balls (one instanced mesh)
+    const ballCols = ['#ffb3c9', '#ffe27a', '#8fe0c2', '#8ec9f5', '#c9b2f5', '#ffc79a', '#ff8f8f'];
+    const spots = [];
+    let seed = 11; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const R = 0.155;
+    for (let layer = 0; layer < 2; layer++) {
+      for (let z = SHELF_Z1 + 0.1; z < D / 2 - 0.1; z += R * 1.75) for (let x = -W / 2 + 0.14; x < W / 2 - 0.12; x += R * 1.8) {
+        const px = x + (layer ? R * 0.9 : 0) + (rnd() - 0.5) * 0.08, pz = z + (layer ? R * 0.85 : 0) + (rnd() - 0.5) * 0.08;
+        if (px < CH.x1 + 0.12 && pz > CH.z0 - 0.12) continue;
+        if (layer === 1 && rnd() < 0.18) continue;
+        spots.push([px, R * (1 + layer * 1.45) + (rnd() - 0.5) * 0.04, pz, Math.floor(rnd() * ballCols.length)]);
+      }
+    }
+    for (let i = 0; i < 26; i++) {                       // a few on the shelf, along its front edge
+      const px = -W / 2 + 0.3 + i * (W - 0.6) / 25;
+      spots.push([px, SHELF_Y + R * 0.8, SHELF_Z1 - 0.12 - rnd() * 0.12, Math.floor(rnd() * ballCols.length)]);
+    }
+    const im = new T.InstancedMesh(new T.SphereGeometry(R, 22, 16), new T.MeshPhysicalMaterial({ roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.15 }), spots.length);
+    const mtx = new T.Matrix4(), col = new T.Color();
+    spots.forEach((s, i) => { mtx.makeTranslation(s[0], s[1], s[2]); im.setMatrixAt(i, mtx); im.setColorAt(i, col.set(ballCols[s[3]])); });
+    im.castShadow = true; im.receiveShadow = true; group.add(im);
+
+    // chunky 3D letters lying in the pit (like the reference video's M A S T P)
+    const letters = grp(group);
+    try {
+      const font = new T.FontLoader().parse(window.CLAW_FONT3D);
+      [['m', '#ff8fb0', -0.36, 1.42, 0.3], ['a', '#ffcf4a', 1.82, 1.44, -0.28], ['s', '#9b8cff', 3.12, 1.48, 0.2]]
+        .forEach(([ch, c, x, z, ry]) => {
+          const g = new T.TextGeometry(ch, { font, size: 0.42, depth: 0.14, curveSegments: 6, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.03, bevelSegments: 3 });
+          g.center();
+          const m = mesh(g, M.plastic(c, { rough: 0.3, clear: 0.9 }), letters, [x, 0.56, z], { rot: [-0.32, ry, 0] });
+          m.userData.deco = true;
+        });
+    } catch (e) { console.warn('3d letters', e); }
+
+    // ── the claw ─────────────────────────────────────────────────────────────────────────────────
+    const RAIL_Y = H - 0.14;
+    for (const sz of [-1, 1]) mesh(rbox(W - 0.1, 0.07, 0.07, 0.03), M.chrome(), group, [0, RAIL_Y, sz * (D / 2 - 0.28)], { cast: false });
+    const gantry = grp(group, 0, RAIL_Y - 0.08, 0);
+    mesh(rbox(0.2, 0.13, D - 0.4, 0.05), lav, gantry, [0, 0, 0], { cast: false });
+    const trolley = grp(gantry, 0, 0, 0);
+    mesh(rbox(0.56, 0.3, 0.56, 0.1), lav, trolley, [0, -0.16, 0]);
+    mesh(SPH, new T.MeshStandardMaterial({ color: '#fff4a8', emissive: '#ffd84a', emissiveIntensity: 0.8 }), trolley, [0, -0.16, 0.29], { scale: [0.06, 0.06, 0.02], cast: false });
+    // the coiled cord: a unit-long helix, stretched to the claw
+    const helix = [];
+    for (let i = 0; i <= 600; i++) { const t = i / 600, a = t * Math.PI * 2 * 22; helix.push(V(Math.cos(a) * 0.045, -t, Math.sin(a) * 0.045)); }
+    const coil = mesh(new T.TubeGeometry(new T.CatmullRomCurve3(helix), 900, 0.012, 6, false), new T.MeshStandardMaterial({ color: '#2b2b33', roughness: 0.45 }), trolley, [0, -0.31, 0], { cast: false });
+    const head = grp(trolley, 0, -1.2, 0);              // hub top
+    const CLAW_S = 1.3;
+    const swing = grp(head); swing.scale.setScalar(CLAW_S);
+    mesh(new T.CylinderGeometry(0.1, 0.12, 0.2, 28), M.chrome(), swing, [0, -0.1, 0]);
+    mesh(SPH, lav, swing, [0, 0.01, 0], { scale: [0.13, 0.08, 0.13] });
+    mesh(new T.CylinderGeometry(0.135, 0.135, 0.05, 28), M.chrome(), swing, [0, -0.2, 0]);
+    const prongs = [];
+    // a "C" prong (in its own frame: down = -y, out = +z): out to the knuckle, then down and back in under the load
+    const PIV_R = 0.1, PIV_Y = -0.21;
+    const PA = [[0, 0, 0], [0, -0.12, 0.17], [0, -0.3, 0.28]], PB = [[0, -0.3, 0.28], [0, -0.5, 0.25], [0, -0.64, 0.1]];
+    const curveA = new T.CatmullRomCurve3(PA.map(p => V(...p))), curveB = new T.CatmullRomCurve3(PB.map(p => V(...p)));
+    const segA = new T.TubeGeometry(curveA, 20, 0.032, 10, false), segB = new T.TubeGeometry(curveB, 20, 0.032, 10, false);
+    const SAMPLE = [...curveA.getPoints(8), ...curveB.getPoints(10)];       // prong points for the grip test
+    // left, right and back: nothing in front of the face of the friend it carries
+    for (const yaw of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
+      const piv = grp(swing, Math.sin(yaw) * PIV_R, PIV_Y, Math.cos(yaw) * PIV_R);
+      piv.rotation.y = yaw;
+      const arm = grp(piv);
+      mesh(segA, M.chrome(), arm, null, { cast: true });
+      mesh(segB, M.chrome(), arm, null, { cast: true });
+      mesh(SPH, M.chrome(), arm, [0, -0.3, 0.28], { scale: 0.046 });
+      mesh(SPH, M.plastic('#c9a2f0', { rough: 0.5 }), arm, [0, -0.64, 0.1], { scale: 0.045 });
+      prongs.push(arm);
+    }
+    const hold = grp(swing, 0, -0.52, 0);               // ~ where a carried head sits (look-at / sparkle point)
+    // prong angle: open (negative = tips out) ... closed (positive = tips cross)
+    const OPEN = -0.8, SHUT = 0.16;
+    let grip = OPEN, cordLen = 0.9;
+    const setGrip = (a) => { grip = a; prongs.forEach(p => (p.rotation.x = a)); };
+    /* the most-closed angle at which no prong point is inside an ellipsoid head (world radii rx, ry) whose centre is
+       `depth` below the hub top — the prongs close round the head and stop at its surface */
+    const gripAngle = (depth, rx, ry, pad = 1.02) => {
+      for (let a = SHUT; a >= OPEN; a -= 0.01) {
+        const c = Math.cos(a), sn = Math.sin(a);
+        let ok = true;
+        for (const q of SAMPLE) {
+          const y = q.y * c - q.z * sn, z = q.y * sn + q.z * c;               // rotate about x
+          const r = (PIV_R + z) * CLAW_S, h = (PIV_Y + y) * CLAW_S + depth;    // radial distance, height over the centre
+          if ((r / (rx + 0.045 * CLAW_S)) ** 2 + (h / (ry + 0.045 * CLAW_S)) ** 2 < pad) { ok = false; break; }
+        }
+        if (ok) return a;
+      }
+      return OPEN;
+    };
+    const angleFor = (r) => { r /= CLAW_S; let best = OPEN, err = 1e9; for (let a = OPEN; a <= SHUT; a += 0.01) { const z = PIV_R + (-0.64 * Math.sin(a) + 0.1 * Math.cos(a)); if (Math.abs(z - r) < err) { err = Math.abs(z - r); best = a; } } return best; };
+    const HOME_Y = H - 0.72, CARRY_Y = H - 0.42;         // hub top: claw up (clears the back row) / carrying
+    const claw = {
+      x: 0, z: 0.3, y: HOME_Y, vx: 0, vz: 0, swingX: 0, swingZ: 0, svx: 0, svz: 0,
+      head, swing, hold, prongs, OPEN, SHUT, HOME_Y, CARRY_Y, CLAW_S, HOLD: 0.52 * CLAW_S, setGrip, angleFor, gripAngle,
+      get grip() { return grip; },
+      set(x, y, z) {
+        claw.x = x; claw.y = y; claw.z = z;
+        gantry.position.x = x; trolley.position.z = z;
+        cordLen = Math.max(0.06, (RAIL_Y - 0.08 - 0.31) - y);
+        head.position.y = -0.31 - cordLen;
+        coil.scale.y = cordLen;
+      },
+      /* world position of the hold point (a carried head's centre) */
+      holdWorld(out) { return hold.getWorldPosition(out || V(0, 0, 0)); },
+    };
+    claw.set(0, HOME_Y, 0.3); setGrip(OPEN * 0.55);
+
+    // ── the control panel: a ledge in front of the cabinet ─────────────────────────────────────────
+    const panel = grp(group, 0, -0.05, D / 2 + 0.92);
+    panel.rotation.x = 0.16;
+    mesh(rbox(W + 0.9, 0.34, 1.25, 0.16), blue, panel, [0, -0.17, 0]);
+    mesh(rbox(W + 0.7, 0.05, 1.1, 0.03), M.plastic('#a8def7', { rough: 0.45, clear: 0.5 }), panel, [0, 0.005, -0.02], { cast: false });
+    mesh(rbox(W + 0.95, 0.07, 0.07, 0.035), M.plastic('#ff8fd0', { rough: 0.2, clear: 0.9, emissive: '#ff5fc0', ei: 0.5 }), panel, [0, -0.27, 0.63], { cast: false });
+    const btn = (x, z, c, r = 0.2) => {
+      const g = grp(panel, x, 0.02, z);
+      mesh(new T.CylinderGeometry(r * 1.25, r * 1.32, 0.08, 32), M.plastic('#e8eef5', { rough: 0.3 }), g, [0, 0.03, 0]);
+      const cap = mesh(SPH, M.plastic(c, { rough: 0.25, clear: 1 }), g, [0, 0.08, 0], { scale: [r, r * 0.45, r] });
+      g.userData.cap = cap; return g;
+    };
+    const btnRed = btn(-3.2, 0.12, '#f0423c'), btnYel = btn(2.42, 0.2, '#ffcf2e', 0.17), btnRed2 = btn(3.0, -0.05, '#f0423c', 0.17);
+    // joystick: base, stick, red ball (tilts while driven)
+    const joy = grp(panel, 1.55, 0.02, 0.05);
+    mesh(new T.CylinderGeometry(0.24, 0.27, 0.07, 32), M.darkMetal(), joy, [0, 0.03, 0]);
+    const stick = grp(joy, 0, 0.06, 0);
+    mesh(new T.CylinderGeometry(0.035, 0.04, 0.42, 16), M.chrome(), stick, [0, 0.21, 0]);
+    mesh(SPH, M.plastic('#f0423c', { rough: 0.2, clear: 1 }), stick, [0, 0.46, 0], { scale: 0.15 });
+    // the little screen
+    const scr = screenCanvas(); drawScreen(scr, ['LEVEL 1', 'M A S T P']);
+    const scrTex = new T.CanvasTexture(scr); scrTex.colorSpace = T.SRGBColorSpace;
+    const sg = grp(panel, -1.75, 0.02, -0.08);
+    sg.rotation.x = -0.55;
+    mesh(rbox(1.15, 0.56, 0.12, 0.06), M.plastic('#c49af0', { rough: 0.35 }), sg, [0, 0.28, 0]);
+    mesh(new T.PlaneGeometry(1.0, 0.44), new T.MeshBasicMaterial({ map: scrTex, toneMapped: false }), sg, [0, 0.28, 0.063], { cast: false });
+    // coin slot
+    const coinPlate = grp(panel, 3.55, 0.02, 0.1);
+    mesh(rbox(0.42, 0.06, 0.62, 0.05), M.chrome(), coinPlate, [0, 0.03, 0]);
+    mesh(rbox(0.06, 0.02, 0.32, 0.01), new T.MeshBasicMaterial({ color: '#111111' }), coinPlate, [0, 0.065, 0], { cast: false });
+    const coin = mesh(new T.CylinderGeometry(0.17, 0.17, 0.04, 40), [M.plastic('#e8a816', { rough: 0.25, clear: 1 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 })], group, [0, 0, 0], { cast: false });
+    coin.visible = false;
+
+    // ── per-frame: bulbs chase, the claw sways after moves, the stick eases back ────────────────────
+    let chaseFast = 0, joyTarget = 0, joyK = 0, lastX = 0, lastZ = 0;
+    function tick(dt, t) {
+      const speed = chaseFast > 0 ? 14 : 4;
+      chaseFast = Math.max(0, chaseFast - dt);
+      bulbs.forEach((b, i) => {
+        const on = Math.sin(t * speed - i * 0.9) > (chaseFast > 0 ? 0 : 0.2);
+        b.material.emissiveIntensity += ((on ? 1.25 : 0.18) - b.material.emissiveIntensity) * Math.min(1, dt * 14);
+      });
+      // pendulum: driven by the trolley's acceleration
+      const vx = (claw.x - lastX) / Math.max(dt, 1e-3), vz = (claw.z - lastZ) / Math.max(dt, 1e-3);
+      const ax = (vx - claw.vx) / Math.max(dt, 1e-3), az = (vz - claw.vz) / Math.max(dt, 1e-3);
+      claw.vx = vx; claw.vz = vz; lastX = claw.x; lastZ = claw.z;
+      const L = cordLen + 0.5, k = 9.8 / L, c = 2.4;
+      claw.svz += (-k * claw.swingZ - c * claw.svz + Math.max(-30, Math.min(30, ax)) * 0.05) * dt; claw.swingZ += claw.svz * dt;
+      claw.svx += (-k * claw.swingX - c * claw.svx - Math.max(-30, Math.min(30, az)) * 0.05) * dt; claw.swingX += claw.svx * dt;
+      swing.rotation.z = claw.swingZ; swing.rotation.x = claw.swingX;
+      joyK += (joyTarget - joyK) * Math.min(1, dt * 12);
+      stick.rotation.z = -joyK * 0.45;
+    }
+
+    const api = {
+      group, W, D, H, SHELF_Y, claw, chute, bulbs, coin, coinPlate, joy, stick, panel, btnRed, btnYel, btnRed2, glassF, back, ceil,
+      /* six seats in a zig-zag (back row on the shelf, front row in the balls): every back seat sits in the gap between
+         two front ones, so all six letters show; neighbours are ~1.1 apart along x */
+      slots: [
+        { x: -2.55, y: SHELF_Y, z: -1.02, row: 'back' }, { x: -0.36, y: SHELF_Y, z: -1.02, row: 'back' }, { x: 1.84, y: SHELF_Y, z: -1.02, row: 'back' },
+        { x: -1.45, y: 0.2, z: 0.74, row: 'front' }, { x: 0.74, y: 0.2, z: 0.74, row: 'front' }, { x: 2.86, y: 0.2, z: 0.74, row: 'front' },
+      ],
+      FRONT_LANE: 1.2,
+      tick,
+      chase(sec = 1.5) { chaseFast = sec; },
+      setJoy(v) { joyTarget = Math.max(-1, Math.min(1, v)); },
+      setScreen(lines, accent) { drawScreen(scr, lines, accent); scrTex.needsUpdate = true; },
+      press(b) { const c = b.userData.cap; c.position.y = 0.04; setTimeout(() => (c.position.y = 0.08), 160); },
+      /* local points of the panel (for the HTML buttons over it) */
+      dropPoint: () => panel.localToWorld(V(0, 0.05, 0.1)),
+      joyPoint: () => joy.localToWorld(V(0, 0.45, 0)),
+      slotPoint: () => coinPlate.localToWorld(V(0, 0.1, 0)),
+      /* the claw's x range and the depth it rides at */
+      X_MIN: -W / 2 + 0.55, X_MAX: W / 2 - 0.55,
+    };
+    return api;
+  }
+
+  window.Machine = { build };
+})();

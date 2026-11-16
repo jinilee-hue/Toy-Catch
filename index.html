@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#7cc8f5">
+<title>Toy Catch</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%A7%B8%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/font.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app" data-screen="title" class="booting">
+  <div class="bg" id="bg"></div>
+  <canvas id="stage" aria-label="claw machine"></canvas>
+
+  <!-- floating letter bubbles, notes and sparkles round the machine (after the mockup) -->
+  <div class="deco" aria-hidden="true">
+    <!-- --x: mockup-u from the machine's middle, --y: mockup-u under the marquee top (1 mu = 1/125.6 of the machine width) -->
+    <i class="bub c-yel" style="--x:-65.6;--y:23.8;--d:0s">m</i>
+    <i class="bub c-pink" style="--x:-77.1;--y:34.2;--d:-1.1s">a</i>
+    <i class="bub c-green" style="--x:-65.9;--y:46;--d:-2.3s">a</i>
+    <i class="bub c-blue" style="--x:-60.5;--y:74.9;--d:-0.6s">m</i>
+    <i class="bub c-orange r" style="--x:61.8;--y:33.9;--d:-1.7s">s</i>
+    <i class="bub c-sky r" style="--x:76;--y:49;--d:-0.3s">p</i>
+    <i class="bub c-plain r" style="--x:67.8;--y:61.5;--d:-2.8s">t</i>
+    <i class="bub c-magenta r" style="--x:61.7;--y:75.2;--d:-1.4s">p</i>
+    <i class="note n1" style="--x:-65.4;--y:59.4;--d:-0.8s">♫</i>
+    <i class="note n2" style="--x:-72;--y:63;--d:-2s">♪</i>
+    <i class="note n3" style="--x:67.4;--y:43.9;--d:-1.2s">♪</i>
+    <i class="note n4" style="--x:76.2;--y:71.1;--d:-2.6s">♪</i>
+    <i class="spark" style="--x:-77.5;--y:18.5;--s:3;--d:-0.4s"></i>
+    <i class="spark" style="--x:-79.5;--y:22;--s:2;--d:-1.6s"></i>
+    <i class="spark" style="--x:-70.5;--y:57.8;--s:2;--d:-0.9s"></i>
+    <i class="spark" style="--x:-67.8;--y:66.4;--s:2;--d:-2.2s"></i>
+    <i class="spark" style="--x:-72.2;--y:69.8;--s:3.4;--d:-1.3s"></i>
+    <i class="spark" style="--x:69.1;--y:40.4;--s:2;--d:-0.2s"></i>
+    <i class="spark" style="--x:65;--y:52.6;--s:2.6;--d:-1.9s"></i>
+    <i class="spark" style="--x:71.3;--y:65.8;--s:2;--d:-2.7s"></i>
+    <i class="spark" style="--x:68.3;--y:69;--s:3;--d:-1s"></i>
+  </div>
+
+  <img class="logo" id="logo" src="assets/img/logo.webp" alt="Toy Catch" draggable="false">
+  <button class="start" id="start" aria-label="START"><span class="s1">S</span><span class="s2">T</span><span class="s3">A</span><span class="s4">R</span><span class="s5">T</span></button>
+
+  <!-- game HUD (score · target · time), like the game mockup -->
+  <div class="hud" aria-live="polite">
+    <div class="score"><span class="lbl">SCORE:</span><b id="score">0</b><i class="star" aria-hidden="true"></i></div>
+    <div class="target" id="target">
+      <div class="tg-main">
+        <span class="lbl">TARGET:</span><b class="tg-letter" id="tgLetter">M</b>
+        <button class="tg-snd" id="tgSnd" aria-label="Listen again"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.6L12 18.6V5.4L7.6 9.5z" fill="currentColor"/><path d="M15.4 8.6a4.6 4.6 0 0 1 0 6.8M17.9 6.2a8 8 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="tg-sub" id="tgSub">CATCH THE ‘M’!</div>
+    </div>
+    <div class="time" id="timeBox">
+      <i class="watch" aria-hidden="true"><svg viewBox="0 0 64 64"><rect x="26" y="2" width="12" height="7" rx="3" fill="#ff8a1f"/><path d="M12 14l6-5M52 14l-6-5" stroke="#ff8a1f" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="36" r="25" fill="#ffb53b" stroke="#e87a12" stroke-width="3"/><circle cx="32" cy="36" r="19" fill="#fffaf0"/><g stroke="#cfc3b0" stroke-width="2"><path d="M32 19v4M32 49v4M15 36h4M45 36h4"/></g><path id="watchHand" d="M32 36V22" stroke="#e8453c" stroke-width="3.4" stroke-linecap="round"/><path d="M32 36l8 5" stroke="#3b3b4f" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="36" r="2.6" fill="#3b3b4f"/></svg></i>
+      <div class="pill"><span class="lbl">TIME:</span><b id="time">45s</b></div>
+    </div>
+    <div class="tray" id="tray"></div>
+  </div>
+
+  <!-- sound · exit (every screen) -->
+  <div class="sys">
+    <button class="lang-tog" id="btnLang" data-l="en" aria-label="Voice language: English or Korean" aria-pressed="false"><span class="knob"></span><span class="flag on" data-l="en">EN</span><span class="flag" data-l="ko">한</span></button>
+    <button class="sysbtn" id="btnSound" aria-label="Sound"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.6L12 18.6V5.4L7.6 9.5z" fill="currentColor"/><g class="on"><path d="M15.4 8.6a4.6 4.6 0 0 1 0 6.8M17.9 6.2a8 8 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g><g class="off"><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></g></svg></button>
+    <button class="sysbtn" id="btnExit" aria-label="Exit"><svg viewBox="0 0 24 24"><path d="M10 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20H10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M14 8l4 4-4 4M18 12H9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div>
+
+  <!-- controls: the joystick's grab area (over the 3D stick) and the big DOWN button (over the panel's middle) -->
+  <div class="joy-hit" id="joyHit" aria-label="Move the claw"></div>
+  <button class="drop" id="drop" aria-label="Down"><span class="cap"><svg viewBox="0 0 48 48"><path d="M24 8v24" stroke="#fff" stroke-width="7" stroke-linecap="round"/><path d="M12 24l12 13 12-13" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="lbl">DOWN</span></button>
+
+  <div class="prompt go" id="go">GO!</div>
+  <div class="prompt down" id="downHint"><b>DOWN!</b><svg viewBox="0 0 40 52"><path d="M20 4v30" stroke="#2f7fe0" stroke-width="9" stroke-linecap="round"/><path d="M6 30l14 16 14-16" fill="#2f7fe0" stroke="#2f7fe0" stroke-width="6" stroke-linejoin="round"/></svg></div>
+  <div class="prompt big" id="bigMsg"></div>
+
+  <!-- the prize: the caught friend's word -->
+  <div class="prize" id="prize"><div class="glow"></div><div class="word" id="prizeWord"></div></div>
+
+  <div class="result" id="result">
+    <div class="card">
+      <div class="ribbon"><span id="rbText">GREAT JOB!</span></div>
+      <div class="stars" id="stars"><i></i><i></i><i></i></div>
+      <div class="caught" id="caught"></div>
+      <div class="final"><span class="lbl">SCORE</span><b id="finalScore">0</b></div>
+      <div class="btns">
+        <button class="pill-btn home" id="btnHome" aria-label="Home"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z" fill="currentColor"/></svg></button>
+        <button class="pill-btn again" id="btnAgain" aria-label="Play again"><svg viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/><path d="M19.5 4.5v4.6h-4.6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>PLAY AGAIN</span></button>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <img class="hand" id="hand" src="assets/img/hand.webp" alt="" draggable="false">
+  <div id="loading"><img src="assets/img/logo.webp" alt=""><div class="bar"><i></i></div></div>
+</div>
+
+<script src="vendor/three.iife.js"></script>
+<script src="js/font3d.js"></script>
+<script src="js/voice.js"></script>
+<script src="js/voice-data.js"></script>
+<script src="js/bgm-data.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/mats.js"></script>
+<script src="js/plush.js"></script>
+<script src="js/machine.js"></script>
+<script src="js/stage.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
