@@ -45,6 +45,8 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 - 기계 양옆에 떠다니는 **글자 동전** 8개(m a a m / s t s t): Magic Block 블럭 파스텔(`p-pink/butter/mint/sky/lavender/peach`, 값은 Phonics-Jenga
   `tower.ts` PASTELS)로 무광 면 + 테두리 홈 + 동전 두께, 글자는 블럭처럼 진한 잉크색에 밑에 밝은 립(찍힌 느낌). 4.2초마다 두 바퀴 휙 —
   거울 글자가 보이지 않게 scale은 1 → 0.07 → 1만 오간다.
+- 떠다니는 음표 4개는 로고에 있는 젤리 음표를 그대로 오려 쓴다(`tools/import_art.py --notes` → `assets/img/notes/`: 파란 ♫, 분홍·빨강·하늘 ♪).
+  로고가 바뀌면 `NOTES`의 상자 좌표를 다시 잴 것.
 - 배경 위 떠다니는 글자 방울·음표·반짝이는 HTML(기계 기준 좌표 `--x/--y`, 기계 단위 `--mu`).
 
 ## 실행 · 도구

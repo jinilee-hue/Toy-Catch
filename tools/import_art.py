@@ -9,6 +9,8 @@ photos, so never browse it).
 
   --bg       → assets/img/bg.webp     the carnival behind the 3D machine (its middle is empty), kept at 2752×1536, q90
   --logo     → assets/img/logo.webp   trimmed to its alpha box, ≤ 1400 px wide, q92 (alpha kept)
+  --notes    → assets/img/notes/<name>.webp  the logo's own music notes, cut out of toycatch_logo.png (each = the biggest
+               piece of the logo lying inside the note's box, + 5 px), for the notes floating round the machine on the intro
   --friends  → assets/img/friends/<kind>.webp (trimmed, ≤ 600 px tall, alpha) + js/friends-art.js: the same webp as data
                URLs (WebGL can't use image files from file://) with each picture's size and its head — the ellipse the
                claw closes round, measured from the alpha (widest row of the top half → narrowest row under it = neck),
@@ -55,6 +57,32 @@ def logo(name):
         im = im.resize((1400, round(im.height * 1400 / im.width)), Image.LANCZOS)
     im.save(OUT / 'logo.webp', 'WEBP', quality=92, method=6)
     print('logo', name, '→', OUT / 'logo.webp', im.size)
+
+
+# the box (x0, y0, x1, y1) round each note in toycatch_logo.png (2027 × 1212)
+NOTES = {'beamed-blue': (1580, 325, 1785, 500), 'pink': (0, 675, 110, 865), 'red': (200, 115, 330, 310), 'blue': (365, 330, 465, 515)}
+
+
+def notes(name='toycatch_logo.png'):
+    from scipy import ndimage
+    a = np.asarray(Image.open(DL / name).convert('RGBA'))
+    lab, n = ndimage.label(a[..., 3] > 40)
+    objs = ndimage.find_objects(lab)
+    (OUT / 'notes').mkdir(parents=True, exist_ok=True)
+    for key, (x0, y0, x1, y1) in NOTES.items():
+        inside = [i + 1 for i, sl in enumerate(objs)
+                  if sl[1].start >= x0 and sl[1].stop <= x1 and sl[0].start >= y0 and sl[0].stop <= y1]
+        assert inside, f'no note inside the {key} box: the logo changed — re-measure NOTES'
+        cid = max(inside, key=lambda i: (lab[objs[i - 1]] == i).sum())
+        keep = ndimage.binary_dilation(lab == cid, iterations=5)
+        c = a.copy()
+        c[..., 3] = np.where(keep, c[..., 3], 0)
+        im = Image.fromarray(c, 'RGBA')
+        im = im.crop(im.getbbox())
+        if im.height > 220:
+            im = im.resize((round(im.width * 220 / im.height), 220), Image.LANCZOS)
+        im.save(OUT / 'notes' / f'{key}.webp', 'WEBP', quality=90, method=6)
+        print(f'note {key:12s} {im.size}  aspect {im.width / im.height:.3f}')
 
 
 def head_of(alpha):
@@ -139,14 +167,17 @@ if __name__ == '__main__':
     ap.add_argument('--bg')
     ap.add_argument('--logo')
     ap.add_argument('--friends', action='store_true')
+    ap.add_argument('--notes', action='store_true')
     ap.add_argument('--check')
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    if not a.bg and not a.logo and not a.friends:
-        a.bg, a.logo, a.friends = 'toycatch_bg.png', 'toycatch_logo.png', True
+    if not a.bg and not a.logo and not a.friends and not a.notes:
+        a.bg, a.logo, a.friends, a.notes = 'toycatch_bg.png', 'toycatch_logo.png', True, True
     if a.bg:
         bg(a.bg)
     if a.logo:
         logo(a.logo)
+    if a.notes:
+        notes()
     if a.friends:
         friends(a.check)
