@@ -133,7 +133,7 @@
     mesh(rbox(0.09, 0.09, CH.z1 - CH.z0 + 0.04, 0.04), rim, group, [CH.x1, CH.h, (CH.z0 + CH.z1) / 2]);
     mesh(rbox(CH.x1 - CH.x0 + 0.04, 0.09, 0.09, 0.04), rim, group, [chute.x, CH.h, CH.z0]);
 
-    // ball pit: jelly candy balls (one instanced mesh) — more saturated than the first pastels (user: "공들도 컬러를 좀더
+    // ball pit: glossy candy balls (one instanced mesh) — more saturated than the first pastels (user: "공들도 컬러를 좀더
     // 채도가 높게")
     const ballCols = ['#ff86b6', '#ffd645', '#4fdaa9', '#57b5f7', '#ab8af7', '#ffa65c', '#ff6b6b'];
     const spots = [];
@@ -158,8 +158,7 @@
        little every time it lands from a hop (the excited hops under the claw, the cheering), the ones further out a
        moment later. Done in the vertex shader (the instances never move on the CPU), the same in the shadow pass. */
     const V4 = (n) => Array.from({ length: n }, () => new T.Vector4(0, 0, 0, 0));
-    const ballU = { uTime: { value: 0 }, uFT: { value: 0 }, uImp: { value: [0, 1, 2, 3].map(() => new T.Vector4(0, 0, -99, 0)) }, uFr: { value: V4(6) }, uFrP: { value: V4(6) },
-      uSpot: { value: new T.Vector4(0, 0, 1, 0) } };
+    const ballU = { uTime: { value: 0 }, uFT: { value: 0 }, uImp: { value: [0, 1, 2, 3].map(() => new T.Vector4(0, 0, -99, 0)) }, uFr: { value: V4(6) }, uFrP: { value: V4(6) } };
     const BALL_GLSL = `
       uniform float uTime, uFT; uniform vec4 uImp[4], uFr[6], uFrP[6];
       vec3 ballMove(vec3 p) {
@@ -192,49 +191,21 @@
         }
         return p + vec3(push.x, lift, push.y);
       }`;
-    /* jelly balls, like the logo's jelly letters (user: "로고처럼 좀 젤리같은 공 모양으로"): the lit glossy balls got a
-       dark grazing edge (clearcoat with nothing to reflect) that aliased into a wobbly dark outline. Now drawn by our
-       own shading: a luminous top, a deeper (still saturated, never grey) underside, light glowing through the edge, a
-       big soft highlight up-left with a small sparkle — no dark outline anywhere. The selection light's pool (uSpot) and
-       a soft shade round the friends sitting in the balls are added here too (this material takes no lights). */
-    const JELLY = `
-      varying vec3 vJN; varying vec3 vJV; varying vec2 vJP;
-      uniform vec4 uSpot; uniform vec4 uFr[6], uFrP[6];`;
-    const ballMat = new T.MeshBasicMaterial({ toneMapped: false });
+    /* glossy candy balls, lit like everything else in the machine (user: "공들 빛 너무 어색한데" — the self-lit jelly
+       shading ignored the scene's light: the same sticker highlight on every ball, glowing rims). The earlier dark
+       wobbly outline came from the clearcoat: at the silhouette it reflects an empty (black) environment and dims the
+       ball under it — so no clearcoat. A soft light through the edge (jelly) and a little glow keep the shady sides
+       candy-coloured instead of grey. */
+    const ballMat = new T.MeshStandardMaterial({ roughness: 0.26, metalness: 0 });
     const ballDepth = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking });
     for (const m of [ballMat, ballDepth]) m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, ballU);
       sh.vertexShader = sh.vertexShader.replace('void main() {', BALL_GLSL + '\nvoid main() {')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed = ballMove(transformed);');
       if (m !== ballMat) return;
-      sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying vec3 vJN; varying vec3 vJV; varying vec2 vJP;\nvoid main() {')
-        .replace('#include <project_vertex>', `#include <project_vertex>
-        vJN = normalize(normalMatrix * normal); vJV = -mvPosition.xyz; vJP = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);`);
-      sh.fragmentShader = sh.fragmentShader.replace('void main() {', JELLY + '\nvoid main() {')
-        .replace('#include <color_fragment>', `#include <color_fragment>
-        {
-          vec3 n = normalize(vJN), v = normalize(vJV);
-          float ndv = clamp(dot(n, v), 0.0, 1.0);
-          vec3 base = diffuseColor.rgb;
-          float up = n.y * 0.5 + 0.5;
-          vec3 deep = base * base * 0.5 + base * 0.42;               // deeper underneath, same hue
-          vec3 col = mix(deep, mix(base, vec3(1.0), 0.16), smoothstep(0.08, 0.95, up));
-          col += base * 0.1 * ndv * ndv;                              // a glow in the middle
-          col = mix(col, mix(base, vec3(1.0), 0.42), pow(1.0 - ndv, 3.0) * 0.62);   // light through the edge
-          // the selection light's pool
-          float sd = length(vJP - uSpot.xy);
-          col *= 1.0 + uSpot.w * 0.36 * (1.0 - smoothstep(uSpot.z * 0.5, uSpot.z * 1.05, sd));
-          // a soft shade round the friends sitting in the balls
-          for (int i = 0; i < 6; i++) {
-            float r = uFrP[i].y; if (r <= 0.0) continue;
-            col *= 1.0 - 0.13 * (1.0 - smoothstep(r * 0.55, r * 1.35, length(vJP - uFr[i].xy)));
-          }
-          // highlights: a big soft one up-left, a small sparkle next to it
-          float s1 = smoothstep(0.86, 0.94, dot(n, normalize(vec3(-0.45, 0.6, 0.66))));
-          float s2 = smoothstep(0.972, 0.988, dot(n, normalize(vec3(-0.08, 0.26, 0.96))));
-          col = mix(col, vec3(1.0), clamp(s1 * 0.82 + s2 * 0.55, 0.0, 1.0));
-          diffuseColor.rgb = col;
-        }`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { float ndv = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+          totalEmissiveRadiance += diffuseColor.rgb * (0.08 + 0.3 * pow(1.0 - ndv, 2.2)); }`);
     };
     const im = new T.InstancedMesh(new T.SphereGeometry(R, 44, 30), ballMat, spots.length);
     im.customDepthMaterial = ballDepth;
@@ -467,8 +438,6 @@
       /* the balls' motion (machine-group x, z) */
       balls: {
         splash(x, z, s = 1) { ballU.uImp.value[impN++ % 4].set(x, z, ballClock, s); },
-        /* the selection light's pool on the balls (machine x, z, radius, 0..1) */
-        spot(x, z, r, level) { ballU.uSpot.value.set(x, z, r, level); },
         /* the friends sitting in the pit: [{ x, z, ek, ck, ph, r }] (excited / cheering amounts, hop phase, footprint) */
         friends(list, t) {
           ballU.uFT.value = t;

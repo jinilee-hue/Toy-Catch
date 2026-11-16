@@ -131,7 +131,6 @@
         flare.material.opacity = (tune.flare ?? 0.55) * k; flare.scale.setScalar(0.2);
         flare.visible = flare.material.opacity > 0.003;
         lampMat.emissiveIntensity = lampE + 2.4 * k;
-        machine.balls.spot(dst.x, dst.z, light.position.distanceTo(dst) * Math.tan(light.angle), k);   // its pool on the jelly balls
       },
     };
   }
@@ -140,9 +139,8 @@
      block letters — a front face, a deep darker side under it, a thick round white outline with its own lavender side —
      on a royal-blue slab with a darker front edge. The slab's top face and the letters lie on the panel together: one
      perspective tilt (CSS .tilt) narrows both toward the top (user: "start 텍스트도 각도는 맞춰야지"). Coordinates are
-     the mockup's pixels in that crop (1 mu = 15.36 px). Every letter has two canvases: its white outline (all five under
-     all the letters, so the outlines merge into one — user: "흰색 라인은 같이 하나로 묶여있고") and the letter itself;
-     both swell and shrink together in a wave that keeps rolling along the word (CSS). */
+     the mockup's pixels in that crop (1 mu = 15.36 px). One still white outline round the whole word, and the letters'
+     weight waving inside it, one letter after another (below). */
   function buildStart() {
     const btn = $('#start');
     const BOX = [20, 6, 610, 216];                       // the button's box in crop px: x, y, w, h
@@ -194,29 +192,59 @@
       c.className = 'plate-top'; place(c, BOX[0], BOX[1], BOX[2], BOX[3]); tilt.appendChild(c);
     }
     btn.appendChild(tilt);
-    // the letters: outlines (appended first) and letters (appended after) — same box per letter, same wave
-    const outlines = [], letters = [];
-    LET.forEach(([ch, f0, f1, s0, s1], i) => {
-      const cx = x + adv[i] / 2, half = adv[i] / 2 + O + B + 10, top = BASE - FS * 0.82, h = FS * 0.82 + E + OS + O + B + 10;
-      const [oc, og] = canvas(half * 2, h);
-      og.translate(half, -top); og.scale(SX, 1);
-      og.font = font; og.textAlign = 'center'; og.textBaseline = 'alphabetic'; og.lineJoin = 'round';
-      const oLayer = (col, dy, lw) => { og.fillStyle = col; og.fillText(ch, 0, BASE + dy); og.strokeStyle = col; og.lineWidth = lw + B; og.strokeText(ch, 0, BASE + dy); };
-      // every stack in 0.5 px steps: coarser steps left ridges along the curves (user: "테두리가 깨져보이지 않게")
-      for (let dy = E + OS; dy >= E; dy -= 0.5) oLayer('#a9a1c2', dy, O * 2);                // the outline's own side
-      for (let dy = E; dy >= 0; dy -= 0.5) oLayer('#fbf4f6', dy, O * 2);                     // the white outline
-      oLayer('#fbf4f6', 0, O * 2);
-      oc.className = 'O'; oc.style.animationDelay = (i * 0.14) + 's';
-      place(oc, cx - half, top, half * 2, h); outlines.push(oc);
-      const [c, g] = canvas(half * 2, h);
+    const DMAX = 7;                                      // the wave: up to DMAX px bolder than the resting weight
+    const pos = []; { let xx = x; LET.forEach((_, i) => { pos.push(xx + adv[i] / 2); xx += adv[i] + TRACK; }); }
+    /* the white outline: ONE shape round the whole word (user: "흰색 라인은 같이 하나로 묶여있고"; per-letter outlines met
+       in V-notches and looked "조각조각") — every letter stroked thick into one mask, blurred and cut at half (a gooey
+       merge: the notches between letters fill with round fillets, like a sticker's outline); then its lavender side
+       and the white extruded under it like the letters. Drawn once: it stays still while the letters' weight waves. */
+    const OB = [BOX[0], -40, BOX[2], 262];               // the outline's box (the letters stand above the button's)
+    const gooey = (c, r, slope) => {
+      const g = c.getContext('2d'), w = c.width, h = c.height, img = g.getImageData(0, 0, w, h), d = img.data;
+      const a = new Float32Array(w * h), b = new Float32Array(w * h), n = 2 * r + 1;
+      for (let k = 0; k < w * h; k++) a[k] = d[k * 4 + 3] / 255;
+      const blurH = (src, dst) => { for (let y = 0; y < h; y++) { const o = y * w; let sum = 0;
+        for (let xx = -r; xx <= r; xx++) sum += src[o + Math.min(w - 1, Math.max(0, xx))];
+        for (let xx = 0; xx < w; xx++) { dst[o + xx] = sum / n; sum += src[o + Math.min(w - 1, xx + r + 1)] - src[o + Math.max(0, xx - r)]; } } };
+      const blurV = (src, dst) => { for (let xx = 0; xx < w; xx++) { let sum = 0;
+        for (let y = -r; y <= r; y++) sum += src[Math.min(h - 1, Math.max(0, y)) * w + xx];
+        for (let y = 0; y < h; y++) { dst[y * w + xx] = sum / n; sum += src[Math.min(h - 1, y + r + 1) * w + xx] - src[Math.max(0, y - r) * w + xx]; } } };
+      for (let k = 0; k < 2; k++) { blurH(a, b); blurV(b, a); }
+      for (let k = 0; k < w * h; k++) { d[k * 4] = d[k * 4 + 1] = d[k * 4 + 2] = 255; d[k * 4 + 3] = Math.round(255 * Math.min(1, Math.max(0, (a[k] - 0.5) * slope + 0.5))); }
+      g.putImageData(img, 0, 0);
+    };
+    {
+      const [mc, mg] = canvas(OB[2], OB[3]);
+      mg.translate(-OB[0], -OB[1]);
+      mg.font = font; mg.textAlign = 'center'; mg.textBaseline = 'alphabetic'; mg.lineJoin = 'round';
+      mg.fillStyle = mg.strokeStyle = '#fff'; mg.lineWidth = O * 2 + B + DMAX;
+      LET.forEach(([ch], i) => { mg.save(); mg.translate(pos[i], 0); mg.scale(SX, 1); mg.fillText(ch, 0, BASE); mg.strokeText(ch, 0, BASE); mg.restore(); });
+      gooey(mc, Math.round(4.5 * K), 8);
+      const tint = (col) => { const [c, g] = canvas(OB[2], OB[3]); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(mc, 0, 0);
+        g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height); return c; };
+      const wh = tint('#fbf4f6'), lv = tint('#a9a1c2');
+      const [oc, og] = canvas(OB[2], OB[3]); og.setTransform(1, 0, 0, 1, 0, 0);
+      for (let dy = E + OS; dy >= E; dy -= 0.5) og.drawImage(lv, 0, dy * K);
+      for (let dy = E; dy >= 0; dy -= 0.5) og.drawImage(wh, 0, dy * K);
+      oc.className = 'outline'; place(oc, OB[0], OB[1], OB[2], OB[3]); tilt.appendChild(oc);
+    }
+    /* the letters, each in its own canvas. The wave (user: "글자의 두께가 물결처럼 작아졌다 커졌다 순차적으로 계속
+       롤링"): each letter gets bolder and back, one after another, round and round, inside the still outline. Every
+       weight is drawn once (the resting one now, the rest a few per frame after the title shows); the wave only swaps
+       pictures. */
+    const NW = 6, FR = LET.map(() => []);
+    const hw = (i) => adv[i] / 2 + O + B + DMAX + 10, top = BASE - FS * 0.86, lh = FS * 0.86 + E + B + DMAX + 12;
+    const drawLetter = (i, extra) => {
+      const [ch, f0, f1, s0, s1] = LET[i], half = hw(i), BW = B + extra;
+      const [c, g] = canvas(half * 2, lh);
       g.translate(half, -top); g.scale(SX, 1);
       g.font = font; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round';
-      const layer = (col, dy, lw) => { g.fillStyle = col; g.fillText(ch, 0, BASE + dy); g.strokeStyle = col; g.lineWidth = lw + B; g.strokeText(ch, 0, BASE + dy); };
+      const layer = (col, dy, lw) => { g.fillStyle = col; g.fillText(ch, 0, BASE + dy); g.strokeStyle = col; g.lineWidth = lw + BW; g.strokeText(ch, 0, BASE + dy); };
       for (let dy = E; dy >= 0.5; dy -= 0.5) layer(mix(s0, s1, Math.min(1, dy / (E * 0.35))), dy, 1.2);   // the letter's side
       // the face, puffed: its own canvas, then a soft dark rim along the bottom edge and a light one along the top-left
       // (inner shadows: the shadow of everything OUTSIDE the letter, drawn only onto the letter)
-      const [fc, fg] = canvas(half * 2, h), [ic, ig] = canvas(half * 2, h);
-      for (const q of [fg, ig]) { q.setTransform(g.getTransform()); q.font = font; q.textAlign = 'center'; q.textBaseline = 'alphabetic'; q.lineJoin = 'round'; q.lineWidth = B; }
+      const [fc, fg] = canvas(half * 2, lh), [ic, ig] = canvas(half * 2, lh);
+      for (const q of [fg, ig]) { q.setTransform(g.getTransform()); q.font = font; q.textAlign = 'center'; q.textBaseline = 'alphabetic'; q.lineJoin = 'round'; q.lineWidth = BW; }
       const gr = fg.createLinearGradient(0, BASE - FS * 0.64, 0, BASE);
       gr.addColorStop(0, mix(f0, '#ffffff', 0.08)); gr.addColorStop(0.35, f0); gr.addColorStop(1, f1);
       fg.fillStyle = gr; fg.strokeStyle = gr; fg.fillText(ch, 0, BASE); fg.strokeText(ch, 0, BASE);
@@ -229,11 +257,37 @@
       fg.shadowColor = 'rgba(255,255,255,.42)'; fg.shadowBlur = 2.5 * K; fg.shadowOffsetX = 1.2 * K; fg.shadowOffsetY = 2.6 * K;
       fg.drawImage(ic, 0, 0);
       g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fc, 0, 0); g.restore();
-      c.className = 'L'; c.style.animationDelay = (i * 0.14) + 's';
-      place(c, cx - half, top, half * 2, h); letters.push(c);
-      x += adv[i] + TRACK;
+      return c;
+    };
+    const vis = LET.map((_, i) => {
+      const [c] = canvas(hw(i) * 2, lh); c.className = 'L';
+      place(c, pos[i] - hw(i), top, hw(i) * 2, lh); tilt.appendChild(c);
+      return c;
     });
-    for (const c of [...outlines, ...letters]) tilt.appendChild(c);
+    const show = (i, k) => { const c = vis[i], g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.drawImage(FR[i][k], 0, 0); };
+    LET.forEach((_, i) => { FR[i][0] = drawLetter(i, 0); show(i, 0); });
+    const todo = []; for (let k = 1; k < NW; k++) LET.forEach((_, i) => todo.push([i, k]));
+    let waveOn = false;
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches, cur = LET.map(() => 0);
+    const more = () => {
+      const t0 = performance.now();
+      while (todo.length && performance.now() - t0 < 8) { const [i, k] = todo.shift(); FR[i][k] = drawLetter(i, DMAX * k / (NW - 1)); }
+      if (todo.length) setTimeout(more, 16); else waveOn = true;
+    };
+    setTimeout(more, 300);
+    const wave = (now) => {
+      requestAnimationFrame(wave);
+      if (!waveOn || still || app.dataset.screen !== 'title') return;
+      const t = now / 1000;
+      LET.forEach((_, i) => {
+        const ph = ((((t - i * 0.14) % 1.7) + 1.7) % 1.7) / 1.7;
+        const pk = ph < 0.26 ? ph / 0.26 : ph < 0.56 ? 1 - (ph - 0.26) / 0.3 : 0;
+        const k = Math.round((0.5 - 0.5 * Math.cos(Math.PI * pk)) * (NW - 1));
+        if (k !== cur[i]) { cur[i] = k; show(i, k); }
+      });
+    };
+    requestAnimationFrame(wave);
+    G.startWave = { ready: () => waveOn, frames: () => cur.slice() };   // (QA)
   }
 
   /* the prize's sun-burst: turning rays behind the friend — in 3D, so the friend stays in front of it */
