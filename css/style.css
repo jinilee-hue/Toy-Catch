@@ -256,14 +256,6 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 }
 .prompt.go.show { animation: goPop 1.2s cubic-bezier(.3, 1.5, .5, 1) forwards; }
 @keyframes goPop { 0% { opacity: 0; transform: scale(.2) rotate(-12deg); } 25% { opacity: 1; transform: scale(1.15) rotate(4deg); } 40% { transform: scale(1) rotate(0); } 80% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.3); } }
-.prompt.down {
-  left: var(--downX); top: calc(var(--downY) - var(--downH) / 2 - 9 * var(--mu)); translate: -50% -50%; display: flex; flex-direction: column; align-items: center;
-  font: 800 calc(7 * var(--mu)) / 1 var(--font); color: #3d9df2; -webkit-text-stroke: calc(.8 * var(--mu)) #fff; paint-order: stroke fill;
-  text-shadow: 0 calc(.6 * var(--mu)) 0 #1a5bb0;
-}
-.prompt.down svg { width: calc(5 * var(--mu)); height: calc(6.4 * var(--mu)); margin-top: calc(-.4 * var(--mu)); filter: drop-shadow(0 0 calc(.4 * var(--mu)) #fff); }
-.prompt.down.show { opacity: 1; animation: downBob .8s ease-in-out infinite; }
-@keyframes downBob { 0%, 100% { margin-top: 0; } 50% { margin-top: calc(1.4 * var(--mu)); } }
 .prompt.big {
   left: var(--mx); top: calc(var(--mt) + 36 * var(--mu)); translate: -50% -50%; white-space: nowrap;
   font: 800 calc(12 * var(--mu)) / 1 var(--font); color: #ff5f8f; -webkit-text-stroke: calc(1.2 * var(--mu)) #fff; paint-order: stroke fill;

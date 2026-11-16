@@ -381,7 +381,7 @@
     const d = S.project(M.dropPoint()), j = S.project(M.joyPoint());
     st.setProperty('--dropX', d.x + 'px'); st.setProperty('--dropY', Math.min(h - 10 * mu, d.y) + 'px');
     st.setProperty('--joyX', j.x + 'px'); st.setProperty('--joyY', j.y + 'px');
-    // the 3D DOWN button's box on screen (for the invisible HTML button over it, the DOWN! hint and the hint glove)
+    // the 3D DOWN button's box on screen (for the invisible HTML button over it and the hint glove)
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
     for (const v of M.downRim()) { const q = S.project(v); x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); }
     st.setProperty('--downX', (x0 + x1) / 2 + 'px'); st.setProperty('--downY', (y0 + y1) / 2 + 'px');
@@ -430,12 +430,12 @@
     // (r: the light's width on the floor — a little wider than the friend, user: "선택 빛이 좀더 넓은게")
     spot.update(dt, cand ? { x: claw.x, z: cand.z, floorY: cand.root.position.y, r: cand.width * PS * 1.3,
       level: zone === 'hold' ? 1 : zone === 'weak' ? 0.45 : 0.2, friend: cand } : null);
-    // "DOWN!" when the claw rests over a friend
+    // the DOWN button glows and throbs while the claw is right over a friend (no "DOWN!" words over the pit any more —
+    // user: "이것도 빼줘")
     if (G.screen === 'game' && !G.busy) {
       G.idle += dt;
-      $('#downHint').classList.toggle('show', zone === 'hold' && G.idle > (G.round === 0 && G.tries === 0 ? 1.0 : 3.5) && Math.abs(G.aimX - claw.x) < 0.02);
       $('#drop').classList.toggle('ready', zone === 'hold'); machine.setDown({ ready: zone === 'hold' });
-    } else $('#downHint').classList.remove('show');
+    }
     // the round's clock
     if (G.timerOn) {
       G.time = Math.max(0, G.time - dt);
@@ -527,7 +527,7 @@
     });
     window.addEventListener('keyup', e => { if (e.key === 'ArrowLeft' || e.key === 'a') G.keys.l = 0; if (e.key === 'ArrowRight' || e.key === 'd') G.keys.r = 0; });
   }
-  function interact() { G.idle = 0; G.interacted = true; stopHint(); $('#downHint').classList.remove('show'); }
+  function interact() { G.idle = 0; G.interacted = true; stopHint(); }
 
   /* ── flow ───────────────────────────────────────────────────────────────────────────────────────── */
   function setScreen(s) { G.screen = s; app.dataset.screen = s; machine.setDown({ show: s === 'game' }); }
