@@ -175,7 +175,8 @@
     mesh(rbox(0.2, 0.13, D - 0.4, 0.05), lav, gantry, [0, 0, 0], { cast: false });
     const trolley = grp(gantry, 0, 0, 0);
     mesh(rbox(0.56, 0.3, 0.56, 0.1), lav, trolley, [0, -0.16, 0]);
-    mesh(SPH, new T.MeshStandardMaterial({ color: '#fff4a8', emissive: '#ffd84a', emissiveIntensity: 0.8 }), trolley, [0, -0.16, 0.29], { scale: [0.06, 0.06, 0.02], cast: false });
+    // the round lamp on the trolley's front: the selection light comes out of it (game.js makeSpot)
+    const lamp = mesh(SPH, new T.MeshStandardMaterial({ color: '#fff4a8', emissive: '#ffd84a', emissiveIntensity: 0.8 }), trolley, [0, -0.16, 0.29], { scale: [0.06, 0.06, 0.02], cast: false });
     // the coiled cord: a unit-long helix, stretched to the claw
     const helix = [];
     for (let i = 0; i <= 600; i++) { const t = i / 600, a = t * Math.PI * 2 * 22; helix.push(V(Math.cos(a) * 0.045, -t, Math.sin(a) * 0.045)); }
@@ -354,7 +355,7 @@
     }
 
     const api = {
-      group, W, D, H, SHELF_Y, claw, chute, bulbs, coin, coinPlate, joy, stick, panel, btnRed, btnYel, btnRed2, glassF, back, ceil,
+      group, W, D, H, SHELF_Y, claw, chute, bulbs, coin, coinPlate, joy, stick, panel, btnRed, btnYel, btnRed2, glassF, back, ceil, lamp,
       /* six seats in a zig-zag (back row on the shelf, front row in the balls): every back seat sits in the gap between
          two front ones, so all six letters show; neighbours are ~1.1 apart along x */
       slots: [

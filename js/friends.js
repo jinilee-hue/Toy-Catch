@@ -84,9 +84,10 @@
      own painted light stays the only light) — a little darker only where the cushion turns away near its outline, a
      touch more on its underside; facing the camera it is exactly the picture */
   function puffShade(sh) {
+    sh.uniforms.uLit = this.userData.uLit;               // (called as the material's method: this = that friend's material)
     sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying vec3 vPuffN;\nvoid main() {\n  vPuffN = normalize(normalMatrix * normal);');
     sh.fragmentShader = sh.fragmentShader
-      .replace('void main() {', 'varying vec3 vPuffN;\nvoid main() {')
+      .replace('void main() {', 'varying vec3 vPuffN;\nuniform float uLit;\nvoid main() {')
       .replace('#include <map_fragment>', `#include <map_fragment>
       {
         vec3 n = normalize(vPuffN);
@@ -94,6 +95,10 @@
         float away = pow(1.0 - clamp(n.z, 0.0, 1.0), 1.5);
         float shade = 1.0 - 0.14 * away - 0.08 * clamp(-n.y, 0.0, 1.0) * away;
         diffuseColor.rgb *= clamp(shade, 0.78, 1.0);
+        // under the claw's spotlight: lit from above — a little brighter all over, more on the top of the head and the
+        // shoulders, slightly warm (game.js makeSpot)
+        diffuseColor.rgb *= 1.0 + uLit * (0.07 + 0.24 * smoothstep(-0.25, 0.85, n.y));
+        diffuseColor.rgb *= mix(vec3(1.0), vec3(1.03, 1.0, 0.95), uLit);
       }`);
   }
 
@@ -143,6 +148,7 @@
     if (FLAT) { geo = new T.PlaneGeometry(w, h); geo.translate((0.5 - u) * w, h / 2, -BACK); }   // the head's middle over the root
     else geo = puffGeo(kind, w, h, u);
     const mat = new T.MeshBasicMaterial({ map: tex, alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+    mat.userData.uLit = { value: 0 };
     if (!FLAT) { mat.onBeforeCompile = puffShade; mat.side = T.DoubleSide; }   // (turned a little, the far edge shows its inside)
     const pic = new T.Mesh(geo, mat);
     pic.castShadow = true;
@@ -172,6 +178,7 @@
     P.hold = (on) => { P.st.held = on ? 1 : 0; };
     P.nope = (sec = 1.0) => { P.st.nope = sec; };
     P.lookAt = (p) => { P.st.look = p ? p.clone() : null; };
+    P.lit = (v) => { mat.userData.uLit.value = v; };       // the claw's spotlight on it (0..1, eased by the game)
     P.update = function (dt, t) {
       const s = P.st, ph = P.phase;
       s.ek = ease(s.ek, s.excite, Math.min(1, dt * 6));

@@ -24,7 +24,7 @@
     const u = U();
     for (let i = 0; i < n; i++) FX.parts.push({ k: 'paper', x: rnd(0, FX.w), y: rnd(-FX.h * 0.4, -10), vx: rnd(-10, 10) * u, vy: rnd(10, 30) * u, rot: rnd(0, 6), vr: rnd(-8, 8), w: rnd(1, 1.8) * u, h: rnd(0.5, 0.9) * u, c: COLS[i % COLS.length], life: rnd(3, 4.5), t: 0, flip: rnd(0, 6) });
   };
-  /* a firework: a ring of sparks with short trails */
+  /* a firework: a ring of round sparks */
   FX.firework = function (x, y, c) {
     const u = U(), n = 34, col = c || COLS[Math.floor(Math.random() * COLS.length)];
     for (let i = 0; i < n; i++) {
@@ -70,9 +70,9 @@
       } else if (p.k === 'spark') {
         p.px = p.x; p.py = p.y; p.vy += 22 * u * dt; p.vx *= 1 - 1.8 * dt; p.vy *= 1 - 1.8 * dt;
         p.x += p.vx * dt; p.y += p.vy * dt;
-        g.strokeStyle = p.c; g.lineWidth = p.r * 2; g.lineCap = 'round';
-        g.beginPath(); g.moveTo(p.x - p.vx * 0.06, p.y - p.vy * 0.06); g.lineTo(p.x, p.y); g.stroke();
-        g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.fill();
+        // round sparks only: a coloured dot with a white core — no trail lines (user: "파티클에 라인들 들어간거 빼줘")
+        g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, p.r * 1.5, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#fff'; g.beginPath(); g.arc(p.x, p.y, p.r * 0.75, 0, Math.PI * 2); g.fill();
       } else if (p.k === 'flash') {
         const k = p.t / p.life, r = p.r * (0.5 + k);
         const gr = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);

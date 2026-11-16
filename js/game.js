@@ -27,7 +27,7 @@
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
     icons: {}, shownSec: -1, miss: 0, rand: Math.random,
   };
-  let machine, claw, beam, burst;
+  let machine, claw, spot, burst;
   window.__claw = G;
 
   /* ── boot ───────────────────────────────────────────────────────────────────────────────────────── */
@@ -45,7 +45,7 @@
     await Friends.load();
     for (const k of Friends.KINDS) { G.all[k] = Friends.build(k); G.icons[k] = G.all[k].icon; }
     bar.style.width = '85%';
-    beam = makeBeam(); machine.group.add(beam);
+    spot = makeSpot(); machine.group.add(spot.group);
     burst = makeBurst(); S.scene.add(burst);
     S.onResize = layout;
     S.resize();
@@ -63,23 +63,76 @@
   }
 
   /* the soft guide light from the claw down to the plush it would grab */
-  function makeBeam() {
-    const tex = Mats.tex(64, 256, (g, w, h) => {
+  /* the selection light: it comes out of the round lamp on the claw's trolley (the yellow circle on the purple box above
+     the claw) and spreads down onto the friend under the claw (user: "집게 위에 가운데 원 거기서부터 나오게 해서 퍼지게") —
+     a soft cone (only its far half shows, so it never fogs the claw or the friend; its sides fade), the lamp glowing, a
+     real spotlight making a pool on the balls, and the friend lit from above (friends.js lit()). It falls where the
+     claw would go down: right over the friend it's bright, a little off it's dim. */
+  function makeSpot() {
+    const group = new T.Group();
+    const light = new T.SpotLight('#fff1d8', 0, 10, 0.3, 0.9, 1.2);
+    group.add(light, light.target);
+    const tex = Mats.tex(8, 256, (g, w, h) => {
       const gr = g.createLinearGradient(0, 0, 0, h);
-      gr.addColorStop(0, 'rgba(255,240,150,0.0)'); gr.addColorStop(0.15, 'rgba(255,240,150,0.55)'); gr.addColorStop(1, 'rgba(255,240,150,0.0)');
+      gr.addColorStop(0, 'rgba(255,244,214,1)'); gr.addColorStop(0.3, 'rgba(255,244,214,0.6)');
+      gr.addColorStop(0.85, 'rgba(255,244,214,0.24)'); gr.addColorStop(1, 'rgba(255,244,214,0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
     });
-    const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, opacity: 0 });
-    // soft edges: every bit of the cone fades as it turns side-on to the camera, so it reads as a glow — it was an even
-    // white trapezoid with hard sides, like a paper cone (user: "빛이 너무 어색한데")
-    mat.onBeforeCompile = (sh) => {
+    const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.BackSide, opacity: 0, toneMapped: false });
+    mat.onBeforeCompile = (sh) => {           // fades as the wall turns side-on to the camera: soft sides, no outline
       sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying float vFace;\nvoid main() {\n  { vec4 mvp = modelViewMatrix * vec4(position, 1.0); vFace = abs(dot(normalize(normalMatrix * normal), normalize(-mvp.xyz))); }');
       sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying float vFace;\nvoid main() {')
-        .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a *= pow(vFace, 2.2);');
+        .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a *= pow(vFace, 1.6);');
     };
-    const m = new T.Mesh(new T.CylinderGeometry(0.1, 0.5, 1, 32, 1, true), mat);
-    m.renderOrder = 5; m.visible = false;
-    return m;
+    const geo = new T.CylinderGeometry(0.08, 1, 1, 48, 1, true); geo.translate(0, -0.5, 0);   // top at 0, 1 long, downward
+    const cone = new T.Mesh(geo, mat); cone.renderOrder = 5; cone.raycast = () => {};
+    group.add(cone);
+    // its near half shows only up top, so the light is seen coming OUT of the lamp, in front of the cord and the hub;
+    // it fades out before the prongs and the friend
+    const texN = Mats.tex(8, 256, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, 0, h);
+      gr.addColorStop(0, 'rgba(255,244,214,0.9)'); gr.addColorStop(0.16, 'rgba(255,244,214,0.4)'); gr.addColorStop(0.36, 'rgba(255,244,214,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    const matN = mat.clone(); matN.map = texN; matN.side = T.FrontSide; matN.onBeforeCompile = mat.onBeforeCompile;
+    const coneN = new T.Mesh(geo, matN); coneN.renderOrder = 6; coneN.raycast = () => {};
+    cone.add(coneN);
+    // the lamp lights up: brighter, with a soft flare on it
+    const flareTex = Mats.tex(64, 64, (g, w, h) => {
+      const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+      gr.addColorStop(0, 'rgba(255,250,225,1)'); gr.addColorStop(0.3, 'rgba(255,236,170,0.55)'); gr.addColorStop(1, 'rgba(255,230,160,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    const flare = new T.Sprite(new T.SpriteMaterial({ map: flareTex, transparent: true, depthWrite: false, depthTest: false, blending: T.AdditiveBlending, opacity: 0, toneMapped: false }));
+    flare.renderOrder = 12; group.add(flare);
+    const lampMat = machine.lamp.material, lampE = lampMat.emissiveIntensity;
+    const src = V(0, 0, 0), dst = V(0, 0, 0), dir = V(0, 0, 0), DOWN = V(0, -1, 0);
+    let k = 0, lit = null;
+    return {
+      group,
+      /* at = { x, z, floorY, r, level 0..1, friend } or null */
+      update(dt, at) {
+        k = lerp(k, at ? at.level : 0, Math.min(1, dt * (at ? 6 : 9)));
+        machine.lamp.getWorldPosition(src); group.worldToLocal(src);
+        flare.position.copy(src);
+        if (at) {
+          dst.set(at.x, at.floorY, at.z);
+          dir.subVectors(dst, src); const len = dir.length(); dir.divideScalar(len);
+          cone.position.copy(src); cone.quaternion.setFromUnitVectors(DOWN, dir); cone.scale.set(at.r, len, at.r);
+          light.position.copy(src); light.target.position.copy(dst); light.angle = Math.atan(at.r / len) * 1.15;
+          if (lit !== at.friend) { if (lit) lit.lit(0); lit = at.friend; }
+        }
+        const tune = G.spotTune || {};                       // (QA: __claw.spotTune = { I, cone, lit, flare })
+        if (lit) lit.lit(at ? Math.min(1.5, k * (tune.lit ?? 1.2)) : 0);
+        if (!at && k < 0.02 && lit) { lit.lit(0); lit = null; }
+        light.intensity = (tune.I ?? 24) * k;
+        mat.opacity = matN.opacity = (tune.cone ?? 0.42) * k;
+        cone.visible = mat.opacity > 0.003;
+        flare.material.opacity = (tune.flare ?? 0.55) * k; flare.scale.setScalar(0.2);
+        flare.visible = flare.material.opacity > 0.003;
+        lampMat.emissiveIntensity = lampE + 2.4 * k;
+      },
+    };
   }
 
   /* the START button, after the intro mockup (design/intro_ref.png, the button at x 1050–1720, y 1300–1530): chunky
@@ -279,7 +332,7 @@
         if (moving && (trailT -= dt) < 0) { trailT = 0.05; const p = S.project(claw.holdWorld()); FX.sparkle(p.x, p.y - 20, 1, 3); }
       }
     }
-    // who's under the claw: it looks up and bounces; the guide light reaches down to it
+    // who's under the claw: it looks up and bounces; the spotlight falls on it
     const cand = G.screen === 'game' && !G.busy ? candidate() : null;
     const zone = cand ? aimZone(cand) : 'none';
     for (const p of G.inMachine) {
@@ -288,18 +341,9 @@
       if (G.screen === 'game' && !G.busy) p.lookAt(on || Math.abs(p.x - claw.x) < 1.6 ? claw.holdWorld() : null);
       else if (!G.busy) p.lookAt(null);
     }
-    if (cand) {
-      const top = cand.root.position.y + cand.top * PS, tipY = claw.y - 0.8;
-      const hgt = Math.max(0.2, tipY - top + 0.1);
-      // the light falls where the claw would go down (not on the friend's middle): bright when it's right over it
-      beam.visible = true; beam.position.set(claw.x, top - 0.1 + hgt / 2, cand.z); beam.scale.set(0.9, hgt, 0.9);
-      const want = zone === 'hold' ? 0.62 : zone === 'weak' ? 0.36 : 0.18;
-      beam.material.opacity = lerp(beam.material.opacity, want, Math.min(1, dt * 6));
-      beam.material.color.lerp(zone === 'hold' ? WHITE : ORANGE, Math.min(1, dt * 8));
-    } else if (beam.visible) {
-      beam.material.opacity = lerp(beam.material.opacity, 0, Math.min(1, dt * 8));
-      if (beam.material.opacity < 0.02) beam.visible = false;
-    }
+    // (where the claw would go down, not the friend's middle: bright right over it, dim a little off)
+    spot.update(dt, cand ? { x: claw.x, z: cand.z, floorY: cand.root.position.y, r: cand.width * PS * 0.62,
+      level: zone === 'hold' ? 1 : zone === 'weak' ? 0.45 : 0.2, friend: cand } : null);
     // "DOWN!" when the claw rests over a friend
     if (G.screen === 'game' && !G.busy) {
       G.idle += dt;
@@ -322,7 +366,6 @@
     if (burst.visible) { burst.lookAt(S.camera.position); burst.userData.disc.rotation.z += dt * 0.45; }
     FX.tick(dt);
   }
-  const WHITE = new T.Color(1, 1, 1), ORANGE = new T.Color(1, 0.62, 0.42);
   function candidate() {
     let best = null, bd = AIM.reach;
     for (const p of G.inMachine) { const d = Math.abs(p.x - claw.x); if (d < bd) { bd = d; best = p; } }
