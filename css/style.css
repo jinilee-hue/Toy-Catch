@@ -209,13 +209,24 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   width: calc(26 * var(--mu)); height: calc(24 * var(--mu)); border-radius: 50%; pointer-events: none; touch-action: none; cursor: grab;
 }
 #app[data-screen="game"] .joy-hit { pointer-events: auto; }
-.joy-hit::before, .joy-hit::after {   /* ◀ ▶ hints beside the stick */
-  content: ''; position: absolute; top: 34%; width: calc(4.4 * var(--mu)); height: calc(5.4 * var(--mu)); background: #fff;
-  clip-path: polygon(0 50%, 100% 0, 100% 100%); opacity: 0; transition: opacity .3s; filter: drop-shadow(0 0 2px rgba(0,0,0,.4));
+/* the joystick hint (no ◀ ▶ arrows — user: "저런 화살표 말고 다른거"): 'wiggle' is in 3D (machine.joyHint + game.js);
+   'ring' and 'ghost' are drawn here round the knob */
+.joy-hit[data-hint="ring"]::before, .joy-hit[data-hint="ring"]::after {
+  content: ''; position: absolute; left: 50%; top: 47%; width: calc(8 * var(--mu)); height: calc(8 * var(--mu)); translate: -50% -50%;
+  border-radius: 50%; border: calc(.6 * var(--mu)) solid rgba(255,238,150,.95); box-shadow: 0 0 calc(1.2 * var(--mu)) rgba(255,214,80,.85), inset 0 0 calc(1 * var(--mu)) rgba(255,214,80,.6);
+  opacity: 0; pointer-events: none;
 }
-.joy-hit::before { left: -2%; } .joy-hit::after { right: -2%; transform: scaleX(-1); }
-#app[data-screen="game"] .joy-hit.hint::before, #app[data-screen="game"] .joy-hit.hint::after { opacity: .9; animation: nudge 1s ease-in-out infinite; }
-@keyframes nudge { 0%, 100% { translate: 0; } 50% { translate: calc(-.8 * var(--mu)); } }
+#app[data-screen="game"] .joy-hit[data-hint="ring"].hint::before, #app[data-screen="game"] .joy-hit[data-hint="ring"].hint::after { animation: joyRipple 1.6s ease-out infinite; }
+#app[data-screen="game"] .joy-hit[data-hint="ring"].hint::after { animation-delay: .8s; }
+@keyframes joyRipple { 0% { scale: .45; opacity: .95; } 100% { scale: 1.9; opacity: 0; } }
+.joy-hit[data-hint="ghost"]::before, .joy-hit[data-hint="ghost"]::after {
+  content: ''; position: absolute; left: 50%; top: 45%; width: calc(4.4 * var(--mu)); height: calc(4.4 * var(--mu)); translate: -50% -50%;
+  border-radius: 50%; background: radial-gradient(circle at 36% 30%, rgba(255,190,180,.95), rgba(240,66,60,.8) 55%, rgba(190,25,25,.65)); opacity: 0; pointer-events: none;
+}
+#app[data-screen="game"] .joy-hit[data-hint="ghost"].hint::before { animation: joyGhostL 1.5s ease-out infinite; }
+#app[data-screen="game"] .joy-hit[data-hint="ghost"].hint::after { animation: joyGhostR 1.5s ease-out .75s infinite; }
+@keyframes joyGhostL { 0% { transform: translateX(0) scale(.95); opacity: .65; } 100% { transform: translateX(calc(-8 * var(--mu))) scale(.8); opacity: 0; } }
+@keyframes joyGhostR { 0% { transform: translateX(0) scale(.95); opacity: .65; } 100% { transform: translateX(calc(8 * var(--mu))) scale(.8); opacity: 0; } }
 
 /* ── prompts ── */
 .prompt { position: absolute; z-index: 12; pointer-events: none; opacity: 0; }

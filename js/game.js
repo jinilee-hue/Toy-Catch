@@ -11,6 +11,9 @@
   const $ = s => document.querySelector(s);
   const app = $('#app');
   const qs = new URLSearchParams(location.search);
+  // how the joystick hint looks (being chosen with the user): 'wiggle' the stick moves with the hint glove's drag and its
+  // knob glows · 'ring' soft rings ripple out round the knob · 'ghost' see-through knobs slide off to both sides
+  const JOY_HINT = ['wiggle', 'ring', 'ghost'].includes(qs.get('joyhint')) ? qs.get('joyhint') : 'wiggle';
   const V = (x, y, z) => new T.Vector3(x, y, z);
   const lerp = (a, b, k) => a + (b - a) * k;
   const LETTERS = ['m', 'a', 's', 't'];
@@ -390,6 +393,12 @@
   function tick(dt, t) {
     machine.tick(dt, t);
     for (const p of Object.values(G.all)) if (p.root.parent) p.update(dt, t);
+    // 'wiggle' hint: the 3D stick tilts with the glove's drag (left at 20 %, right at 40 %, back at 50 % of its run)
+    if (JOY_HINT === 'wiggle' && hintAnim && hintAnim.playState === 'running' && !G.joy) {
+      const q = Math.min(1, (hintAnim.currentTime || 0) / 3600), e = q * q * (3 - 2 * q);
+      const tilt = e < 0.2 ? -e / 0.2 : e < 0.4 ? -1 + (e - 0.2) / 0.1 : e < 0.5 ? 1 - (e - 0.4) / 0.1 : 0;
+      machine.setJoy(tilt * 0.85);
+    }
     // the balls round the friends in the pit bounce with their hops (balls.friends)
     machine.balls.friends(G.inMachine.filter(p => p.home && p.home.y < 0.6 && p.root.parent === machine.group).map(p => ({
       x: p.root.position.x, z: p.root.position.z, ek: p.st.ek * (1 - p.st.hk), ck: p.st.ck * (1 - p.st.hk), ph: p.phase, r: p.width * PS * 0.36 })), t);
@@ -481,6 +490,7 @@
     $('#btnHome').addEventListener('click', () => goTitle());
     // joystick: drag sideways
     const jh = $('#joyHit');
+    jh.dataset.hint = JOY_HINT;
     let jp = null;
     jh.addEventListener('pointerdown', e => { if (G.screen !== 'game') return; jp = { id: e.pointerId, x: e.clientX }; try { jh.setPointerCapture(e.pointerId); } catch (er) { /* synthetic */ } interact(); e.preventDefault(); });
     jh.addEventListener('pointermove', e => { if (!jp || e.pointerId !== jp.id) return; const mu = parseFloat(app.style.getPropertyValue('--mu')) || 8; G.joy = Math.max(-1, Math.min(1, (e.clientX - jp.x) / (7 * mu))); machine.setJoy(G.joy); });
@@ -893,6 +903,7 @@
       const W2 = hand.offsetWidth * 0.38;
       if (hintAnim) hintAnim.cancel();
       $('#joyHit').classList.add('hint');
+      if (JOY_HINT === 'wiggle') machine.joyHint(true);
       hintAnim = hand.animate([
         { transform: `translate(${jx - W2}px, ${jy}px)` },
         { transform: `translate(${jx - W2 - 6 * mu}px, ${jy}px)`, offset: 0.2 },
@@ -916,6 +927,7 @@
   function stopHint() {
     const h = $('#hand'), a = hintAnim; hintAnim = null;
     h.classList.remove('on'); $('#joyHit').classList.remove('hint');
+    machine.joyHint(false); if (!G.joy) machine.setJoy(0);
     if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 

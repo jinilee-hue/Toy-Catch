@@ -372,7 +372,8 @@
     mesh(new T.CylinderGeometry(0.24, 0.27, 0.07, 32), M.darkMetal(), joy, [0, 0.03, 0]);
     const stick = grp(joy, 0, 0.06, 0);
     mesh(new T.CylinderGeometry(0.035, 0.04, 0.42, 16), M.chrome(), stick, [0, 0.21, 0]);
-    mesh(SPH, M.plastic('#f0423c', { rough: 0.2, clear: 1 }), stick, [0, 0.46, 0], { scale: 0.15 });
+    const knob = mesh(SPH, M.plastic('#f0423c', { rough: 0.2, clear: 1, emissive: '#ff5a3c', ei: 0 }), stick, [0, 0.46, 0], { scale: 0.15 });
+    let knobGlow = 0, knobGlowOn = false;
     // the little screen
     const scr = screenCanvas(); drawScreen(scr, ['LEVEL 1', 'M A S T']);
     const scrTex = new T.CanvasTexture(scr); scrTex.colorSpace = T.SRGBColorSpace;
@@ -407,6 +408,9 @@
       swing.rotation.z = claw.swingZ; swing.rotation.x = claw.swingX;
       joyK += (joyTarget - joyK) * Math.min(1, dt * 12);
       stick.rotation.z = -joyK * 0.45;
+      // the knob glows softly while the game shows how to move the stick (joyHint)
+      knobGlow += ((knobGlowOn ? 1 : 0) - knobGlow) * Math.min(1, dt * 5);
+      knob.material.emissiveIntensity = knobGlow * (0.3 + 0.28 * Math.sin(t * 6));
       // the DOWN button: pops in/out (springy), pulses while the claw is right over a friend, sinks when pressed,
       // goes dull while the claw is busy
       const ds = downSt;
@@ -434,6 +438,7 @@
       tick,
       chase(sec = 1.5) { chaseFast = sec; },
       setJoy(v) { joyTarget = Math.max(-1, Math.min(1, v)); },
+      joyHint(on) { knobGlowOn = !!on; },
       setScreen(lines, accent) { drawScreen(scr, lines, accent); scrTex.needsUpdate = true; },
       /* the balls' motion (machine-group x, z) */
       balls: {
