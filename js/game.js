@@ -131,6 +131,7 @@
         flare.material.opacity = (tune.flare ?? 0.55) * k; flare.scale.setScalar(0.2);
         flare.visible = flare.material.opacity > 0.003;
         lampMat.emissiveIntensity = lampE + 2.4 * k;
+        machine.balls.spot(dst.x, dst.z, light.position.distanceTo(dst) * Math.tan(light.angle), k);   // its pool on the jelly balls
       },
     };
   }
