@@ -3,6 +3,9 @@
  * with --mx (machine middle x) and --mt (marquee top y) — game.js measures the 3D machine and sets them. */
 :root {
   --u: min(1vh, calc(100vw / 177.78));
+  /* one height for the HUD boxes — score, friends tray, time, sound / exit, EN/한 (user: "박스들 높이 통일해서 줄여줘";
+     the target letter pill and its speaker in the middle keep their size). Everything in those boxes is a share of it. */
+  --hb: calc(7.6 * var(--u));
   --mu: 1vh; --mx: 50vw; --mt: 12.5vh;
   --dropX: 50vw; --dropY: 93vh; --joyX: 62vw; --joyY: 92vh; --downX: 50vw; --downY: 95vh; --downW: 20vh; --downH: 9vh;
   --font: 'Baloo 2', 'Arial Rounded MT Bold', system-ui, sans-serif;
@@ -114,13 +117,13 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .hud { position: absolute; inset: 0; z-index: 8; pointer-events: none; opacity: 0; transition: opacity .5s; }
 #app[data-screen="game"] .hud { opacity: 1; }
 .hud .lbl { color: #ffe14a; }
-.hud-l { position: absolute; left: calc(4.5 * var(--u)); top: calc(4.6 * var(--u)); display: flex; align-items: center; gap: calc(1.6 * var(--u)); }
+.hud-l { position: absolute; left: calc(4.5 * var(--u)); top: calc(9.6 * var(--u) - var(--hb) / 2); display: flex; align-items: center; gap: calc(1.6 * var(--u)); }
 .score {
-  position: relative; height: calc(10 * var(--u)); padding: 0 calc(3.4 * var(--u)) 0 calc(.6 * var(--u));
-  display: flex; align-items: center; gap: calc(1.1 * var(--u));
+  position: relative; height: var(--hb); padding: 0 calc(.34 * var(--hb)) 0 calc(.06 * var(--hb));
+  display: flex; align-items: center; gap: calc(.11 * var(--hb));
   border-radius: 999px; background: linear-gradient(#ffc04d, #ff9a1f 60%, #ff8510);
-  box-shadow: inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(205,85,0,.45), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,60,10,.28);
-  font: 800 calc(6.4 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.7 * var(--u)) #b8500a; paint-order: stroke fill;
+  box-shadow: inset 0 calc(-.1 * var(--hb)) calc(.14 * var(--hb)) rgba(205,85,0,.45), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,60,10,.28);
+  font: 800 calc(.64 * var(--hb)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.07 * var(--hb)) #b8500a; paint-order: stroke fill;
   transform-origin: 30% 50%;
 }
 .score b { min-width: 1.5em; text-align: center; }
@@ -128,7 +131,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
    in the slot — drawn in index.html as an SVG with no outlines (rim and face are only light and shade, the star has a soft
    shadow under it). Round with the pill's end. A shine sweeps over it now and then; it flips twice when points come in.
    (Not .coin: that's the intro coins' class.) */
-.score .score-coin { position: relative; flex: none; width: calc(8.8 * var(--u)); height: calc(8.8 * var(--u)); filter: drop-shadow(0 calc(.35 * var(--u)) calc(.45 * var(--u)) rgba(150,60,0,.35)); }
+.score .score-coin { position: relative; flex: none; width: calc(.88 * var(--hb)); height: calc(.88 * var(--hb)); filter: drop-shadow(0 calc(.035 * var(--hb)) calc(.045 * var(--hb)) rgba(150,60,0,.35)); }
 .score .score-coin svg { display: block; width: 100%; height: 100%; }
 .score .score-coin::after {
   content: ''; position: absolute; left: 5%; top: 5%; width: 90%; height: 90%; border-radius: 50%; pointer-events: none;
@@ -164,29 +167,31 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .target.swap .tg-main { animation: swapIn .6s cubic-bezier(.3, 1.5, .5, 1); }
 @keyframes swapIn { 0% { transform: scale(.5) translateY(-30%); opacity: 0; } 100% { transform: none; opacity: 1; } }
 
-.time { position: absolute; right: calc(25.1 * var(--u)); top: calc(3.9 * var(--u)); display: flex; align-items: center; }
-.time .watch { position: relative; z-index: 1; width: calc(11.4 * var(--u)); height: calc(11.4 * var(--u)); filter: drop-shadow(0 calc(.6 * var(--u)) calc(.8 * var(--u)) rgba(120,60,10,.3)); }
+/* (right of it: 2.4u of space, then the sound / exit pair. The stopwatch's face is the box height (its crown pokes up
+   over it) and sits on the row's middle line) */
+.time { position: absolute; right: calc(6.9 * var(--u) + 2.17 * var(--hb)); top: calc(9.6 * var(--u) - .55 * var(--hb)); display: flex; align-items: center; }
+.time .watch { position: relative; z-index: 1; width: calc(1.1 * var(--hb)); height: calc(1.1 * var(--hb)); translate: 0 calc(-.07 * var(--hb)); filter: drop-shadow(0 calc(.05 * var(--hb)) calc(.07 * var(--hb)) rgba(120,60,10,.3)); }
 .time .watch svg { width: 100%; height: 100%; display: block; }
 .time .pill {
-  margin-left: calc(-3 * var(--u)); height: calc(10 * var(--u)); padding: 0 calc(3 * var(--u)) 0 calc(4 * var(--u));
+  margin-left: calc(-.3 * var(--hb)); height: var(--hb); padding: 0 calc(.3 * var(--hb)) 0 calc(.4 * var(--hb));
   display: flex; justify-content: center; align-items: center;
   border-radius: 999px; background: linear-gradient(#55b6ff, #2b8ff0 55%, #1d6fd8);
-  box-shadow: inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(10,60,160,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
-  font: 800 calc(6.2 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.6 * var(--u)) #163d8f; paint-order: stroke fill;
+  box-shadow: inset 0 calc(-.1 * var(--hb)) calc(.14 * var(--hb)) rgba(10,60,160,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
+  font: 800 calc(.62 * var(--hb)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.06 * var(--hb)) #163d8f; paint-order: stroke fill;
 }
 .time .pill b { min-width: 2.2em; text-align: center; }
-.time.low .pill { background: linear-gradient(#ff8a7a, #f0473c 60%, #d82f2a); box-shadow: inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(150,15,15,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,20,10,.25); }
+.time.low .pill { background: linear-gradient(#ff8a7a, #f0473c 60%, #d82f2a); box-shadow: inset 0 calc(-.1 * var(--hb)) calc(.14 * var(--hb)) rgba(150,15,15,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,20,10,.25); }
 .time.low { animation: bump .5s ease-out infinite; }
 .time.paused .pill b { opacity: .75; }
 
 /* caught-friends tray: one solid plate (it floats over the marquee, so nothing see-through) */
-.tray { position: relative; display: flex; gap: calc(1 * var(--u)); padding: calc(.9 * var(--u)) calc(1.3 * var(--u));
+.tray { position: relative; display: flex; align-items: center; gap: calc(.1 * var(--hb)); height: var(--hb); padding: 0 calc(.14 * var(--hb));
   border-radius: 999px; background: linear-gradient(#ffffff, #eaf3ff);
-  box-shadow: inset 0 calc(-.8 * var(--u)) calc(1.2 * var(--u)) rgba(120,160,220,.3), 0 calc(.6 * var(--u)) calc(1.3 * var(--u)) rgba(30,60,120,.28); }
+  box-shadow: inset 0 calc(-.08 * var(--hb)) calc(.12 * var(--hb)) rgba(120,160,220,.3), 0 calc(.6 * var(--u)) calc(1.3 * var(--u)) rgba(30,60,120,.28); }
 .tray .slot {
-  width: calc(7.4 * var(--u)); height: calc(7.4 * var(--u)); border-radius: 50%;
-  background: #dde9f8; box-shadow: inset 0 calc(.45 * var(--u)) calc(.7 * var(--u)) rgba(30,60,120,.22);
-  display: grid; place-items: center; font: 800 calc(3.6 * var(--u)) / 1 var(--font); color: rgba(60,90,160,.45);
+  width: calc(.8 * var(--hb)); height: calc(.8 * var(--hb)); border-radius: 50%;
+  background: #dde9f8; box-shadow: inset 0 calc(.045 * var(--hb)) calc(.07 * var(--hb)) rgba(30,60,120,.22);
+  display: grid; place-items: center; font: 800 calc(.39 * var(--hb)) / 1 var(--font); color: rgba(60,90,160,.45);
 }
 .tray .slot { position: relative; }
 .tray .slot img { position: absolute; left: 7%; top: 7%; width: 86%; height: 86%; object-fit: contain; filter: drop-shadow(0 calc(.3 * var(--u)) calc(.3 * var(--u)) rgba(0,0,0,.25)); }
@@ -194,15 +199,16 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .tray .slot.now { background: #fff3c4; box-shadow: 0 0 calc(1.4 * var(--u)) rgba(255,201,58,.95); }
 
 /* ── sound / exit ── */
-.sys { position: absolute; z-index: 40; right: calc(3 * var(--u)); top: calc(3 * var(--u)); display: flex; gap: calc(1.4 * var(--u)); }
-#app[data-screen="game"] .sys { top: calc(5.4 * var(--u)); right: calc(4.5 * var(--u)); }   /* in the HUD row, right of the time */
+.sys { position: absolute; z-index: 40; right: calc(3 * var(--u)); top: calc(3 * var(--u)); display: flex; gap: calc(.17 * var(--hb)); }
+#app[data-screen="game"] .sys { top: calc(9.6 * var(--u) - var(--hb) / 2); right: calc(4.5 * var(--u)); }   /* in the HUD row, right of the time */
 #app[data-screen="game"] .sysbtn { background: linear-gradient(#ffffff, #e6f0fb); }
 /* (one size on every screen: the intro's were bigger than the game's — user: "게임화면에 있는거와 크기 맞춰서 작게") */
 .sysbtn {
-  width: calc(8.4 * var(--u)); height: calc(8.4 * var(--u)); border-radius: 50%; display: grid; place-items: center; color: #2f5fb3;
+  position: relative; width: var(--hb); height: var(--hb); border-radius: 50%; display: grid; place-items: center; color: #2f5fb3;
   background: linear-gradient(rgba(255,255,255,.88), rgba(255,255,255,.62)); box-shadow: 0 calc(.6 * var(--u)) calc(1.4 * var(--u)) rgba(30,60,120,.22);
 }
 .sysbtn svg { width: 56%; height: 56%; }
+.sysbtn::after { content: ''; position: absolute; inset: calc(-.08 * var(--hb)); border-radius: 50%; }   /* (a slightly bigger tap area — small fingers) */
 .sysbtn .off { display: none; }
 #app.muted #btnSound .on { display: none; } #app.muted #btnSound .off { display: inline; }
 #app.muted #btnSound { color: #e8453c; }
@@ -334,14 +340,14 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.
-   Same height, glass and shadow as the round sound / exit buttons next to it (8.4u). */
-.lang-tog { position: relative; display: flex; align-items: center; gap: calc(.25 * var(--u)); height: calc(8.4 * var(--u)); padding: 0 calc(.67 * var(--u));
+   Same height (--hb), glass and shadow as the round sound / exit buttons next to it. */
+.lang-tog { position: relative; display: flex; align-items: center; gap: calc(.03 * var(--hb)); height: var(--hb); padding: 0 calc(.08 * var(--hb));
   border: 0; border-radius: 999px; background: linear-gradient(rgba(255,255,255,.88), rgba(255,255,255,.62)); box-shadow: 0 calc(.6 * var(--u)) calc(1.4 * var(--u)) rgba(30,60,120,.22);
-  cursor: pointer; font: 800 calc(2.8 * var(--u))/1 'Baloo 2', system-ui, sans-serif; color: #2f5fb3; -webkit-tap-highlight-color: transparent; }
-.lang-tog .knob { position: absolute; top: calc(.67 * var(--u)); left: calc(.67 * var(--u)); width: calc(7.06 * var(--u)); height: calc(7.06 * var(--u)); border-radius: 50%;
-  background: linear-gradient(#5aa8ff, #2f6fe0); box-shadow: inset 0 calc(-.45 * var(--u)) 0 rgba(0,0,0,.15); transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
-.lang-tog[data-l="ko"] .knob { transform: translateX(calc(7.31 * var(--u))); }
-.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(7.06 * var(--u)); height: calc(7.06 * var(--u)); padding-top: calc(.25 * var(--u)); transition: color .25s; color: #8fa3cf; }
+  cursor: pointer; font: 800 calc(.333 * var(--hb))/1 'Baloo 2', system-ui, sans-serif; color: #2f5fb3; -webkit-tap-highlight-color: transparent; }
+.lang-tog .knob { position: absolute; top: calc(.08 * var(--hb)); left: calc(.08 * var(--hb)); width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); border-radius: 50%;
+  background: linear-gradient(#5aa8ff, #2f6fe0); box-shadow: inset 0 calc(-.054 * var(--hb)) 0 rgba(0,0,0,.15); transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
+.lang-tog[data-l="ko"] .knob { transform: translateX(calc(.87 * var(--hb))); }
+.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); padding-top: calc(.03 * var(--hb)); transition: color .25s; color: #8fa3cf; }
 .lang-tog .flag.on { color: #fff; }
 .lang-tog:active { transform: scale(.96); }
 #app[data-screen="game"] .lang-tog { display: none; }
