@@ -162,6 +162,7 @@
     P.root.add(sh); P.blob = sh;
 
     P.top = h; P.width = w;
+    P.span = [-u * w, (1 - u) * w];                       // the picture's left / right edge from the root (scale 1)
     P.gripY = gy;
     P.headR = [rx * w, ry * h, rx * w * 0.8];
     P.gripR = rx * w;

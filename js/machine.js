@@ -152,13 +152,15 @@
       spots.push([px, SHELF_Y + R * 0.8, SHELF_Z1 - 0.12 - rnd() * 0.12, Math.floor(rnd() * ballCols.length)]);
     }
     /* 44 × 30 segments: with 22 × 16 the outlines were polygons and where two balls overlap the seam zig-zagged (user:
-       "테두리가 우글거려"). They move (user: "모션도 줄 수 있는지"): splash(x, z, s) — the balls round a point hop up in a ring
-       that runs outward and settles (the claw diving in, a friend lifted out or landing back), cheer(sec) — a wave of
-       hops along the pit (a right answer). Done in the vertex shader (the instances never move on the CPU), the same in
-       the shadow pass. */
-    const ballU = { uTime: { value: 0 }, uCheer: { value: 0 }, uImp: { value: [0, 1, 2, 3].map(() => new T.Vector4(0, 0, -99, 0)) } };
+       "테두리가 우글거려"). They move with what happens in the pit (user: "인형들의 움직임에 따라 공이 자연스럽게"):
+       splash(x, z, s) — the balls round a point hop up in a ring that runs outward and settles (the claw diving in, a
+       friend lifted out or landing back); friends(list, t) — the balls round each friend sitting in the pit pop up a
+       little every time it lands from a hop (the excited hops under the claw, the cheering), the ones further out a
+       moment later. Done in the vertex shader (the instances never move on the CPU), the same in the shadow pass. */
+    const V4 = (n) => Array.from({ length: n }, () => new T.Vector4(0, 0, 0, 0));
+    const ballU = { uTime: { value: 0 }, uFT: { value: 0 }, uImp: { value: [0, 1, 2, 3].map(() => new T.Vector4(0, 0, -99, 0)) }, uFr: { value: V4(6) }, uFrP: { value: V4(6) } };
     const BALL_GLSL = `
-      uniform float uTime, uCheer; uniform vec4 uImp[4];
+      uniform float uTime, uFT; uniform vec4 uImp[4], uFr[6], uFrP[6];
       vec3 ballMove(vec3 p) {
         vec2 c = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
         float h = fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453);
@@ -172,7 +174,21 @@
           float s = q.w * exp(-d * 1.35) * exp(-age * 0.9) * hop * (0.75 + 0.5 * h);
           lift += s * 0.2; push += (d > 0.001 ? dv / d : vec2(0.0)) * s * 0.05;
         }
-        lift += uCheer * 0.1 * max(0.0, sin(uTime * 7.5 - c.x * 1.7 + h * 1.5));
+        // friends' hops: every landing (friends.js: hops are |sin(t * 8.5 + ph)| excited, |sin(t * 7 + ph * 0.3)| cheering)
+        // pops the balls round it up for a short hop, the ones further out a moment later
+        for (int i = 0; i < 6; i++) {
+          vec4 f = uFr[i]; vec4 fp = uFrP[i];
+          if (f.z + f.w < 0.01) continue;
+          vec2 dv = c - f.xy; float d = length(dv);
+          float rim = max(0.0, d - fp.y);
+          float fall = exp(-rim * 4.2) * smoothstep(0.0, fp.y * 0.5, d);
+          if (fall < 0.01) continue;
+          float tt = uFT - rim / 2.6 - h * 0.03;
+          float le = sin(clamp(mod(tt * 8.5 + fp.x, 3.14159) / 8.5 / 0.21, 0.0, 1.0) * 3.14159);
+          float lc = sin(clamp(mod(tt * 7.0 + fp.x * 0.3, 3.14159) / 7.0 / 0.27, 0.0, 1.0) * 3.14159);
+          float s = (f.z * le * 0.85 + f.w * lc) * fall * (0.7 + 0.6 * h);
+          lift += s * 0.1; push += (d > 0.001 ? dv / d : vec2(0.0)) * s * 0.026;
+        }
         return p + vec3(push.x, lift, push.y);
       }`;
     const ballMat = new T.MeshPhysicalMaterial({ roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.15 });
@@ -187,7 +203,7 @@
     const mtx = new T.Matrix4(), col = new T.Color();
     spots.forEach((s, i) => { mtx.makeTranslation(s[0], s[1], s[2]); im.setMatrixAt(i, mtx); im.setColorAt(i, col.set(ballCols[s[3]])); });
     im.castShadow = true; im.receiveShadow = true; im.frustumCulled = false; group.add(im);
-    let ballClock = 0, cheerT = 0, impN = 0;
+    let ballClock = 0, impN = 0;
 
     // chunky 3D letters lying in the pit (like the reference video's letters)
     const letters = grp(group);
@@ -366,8 +382,6 @@
     let chaseFast = 0, joyTarget = 0, joyK = 0, lastX = 0, lastZ = 0;
     function tick(dt, t) {
       ballClock += dt; ballU.uTime.value = ballClock;
-      cheerT = Math.max(0, cheerT - dt);
-      ballU.uCheer.value += ((cheerT > 0 ? 1 : 0) - ballU.uCheer.value) * Math.min(1, dt * 4);
       const speed = chaseFast > 0 ? 14 : 4;
       chaseFast = Math.max(0, chaseFast - dt);
       bulbs.forEach((b, i) => {
@@ -415,7 +429,15 @@
       /* the balls' motion (machine-group x, z) */
       balls: {
         splash(x, z, s = 1) { ballU.uImp.value[impN++ % 4].set(x, z, ballClock, s); },
-        cheer(sec = 2.5) { cheerT = sec; },
+        /* the friends sitting in the pit: [{ x, z, ek, ck, ph, r }] (excited / cheering amounts, hop phase, footprint) */
+        friends(list, t) {
+          ballU.uFT.value = t;
+          for (let i = 0; i < 6; i++) {
+            const f = list[i];
+            if (f) { ballU.uFr.value[i].set(f.x, f.z, f.ek, f.ck); ballU.uFrP.value[i].set(f.ph, f.r, 0, 0); }
+            else ballU.uFr.value[i].set(0, 0, 0, 0);
+          }
+        },
       },
       press(b) { const c = b.userData.cap; c.position.y = 0.04; setTimeout(() => (c.position.y = 0.08), 160); },
       /* the DOWN button: setDown({ show, on, ready }), pressDown(); downRim() = its rim's points in world space */

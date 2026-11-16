@@ -278,10 +278,27 @@
       kinds = [m2[0], 'ant', 'seal', t2[0], o[0], shuffle([m2[1], t2[1], ...o.slice(1)])[0]];
       kinds = shuffle(kinds);
     }
+    /* every friend must fit its seat: the left front seat is next to the prize chute and the outer seats are next to
+       the glass — the wide turtle (and fish) reached into the chute (user: "거북이 일때는 인형빠지는 영역을 침범해").
+       A friend that doesn't fit swaps seats with one that fits there (the seats themselves stay where they are);
+       failing that, it moves in just enough. */
+    const CH = machine.chute.box, WALL = machine.W / 2 - 0.02;
+    const lim = (s) => ({ lo: s.row === 'front' && s.x < CH.x1 + 1.5 ? CH.x1 + 0.03 : -WALL, hi: WALL });
+    const over = (k, s) => { const p = G.all[k]; if (!p || !s) return 0; const L = lim(s);
+      return Math.max(0, L.lo - (s.x + p.span[0] * PS)) + Math.max(0, s.x + p.span[1] * PS - L.hi); };
+    const seats = machine.slots;
+    for (let i = 0; i < seats.length; i++) {
+      if (!over(kinds[i], seats[i])) continue;
+      let best = -1;
+      for (let j = 0; j < seats.length; j++) if (j !== i && !over(kinds[i], seats[j]) && !over(kinds[j], seats[i])) { best = j; break; }
+      if (best >= 0) [kinds[i], kinds[best]] = [kinds[best], kinds[i]];
+    }
     G.inMachine = [];
-    machine.slots.forEach((s, i) => {
+    machine.slots.forEach((s0, i) => {
       const p = G.all[kinds[i]];
       if (!p) return;
+      const L = lim(s0), x = Math.min(L.hi - p.span[1] * PS, Math.max(L.lo - p.span[0] * PS, s0.x));
+      const s = { ...s0, x };
       p.root.position.set(s.x, s.y, s.z);
       p.root.rotation.set(0, 0, 0);                    // the picture turns to the camera by itself
       p.root.scale.setScalar(PS);
@@ -318,6 +335,9 @@
   function tick(dt, t) {
     machine.tick(dt, t);
     for (const p of Object.values(G.all)) if (p.root.parent) p.update(dt, t);
+    // the balls round the friends in the pit bounce with their hops (balls.friends)
+    machine.balls.friends(G.inMachine.filter(p => p.home && p.home.y < 0.6 && p.root.parent === machine.group).map(p => ({
+      x: p.root.position.x, z: p.root.position.z, ek: p.st.ek * (1 - p.st.hk), ck: p.st.ck * (1 - p.st.hk), ph: p.phase, r: p.width * PS * 0.36 })), t);
     // the claw follows the aim (title: wanders)
     if (G.screen === 'title' && !G.busy) G.aimX = Math.sin(t * 0.45) * 2.4;
     if (!G.busy && (G.screen === 'title' || G.screen === 'game')) {
@@ -633,7 +653,7 @@
   async function correct(p, tok) {
     const sp = plushScreen(p);
     FX.confetti(sp.x, sp.y, 130); FX.stars(sp.x, sp.y, 16);
-    A.sfxPlay('fanfare'); machine.chase(3.5); machine.balls.cheer(2.8);
+    A.sfxPlay('fanfare'); machine.chase(3.5);
     for (const o of G.inMachine) o.cheer(2.6);
     p.cheer(3);
     const gain = 100 + (G.tries === 0 ? 50 : 0);

@@ -186,9 +186,10 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 /* ── sound / exit ── */
 .sys { position: absolute; z-index: 40; right: calc(3 * var(--u)); top: calc(3 * var(--u)); display: flex; gap: calc(1.4 * var(--u)); }
 #app[data-screen="game"] .sys { top: calc(5.4 * var(--u)); right: calc(4.5 * var(--u)); }   /* in the HUD row, right of the time */
-#app[data-screen="game"] .sysbtn { width: calc(8.4 * var(--u)); height: calc(8.4 * var(--u)); background: linear-gradient(#ffffff, #e6f0fb); }
+#app[data-screen="game"] .sysbtn { background: linear-gradient(#ffffff, #e6f0fb); }
+/* (one size on every screen: the intro's were bigger than the game's — user: "게임화면에 있는거와 크기 맞춰서 작게") */
 .sysbtn {
-  width: calc(10 * var(--u)); height: calc(10 * var(--u)); border-radius: 50%; display: grid; place-items: center; color: #2f5fb3;
+  width: calc(8.4 * var(--u)); height: calc(8.4 * var(--u)); border-radius: 50%; display: grid; place-items: center; color: #2f5fb3;
   background: linear-gradient(rgba(255,255,255,.88), rgba(255,255,255,.62)); box-shadow: 0 calc(.6 * var(--u)) calc(1.4 * var(--u)) rgba(30,60,120,.22);
 }
 .sysbtn svg { width: 56%; height: 56%; }
@@ -312,14 +313,14 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.
-   Same height, glass and shadow as the round sound / exit buttons next to it. */
-.lang-tog { position: relative; display: flex; align-items: center; gap: calc(.3 * var(--u)); height: calc(10 * var(--u)); padding: 0 calc(.8 * var(--u));
+   Same height, glass and shadow as the round sound / exit buttons next to it (8.4u). */
+.lang-tog { position: relative; display: flex; align-items: center; gap: calc(.25 * var(--u)); height: calc(8.4 * var(--u)); padding: 0 calc(.67 * var(--u));
   border: 0; border-radius: 999px; background: linear-gradient(rgba(255,255,255,.88), rgba(255,255,255,.62)); box-shadow: 0 calc(.6 * var(--u)) calc(1.4 * var(--u)) rgba(30,60,120,.22);
-  cursor: pointer; font: 800 calc(3.3 * var(--u))/1 'Baloo 2', system-ui, sans-serif; color: #2f5fb3; -webkit-tap-highlight-color: transparent; }
-.lang-tog .knob { position: absolute; top: calc(.8 * var(--u)); left: calc(.8 * var(--u)); width: calc(8.4 * var(--u)); height: calc(8.4 * var(--u)); border-radius: 50%;
+  cursor: pointer; font: 800 calc(2.8 * var(--u))/1 'Baloo 2', system-ui, sans-serif; color: #2f5fb3; -webkit-tap-highlight-color: transparent; }
+.lang-tog .knob { position: absolute; top: calc(.67 * var(--u)); left: calc(.67 * var(--u)); width: calc(7.06 * var(--u)); height: calc(7.06 * var(--u)); border-radius: 50%;
   background: linear-gradient(#5aa8ff, #2f6fe0); box-shadow: inset 0 calc(-.45 * var(--u)) 0 rgba(0,0,0,.15); transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
-.lang-tog[data-l="ko"] .knob { transform: translateX(calc(8.7 * var(--u))); }
-.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(8.4 * var(--u)); height: calc(8.4 * var(--u)); padding-top: calc(.3 * var(--u)); transition: color .25s; color: #8fa3cf; }
+.lang-tog[data-l="ko"] .knob { transform: translateX(calc(7.31 * var(--u))); }
+.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(7.06 * var(--u)); height: calc(7.06 * var(--u)); padding-top: calc(.25 * var(--u)); transition: color .25s; color: #8fa3cf; }
 .lang-tog .flag.on { color: #fff; }
 .lang-tog:active { transform: scale(.96); }
 #app[data-screen="game"] .lang-tog { display: none; }
