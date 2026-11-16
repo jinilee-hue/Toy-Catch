@@ -91,24 +91,16 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 @keyframes logoBob { 0%, 100% { margin-top: 0; } 50% { margin-top: calc(-.9 * var(--mu)); } }
 #app:not([data-screen="title"]) .logo { transform: translateY(-70vh) scale(.8); opacity: 0; }
 
+/* START: block letters on a blue slab, drawn into canvases by game.js buildStart() after the intro mockup;
+   the box is the mockup's 610 × 216 px around the button (1 mu = 15.36 px) */
 .start {
   position: absolute; z-index: 6; left: var(--dropX); top: var(--dropY); translate: -50% -50%;
-  width: calc(38.4 * var(--mu)); height: calc(13.4 * var(--mu)); border-radius: calc(3.2 * var(--mu));
-  display: flex; align-items: center; justify-content: center; gap: calc(.15 * var(--mu)); padding-bottom: calc(1 * var(--mu));
-  background: linear-gradient(#5d7cf2, #3554d6 55%, #2a43b8);
-  box-shadow: inset 0 calc(.5 * var(--mu)) 0 rgba(255,255,255,.35), inset 0 calc(-1.4 * var(--mu)) 0 #1f3394, 0 calc(1.2 * var(--mu)) calc(2 * var(--mu)) rgba(20,30,90,.35);
+  width: calc(39.7 * var(--mu)); aspect-ratio: 610 / 216; padding: 0; border: 0; background: none;
   animation: breathe 1.8s ease-in-out infinite;
   transition: opacity .4s, transform .4s;
 }
-.start span {
-  font: 800 calc(11.2 * var(--mu)) / 1 var(--font); letter-spacing: -.02em;
-  -webkit-text-stroke: calc(.9 * var(--mu)) #fff; paint-order: stroke fill;
-  text-shadow: 0 calc(.55 * var(--mu)) 0 var(--sh), 0 calc(.9 * var(--mu)) 0 #1c2a78;
-  display: inline-block; animation: hopL 1.8s ease-in-out infinite;
-}
-.start .s1 { color: #ff4d5e; --sh: #c21f33; animation-delay: 0s; } .start .s2 { color: #ff9a1f; --sh: #c96500; animation-delay: .08s; }
-.start .s3 { color: #ffd23f; --sh: #c79a00; animation-delay: .16s; } .start .s4 { color: #3ccf6b; --sh: #1e8d42; animation-delay: .24s; }
-.start .s5 { color: #3d9df2; --sh: #1a64b8; animation-delay: .32s; }
+.start canvas { position: absolute; display: block; pointer-events: none; }
+.start .L { animation: hopL 1.8s ease-in-out infinite; }
 @keyframes breathe { 0%, 100% { scale: 1; } 50% { scale: 1.045; } }
 @keyframes hopL { 0%, 70%, 100% { transform: translateY(0); } 80% { transform: translateY(calc(-1.3 * var(--mu))); } }
 .start:active { scale: .96; }
@@ -326,7 +318,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 #app:not(.booting) #loading { opacity: 0; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .coin, .note, .spark, .logo, .start, .start span, .score .star { animation: none !important; }
+  .coin, .note, .spark, .logo, .start, .start .L, .score .star { animation: none !important; }
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.

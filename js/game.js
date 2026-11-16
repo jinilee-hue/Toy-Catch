@@ -35,6 +35,7 @@
     const bar = $('#loading .bar i');
     try { await Promise.race([document.fonts.load('800 100px "Baloo 2"'), A.sleep(2500)]); } catch (e) { /* fallback font */ }
     bar.style.width = '30%';
+    buildStart();
     S.init($('#stage'), { preserve: qs.has('preserve') });
     machine = Machine.build(); claw = machine.claw;
     S.machine = machine; S.scene.add(machine.group);
@@ -71,6 +72,81 @@
     const m = new T.Mesh(new T.CylinderGeometry(0.1, 0.5, 1, 32, 1, true), new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, opacity: 0 }));
     m.renderOrder = 5; m.visible = false;
     return m;
+  }
+
+  /* the START button, after the intro mockup (design/intro_ref.png, the button at x 1050–1720, y 1300–1530): chunky
+     block letters — a front face, a deep darker side under it, a thick round white outline with its own lavender side —
+     on a royal-blue slab with a darker front edge. Coordinates are the mockup's pixels in that crop (1 mu = 15.36 px);
+     every letter is drawn once into its own canvas (so the hops are cheap transforms), the slab into another. */
+  function buildStart() {
+    const btn = $('#start');
+    const BOX = [20, 6, 610, 216];                       // the button's box in crop px: x, y, w, h
+    const K = 2.2;                                       // canvas pixels per crop px (sharp on big Retina screens)
+    const FS = 150, SX = 1.2, TRACK = -1, BASE = 118;    // font size, widening (the mockup font is wider), baseline
+    const B = 7;                                         // extra weight: every layer gets a B-wide stroke (heavier than Baloo 800)
+    const E = 28, O = 8, OS = 7;                         // letter side depth, white outline, the outline's own side
+    const LET = [                                        // letter, face top, face bottom, side top, side bottom
+      ['S', '#ff5a70', '#f2465f', '#d32a49', '#86172f'],
+      ['T', '#ffbe50', '#ffa53c', '#e7652b', '#a33811'],
+      ['A', '#fde24c', '#f9da36', '#d6900e', '#bb7c16'],
+      ['R', '#86d97a', '#72ce66', '#6aa866', '#3b7343'],
+      ['T', '#68cfe5', '#52c1df', '#57b9e1', '#2378b4'],
+    ];
+    const font = `800 ${FS}px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif`;
+    const g0 = document.createElement('canvas').getContext('2d'); g0.font = font;
+    const adv = LET.map(([ch]) => g0.measureText(ch).width * SX);
+    let x = 327 - (adv.reduce((a, b) => a + b, 0) + TRACK * (LET.length - 1)) / 2;
+    const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const mix = (a, b, k) => 'rgb(' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k)).join(',') + ')';
+    const place = (cv, x0, y0, w, h) => Object.assign(cv.style, {
+      left: (x0 - BOX[0]) / BOX[2] * 100 + '%', top: (y0 - BOX[1]) / BOX[3] * 100 + '%',
+      width: w / BOX[2] * 100 + '%', height: h / BOX[3] * 100 + '%' });
+    const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = Math.ceil(w * K); c.height = Math.ceil(h * K); const g = c.getContext('2d'); g.scale(K, K); return [c, g]; };
+    const rr = (g, x0, y0, w, h, r) => { g.beginPath(); g.roundRect(x0, y0, w, h, r); };
+    btn.innerHTML = '';
+    // the slab: soft shadow on the panel, the darker front edge, the top face
+    {
+      const [c, g] = canvas(BOX[2], BOX[3]);
+      g.translate(-BOX[0], -BOX[1]);
+      // (soft edges with shadowBlur, not ctx.filter: older iPad Safari has no canvas filter)
+      let gr = g.createLinearGradient(0, 150, 0, 212); gr.addColorStop(0, '#2b479b'); gr.addColorStop(1, '#1c3584');
+      g.save(); g.shadowColor = 'rgba(16,32,90,.42)'; g.shadowBlur = 14 * K; g.shadowOffsetY = 7 * K;
+      g.fillStyle = gr; rr(g, 28, 46, 594, 166, 32); g.fill(); g.restore();
+      gr = g.createLinearGradient(0, 38, 0, 182); gr.addColorStop(0, '#4c82f8'); gr.addColorStop(1, '#456ce0');
+      g.fillStyle = gr; rr(g, 28, 38, 594, 144, 30); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.2)'; g.lineWidth = 2; rr(g, 30, 40, 590, 140, 28); g.stroke();
+      c.className = 'plate'; place(c, BOX[0], BOX[1], BOX[2], BOX[3]); btn.appendChild(c);
+    }
+    // the letters
+    LET.forEach(([ch, f0, f1, s0, s1], i) => {
+      const cx = x + adv[i] / 2, half = adv[i] / 2 + O + B + 10, top = BASE - FS * 0.82, h = FS * 0.82 + E + OS + O + B + 10;
+      const [c, g] = canvas(half * 2, h);
+      g.translate(half, -top); g.scale(SX, 1);
+      g.font = font; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round';
+      const layer = (col, dy, lw) => { g.fillStyle = col; g.fillText(ch, 0, BASE + dy); g.strokeStyle = col; g.lineWidth = lw + B; g.strokeText(ch, 0, BASE + dy); };
+      for (let dy = E + OS; dy >= E; dy -= 2) layer('#a9a1c2', dy, O * 2);                   // the outline's own side
+      for (let dy = E; dy >= 0; dy -= 4) layer('#fbf4f6', dy, O * 2);                        // the white outline
+      layer('#fbf4f6', 0, O * 2);
+      for (let dy = E; dy >= 1; dy -= 1) layer(mix(s0, s1, Math.min(1, dy / (E * 0.35))), dy, 1.2);   // the letter's side
+      // the face, puffed: its own canvas, then a soft dark rim along the bottom edge and a light one along the top-left
+      // (inner shadows: the shadow of everything OUTSIDE the letter, drawn only onto the letter)
+      const [fc, fg] = canvas(half * 2, h), [ic, ig] = canvas(half * 2, h);
+      for (const q of [fg, ig]) { q.setTransform(g.getTransform()); q.font = font; q.textAlign = 'center'; q.textBaseline = 'alphabetic'; q.lineJoin = 'round'; q.lineWidth = B; }
+      const gr = fg.createLinearGradient(0, BASE - FS * 0.64, 0, BASE);
+      gr.addColorStop(0, mix(f0, '#ffffff', 0.08)); gr.addColorStop(0.35, f0); gr.addColorStop(1, f1);
+      fg.fillStyle = gr; fg.strokeStyle = gr; fg.fillText(ch, 0, BASE); fg.strokeText(ch, 0, BASE);
+      ig.save(); ig.setTransform(1, 0, 0, 1, 0, 0); ig.fillStyle = '#000'; ig.fillRect(0, 0, ic.width, ic.height); ig.restore();
+      ig.globalCompositeOperation = 'destination-out'; ig.fillText(ch, 0, BASE); ig.strokeText(ch, 0, BASE);
+      fg.setTransform(1, 0, 0, 1, 0, 0); fg.globalCompositeOperation = 'source-atop';
+      fg.shadowColor = mix(s1, '#000000', 0.2).replace('rgb', 'rgba').replace(')', ',.45)'); fg.shadowBlur = 5 * K; fg.shadowOffsetY = -3.5 * K;
+      fg.drawImage(ic, 0, 0);
+      fg.shadowColor = 'rgba(255,255,255,.42)'; fg.shadowBlur = 2.5 * K; fg.shadowOffsetX = 1.2 * K; fg.shadowOffsetY = 2.6 * K;
+      fg.drawImage(ic, 0, 0);
+      g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fc, 0, 0); g.restore();
+      c.className = 'L'; c.style.animationDelay = (i * 0.08) + 's';
+      place(c, cx - half, top, half * 2, h); btn.appendChild(c);
+      x += adv[i] + TRACK;
+    });
   }
 
   /* the prize's sun-burst: turning rays behind the friend — in 3D, so the friend stays in front of it */
