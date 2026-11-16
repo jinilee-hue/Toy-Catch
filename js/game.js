@@ -551,6 +551,8 @@
     A.motor(false);
     if (tok !== G.tok) return;
     A.sfxPlay('grab');
+    // the prongs dive into the balls (a friend in the front row, or nothing): they splash; on the shelf just a little
+    machine.balls.splash(tx, tz, cand && cand.home.y > 0.6 ? 0.45 : 1);
     if (zone === 'knock') {
       // a prong comes down on the side of its head: it gets shoved away and wobbles; the claw shuts on nothing
       A.sfxPlay('boing'); cand.nope(0.9);
@@ -573,6 +575,7 @@
     const kSlip = 0.3 + G.rand() * 0.35, side = -Math.sign(off) || 1;
     let slipping = null;
     A.motor(true, 1.2);
+    if (held && held.home.y < 0.6) setTimeout(() => machine.balls.splash(tx, tz, 0.6), 160);   // lifted out of the balls
     await S.tween(1200, k => {
       claw.set(tx, lerp(yBot, claw.HOME_Y, k), tz);
       if (loose && held && !slipping) held.tilt = side * (slips ? 0.4 * Math.min(1, k / kSlip) : 0.14 * Math.sin(k * Math.PI * 3));
@@ -607,7 +610,7 @@
       p.tilt = t0 + side * 0.9 * Math.sin(Math.PI * Math.min(1, k * 1.25));
     }, 'linear', tok);
     p.tilt = 0;
-    A.sfxPlay('thud'); p.nope(0.8);
+    A.sfxPlay('thud'); p.nope(0.8); machine.balls.splash(p.home.x, p.home.z, 0.9);
     p.root.position.set(p.home.x, p.home.y, p.home.z); p.x = p.home.x;
     if (!G.inMachine.includes(p)) G.inMachine.push(p);
   }
@@ -630,7 +633,7 @@
   async function correct(p, tok) {
     const sp = plushScreen(p);
     FX.confetti(sp.x, sp.y, 130); FX.stars(sp.x, sp.y, 16);
-    A.sfxPlay('fanfare'); machine.chase(3.5);
+    A.sfxPlay('fanfare'); machine.chase(3.5); machine.balls.cheer(2.8);
     for (const o of G.inMachine) o.cheer(2.6);
     p.cheer(3);
     const gain = 100 + (G.tries === 0 ? 50 : 0);
@@ -733,7 +736,7 @@
       p.root.position.set(lerp(from.x, p.home.x, k), lerp(from.y, p.home.y, S.EASE.bounce(k)), lerp(from.z, p.home.z, k));
       p.root.quaternion.slerpQuaternions(q0, qh, Math.min(1, k * 1.5));
     }, 'linear', tok);
-    A.sfxPlay('thud');
+    A.sfxPlay('thud'); machine.balls.splash(p.home.x, p.home.z, 0.9);
     p.root.position.set(p.home.x, p.home.y, p.home.z);
     G.inMachine.push(p);
     G.tries++;
