@@ -195,6 +195,11 @@
     const segA = new T.TubeGeometry(curveA, 20, 0.032, 10, false), segB = new T.TubeGeometry(curveB, 20, 0.032, 10, false);
     const SAMPLE = [...curveA.getPoints(8), ...curveB.getPoints(10)];       // prong points for the grip test
     // left, right and back: nothing in front of the face of the friend it carries
+    /* the lavender tips. Holding a friend, the left and right ones curl in under its chin from the sides (partly behind
+       the jaw — fine); the back one curls in BEHIND the friend, so it could only ever show through the body (user:
+       "가운데 보라색 점이 인형몸을 관통하잖아") — it's hidden while the claw holds a friend (setHolding). (Drawing the
+       side tips nearer the camera was tried: on big heads like the turkey they then sat on the face.) */
+    const tips = [];
     for (const yaw of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
       const piv = grp(swing, Math.sin(yaw) * PIV_R, PIV_Y, Math.cos(yaw) * PIV_R);
       piv.rotation.y = yaw;
@@ -202,7 +207,8 @@
       mesh(segA, M.chrome(), arm, null, { cast: true });
       mesh(segB, M.chrome(), arm, null, { cast: true });
       mesh(SPH, M.chrome(), arm, [0, -0.3, 0.28], { scale: 0.046 });
-      mesh(SPH, M.plastic('#c9a2f0', { rough: 0.5 }), arm, [0, -0.64, 0.1], { scale: 0.045 });
+      const tipMat = M.plastic('#c9a2f0', { rough: 0.5 });
+      tips.push(mesh(SPH, tipMat, arm, [0, -0.64, 0.1], { scale: 0.045 }));
       prongs.push(arm);
     }
     const hold = grp(swing, 0, -0.52, 0);               // ~ where a carried head sits (look-at / sparkle point)
@@ -229,6 +235,7 @@
     const claw = {
       x: 0, z: 0.3, y: HOME_Y, vx: 0, vz: 0, swingX: 0, swingZ: 0, svx: 0, svz: 0,
       head, swing, hold, prongs, OPEN, SHUT, HOME_Y, CARRY_Y, CLAW_S, HOLD: 0.52 * CLAW_S, setGrip, angleFor, gripAngle, knuckleDrop,
+      setHolding(on) { tips[2].visible = !on; },
       get grip() { return grip; },
       set(x, y, z) {
         claw.x = x; claw.y = y; claw.z = z;

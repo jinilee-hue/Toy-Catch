@@ -268,6 +268,7 @@
      the rest (the second m or t friend, or another c/d/f) */
   function setupPlushes() {
     for (const p of Object.values(G.all)) { if (p.root.parent) p.root.parent.remove(p.root); p.hold(false); p.st.cheer = 0; p.excite(0); }
+    claw.setHolding(false);
     const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
     const fixed = qs.get('kinds');
     let kinds;
@@ -614,10 +615,10 @@
     claw.swing.attach(p.root);                      // keeps where it is: the claw came down right over it
     const rq = p.root.quaternion.clone(), q0 = new T.Quaternion();
     S.tween(300, k => p.root.quaternion.slerpQuaternions(rq, q0, k), 'out');
-    p.hold(true); p.lookAt(null); p.excite(0);
+    p.hold(true); p.lookAt(null); p.excite(0); claw.setHolding(true);
     G.inMachine = G.inMachine.filter(o => o !== p);
   }
-  function detach(p) { machine.group.attach(p.root); p.hold(false); }
+  function detach(p) { machine.group.attach(p.root); p.hold(false); claw.setHolding(false); }
   function resume(tok) {
     if (tok !== G.tok) return;
     G.busy = false; G.timerOn = G.time > 0; G.idle = 0; setDrop(true);
