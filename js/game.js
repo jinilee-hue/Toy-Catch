@@ -891,7 +891,7 @@
       const jx = parseFloat(app.style.getPropertyValue('--joyX')), jy = parseFloat(app.style.getPropertyValue('--joyY'));
       const dx = parseFloat(app.style.getPropertyValue('--downX')), dy = parseFloat(app.style.getPropertyValue('--downY'));
       const W2 = hand.offsetWidth * 0.38;
-      hand.classList.add('on');
+      if (hintAnim) hintAnim.cancel();
       $('#joyHit').classList.add('hint');
       hintAnim = hand.animate([
         { transform: `translate(${jx - W2}px, ${jy}px)` },
@@ -902,16 +902,21 @@
         { transform: `translate(${dx - W2}px, ${dy + 1.6 * mu}px) scale(.94)`, offset: 0.8 },
         { transform: `translate(${dx - W2}px, ${dy}px)`, offset: 0.88 },
         { transform: `translate(${dx - W2}px, ${dy}px)` },
-      ], { duration: 3600, easing: 'ease-in-out' });
+      ], { duration: 3600, easing: 'ease-in-out', fill: 'forwards' });
+      hand.classList.add('on');
       await hintAnim.finished.catch(() => {});
       if (tok !== G.tok || G.interacted) break;
+      // between two showings it fades out where it ended (on DOWN). Without the fill it jumped back to its resting place
+      // — the screen's top-left corner, over the score — and waited there (user: "상단에 화살표 왜 가있는거야?")
+      hand.classList.remove('on');
       await sleep(1600);
     }
     stopHint();
   }
   function stopHint() {
-    if (hintAnim) { try { hintAnim.cancel(); } catch (e) { /* done */ } hintAnim = null; }
-    $('#hand').classList.remove('on'); $('#joyHit').classList.remove('hint');
+    const h = $('#hand'), a = hintAnim; hintAnim = null;
+    h.classList.remove('on'); $('#joyHit').classList.remove('hint');
+    if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 
   window.__clawApi = { G, drop, startGame, goTitle, candidate, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
