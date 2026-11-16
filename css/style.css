@@ -116,15 +116,28 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .hud .lbl { color: #ffe14a; }
 .hud-l { position: absolute; left: calc(4.5 * var(--u)); top: calc(4.6 * var(--u)); display: flex; align-items: center; gap: calc(1.6 * var(--u)); }
 .score {
-  position: relative; height: calc(10 * var(--u)); padding: 0 calc(3.4 * var(--u)) 0 calc(1.5 * var(--u));
-  display: flex; align-items: center; gap: calc(1 * var(--u));
+  position: relative; height: calc(10 * var(--u)); padding: 0 calc(3.4 * var(--u)) 0 calc(.6 * var(--u));
+  display: flex; align-items: center; gap: calc(1.1 * var(--u));
   border-radius: 999px; background: linear-gradient(#ffc04d, #ff9a1f 60%, #ff8510);
   box-shadow: inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(205,85,0,.45), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(120,60,10,.28);
   font: 800 calc(6.4 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.7 * var(--u)) #b8500a; paint-order: stroke fill;
   transform-origin: 30% 50%;
 }
 .score b { min-width: 1.5em; text-align: center; }
-.score .star { position: relative; flex: none; width: calc(7 * var(--u)); height: calc(7 * var(--u)); background: radial-gradient(circle at 40% 35%, #fff6b0, #ffd23f 45%, #f5a300); clip-path: polygon(50% 0, 63% 33%, 98% 36%, 71% 59%, 80% 95%, 50% 75%, 20% 95%, 29% 59%, 2% 36%, 37% 33%); filter: drop-shadow(0 0 0 #fff); animation: twinkle 2.6s ease-in-out infinite; }
+/* the score's icon = a gold coin with the star raised on it (user: "이 별도 동전안에 별로 들어가게"), like the coin that goes
+   in the slot — drawn in index.html as an SVG with no outlines (rim and face are only light and shade, the star has a soft
+   shadow under it). Round with the pill's end. A shine sweeps over it now and then; it flips twice when points come in.
+   (Not .coin: that's the intro coins' class.) */
+.score .score-coin { position: relative; flex: none; width: calc(8.8 * var(--u)); height: calc(8.8 * var(--u)); filter: drop-shadow(0 calc(.35 * var(--u)) calc(.45 * var(--u)) rgba(150,60,0,.35)); }
+.score .score-coin svg { display: block; width: 100%; height: 100%; }
+.score .score-coin::after {
+  content: ''; position: absolute; left: 5%; top: 5%; width: 90%; height: 90%; border-radius: 50%; pointer-events: none;
+  background: linear-gradient(115deg, rgba(255,255,255,0) 44%, rgba(255,255,255,.7) 50%, rgba(255,255,255,0) 56%) no-repeat;
+  background-size: 300% 100%; background-position: 95% 0; animation: coinGlint 3.8s ease-in-out infinite 1s;
+}
+@keyframes coinGlint { 0%, 72% { background-position: 95% 0; } 92%, 100% { background-position: 5% 0; } }
+.score.bump .score-coin { animation: coinFlip .7s ease-in-out; }
+@keyframes coinFlip { 0%, 100% { scale: 1 1; } 25% { scale: .08 1; } 50% { scale: 1 1; } 75% { scale: .08 1; } }
 .score.bump { animation: bump .45s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes bump { 0% { scale: 1; } 40% { scale: 1.16; } 100% { scale: 1; } }
 
@@ -317,7 +330,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 #app:not(.booting) #loading { opacity: 0; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .coin, .note, .spark, .logo, .start, .start .L, .score .star { animation: none !important; }
+  .coin, .note, .spark, .logo, .start, .start .L, .score .score-coin, .score .score-coin::after { animation: none !important; }
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.

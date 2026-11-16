@@ -50,7 +50,25 @@
   <div class="hud" aria-live="polite">
     <!-- one row, no word labels: score + the caught-friends tray (left), the target letter (middle), time (right) -->
     <div class="hud-l">
-      <div class="score"><i class="star" aria-hidden="true"></i><b id="score" aria-label="Score">0</b></div>
+      <div class="score"><i class="score-coin" aria-hidden="true"><svg viewBox="0 0 100 100">
+        <defs>
+          <linearGradient id="scEdge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e39b10"/><stop offset="1" stop-color="#b56c06"/></linearGradient>
+          <linearGradient id="scRim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff6b8"/><stop offset=".45" stop-color="#ffd84a"/><stop offset="1" stop-color="#f2a412"/></linearGradient>
+          <linearGradient id="scFace" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eea21a"/><stop offset=".38" stop-color="#ffc42e"/><stop offset="1" stop-color="#ffd95c"/></linearGradient>
+          <linearGradient id="scStar" x1=".2" y1=".08" x2=".78" y2=".95"><stop offset="0" stop-color="#fffbe2"/><stop offset=".45" stop-color="#ffe56e"/><stop offset="1" stop-color="#ffb61a"/></linearGradient>
+          <radialGradient id="scGloss"><stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+          <filter id="scSoft" x="-25%" y="-25%" width="150%" height="150%"><feGaussianBlur stdDeviation="1.5"/></filter>
+        </defs>
+        <circle cx="50" cy="54.5" r="45" fill="url(#scEdge)"/>
+        <circle cx="50" cy="50" r="45" fill="url(#scRim)"/>
+        <circle cx="50" cy="50" r="36" fill="url(#scFace)"/>
+        <g transform="translate(0 1.6)">
+          <path d="M50.00 29.00 L55.88 41.91 L69.97 43.51 L59.51 53.09 L62.34 66.99 L50.00 60.00 L37.66 66.99 L40.49 53.09 L30.03 43.51 L44.12 41.91Z" transform="translate(1.2 2.6)" fill="#a35a00" stroke="#a35a00" stroke-width="5" stroke-linejoin="round" opacity=".42" filter="url(#scSoft)"/>
+          <path d="M50.00 29.00 L55.88 41.91 L69.97 43.51 L59.51 53.09 L62.34 66.99 L50.00 60.00 L37.66 66.99 L40.49 53.09 L30.03 43.51 L44.12 41.91Z" fill="url(#scStar)" stroke="url(#scStar)" stroke-width="5" stroke-linejoin="round"/>
+          <ellipse cx="45" cy="40" rx="7" ry="3.4" fill="url(#scGloss)" transform="rotate(-28 45 40)"/>
+        </g>
+        <ellipse cx="33" cy="21" rx="13" ry="5.5" fill="url(#scGloss)" transform="rotate(-32 33 21)"/>
+      </svg></i><b id="score" aria-label="Score">0</b></div>
       <div class="tray" id="tray"></div>
     </div>
     <div class="target" id="target">
