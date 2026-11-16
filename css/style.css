@@ -26,33 +26,45 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 #stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; display: block; }
 #fx { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 30; pointer-events: none; }
 
-/* ── floating letter bubbles, notes, sparkles ── */
+/* ── floating coins, notes, sparkles ── */
 .deco { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 .deco > i { position: absolute; left: calc(var(--mx) + var(--x) * var(--mu)); top: calc(var(--mt) + var(--y) * var(--mu)); translate: -50% -50%; font-style: normal; }
-.bub {
-  width: calc(9.4 * var(--mu)); height: calc(9.4 * var(--mu)); border-radius: 50%;
-  display: grid; place-items: center; padding-bottom: calc(.6 * var(--mu));
-  font: 800 calc(6.4 * var(--mu)) / 1 var(--font); color: #fff;
-  background: radial-gradient(circle at 34% 28%, #fff 0 8%, transparent 26%), radial-gradient(circle at 50% 40%, var(--c1), var(--c2));
-  box-shadow: inset 0 calc(-.7 * var(--mu)) calc(1.2 * var(--mu)) rgba(0,0,0,.18), 0 0 0 calc(.45 * var(--mu)) #fff, 0 calc(.8 * var(--mu)) calc(1.4 * var(--mu)) rgba(40,40,90,.25);
-  -webkit-text-stroke: calc(.5 * var(--mu)) var(--c3); paint-order: stroke fill;
-  animation: bob 3.4s ease-in-out infinite; animation-delay: var(--d);
+/* a letter coin in Magic Block's block pastels (Phonics-Jenga tower.ts PASTELS: base / light / edge / ink): a soft matte
+   face, a raised rim with a groove inside it, the coin's edge as a band under it, and the letter stamped in like the
+   blocks' letters (ink, with a light lip under it). It bobs (transform) and every 4.2 s spins round twice
+   (scale only goes 1 → edge-on → 1, never negative: a mirrored letter would show) */
+.coin {
+  --w: calc(9.8 * var(--k, 1) * var(--mu));
+  --top: color-mix(in srgb, var(--base) 55%, var(--light));
+  --low: color-mix(in srgb, var(--base) 60%, var(--edge));
+  width: var(--w); height: var(--w); border-radius: 50%;
+  display: grid; place-items: center; padding-bottom: calc(var(--w) * .07); box-sizing: border-box;
+  font: 800 calc(var(--w) * .62) / 1 var(--font); color: var(--ink);
+  text-shadow: 0 calc(var(--w) * .028) 0 var(--light);
+  background:
+    radial-gradient(circle at 31% 25%, rgba(255,255,255,.7) 0 4%, rgba(255,255,255,0) 16%),
+    radial-gradient(circle closest-side, var(--top) 0, var(--base) 52%, var(--low) 70%, var(--edge) 71% 75%, rgba(0,0,0,0) 76%),
+    radial-gradient(circle at 50% 30%, var(--light) 0, var(--top) 45%, var(--base) 78%, var(--edge) 100%);
+  box-shadow:
+    inset 0 calc(var(--w) * -.04) calc(var(--w) * .05) color-mix(in srgb, var(--edge) 70%, transparent),
+    0 calc(var(--w) * .065) 0 color-mix(in srgb, var(--edge) 82%, #000),
+    0 calc(var(--w) * .12) calc(var(--w) * .14) rgba(60,50,90,.22);
+  animation: bob 3.4s ease-in-out infinite, coinSpin 4.2s ease-in-out infinite;
+  animation-delay: var(--d), var(--f);
 }
-.bub::after {
-  content: ''; position: absolute; left: 4%; bottom: -6%; width: 26%; height: 26%;
-  background: var(--c2); clip-path: polygon(0 100%, 30% 0, 100% 40%);
-  filter: drop-shadow(0 0 0 #fff);
+.p-pink { --base: #f7afc3; --ink: #a8365f; --light: #ffd6e2; --edge: #e893ad; }
+.p-butter { --base: #f8dc80; --ink: #86600a; --light: #fff0bd; --edge: #e5c35d; }
+.p-mint { --base: #a8e2c4; --ink: #1f7650; --light: #d6f4e4; --edge: #86cfa8; }
+.p-sky { --base: #aad5f2; --ink: #1f5f94; --light: #d7ecfb; --edge: #87bee6; }
+.p-lavender { --base: #cab9f2; --ink: #5539a3; --light: #e7defb; --edge: #ad99e6; }
+.p-peach { --base: #ffc8a7; --ink: #a2511f; --light: #ffe3d1; --edge: #f1ab82; }
+@keyframes coinSpin {
+  0%, 74%, 100% { scale: 1 1; filter: brightness(1); }
+  79% { scale: .07 1; filter: brightness(.9); }
+  84% { scale: 1 1; filter: brightness(1.04); }
+  89% { scale: .07 1; filter: brightness(.9); }
+  94% { scale: 1 1; filter: brightness(1); }
 }
-.bub.r::after { left: auto; right: 4%; transform: scaleX(-1); }
-.bub.c-plain { background: none; box-shadow: none; color: #ff8a1f; -webkit-text-stroke: calc(.55 * var(--mu)) #fff; font-size: calc(7 * var(--mu)); text-shadow: 0 calc(.4 * var(--mu)) 0 #d96a0c; }
-.bub.c-plain::after { display: none; }
-.c-yel { --c1: #ffd84a; --c2: #ff9f1a; --c3: #e07800; }
-.c-pink { --c1: #ff8fe0; --c2: #d43fc0; --c3: #a3209a; }
-.c-green { --c1: #8fe36a; --c2: #2fae3c; --c3: #1f7f2c; }
-.c-blue { --c1: #6fb6ff; --c2: #2563e6; --c3: #1844a8; }
-.c-orange { --c1: #ffa84a; --c2: #f05a12; --c3: #b83c05; }
-.c-sky { --c1: #9ae8ff; --c2: #2ba7e8; --c3: #137cb5; }
-.c-magenta { --c1: #ff9ad6; --c2: #e83aa5; --c3: #ac1d78; }
 .note { font: 800 calc(7.6 * var(--mu)) / 1 var(--font); -webkit-text-stroke: calc(.35 * var(--mu)) #fff; paint-order: stroke fill; animation: bob 2.6s ease-in-out infinite, sway 3.2s ease-in-out infinite; animation-delay: var(--d); }
 .n1 { color: #ff4b5c; } .n2 { color: #ff5fb4; font-size: calc(5.6 * var(--mu)); } .n3 { color: #3d8ef0; } .n4 { color: #9a5cf0; }
 .spark { width: calc(var(--s) * 1.3 * var(--mu)); height: calc(var(--s) * 1.3 * var(--mu)); background: radial-gradient(circle, #fff7c2 0 18%, #ffd43b 40%, transparent 72%); clip-path: polygon(50% 0, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0 50%, 39% 39%); animation: twinkle 2.2s ease-in-out infinite; animation-delay: var(--d); }
@@ -306,7 +318,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 #app:not(.booting) #loading { opacity: 0; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .bub, .note, .spark, .logo, .start, .start span, .score .star { animation: none !important; }
+  .coin, .note, .spark, .logo, .start, .start span, .score .star { animation: none !important; }
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.

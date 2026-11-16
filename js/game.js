@@ -18,10 +18,14 @@
   const OTHERS = ['cat', 'cow', 'dog', 'fish'];          // c d f: never a target, always a wrong answer
   const ROUND_SEC = +(qs.get('sec') || 45);
   const PS = 1.3;                                       // plush scale in the machine
+  /* aiming: how far (machine units, along x) the claw is from the middle of the friend's head when it comes down.
+     ≤ hold: a sure catch · ≤ weak: a loose grip that may slip out on the way up · ≤ reach: a prong knocks the friend,
+     nothing caught · further: nothing under the claw. Two misses in a row in a round and a loose grip holds. */
+  const AIM = { hold: 0.2, weak: 0.4, reach: 0.62 };
   const G = {
     screen: 'title', all: {}, inMachine: [], targets: [], round: -1, target: null, score: 0, caught: [], tries: 0,
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
-    icons: {}, shownSec: -1,
+    icons: {}, shownSec: -1, miss: 0, rand: Math.random,
   };
   let machine, claw, beam, burst;
   window.__claw = G;
@@ -150,7 +154,7 @@
     if (G.screen === 'title' && !G.busy) G.aimX = Math.sin(t * 0.45) * 2.4;
     if (!G.busy && (G.screen === 'title' || G.screen === 'game')) {
       const k = G.keys.r - G.keys.l + G.joy;
-      if (k) { G.aimX += k * 2.6 * dt; G.idle = 0; }
+      if (k) { G.aimX += k * 2.2 * dt; G.idle = 0; }
       G.aimX = Math.max(machine.X_MIN, Math.min(machine.X_MAX, G.aimX));
       const dx = G.aimX - claw.x, maxV = 2.8 * dt;
       const nx = claw.x + Math.max(-maxV, Math.min(maxV, dx * Math.min(1, dt * 9)));
@@ -163,17 +167,21 @@
     }
     // who's under the claw: it looks up and bounces; the guide light reaches down to it
     const cand = G.screen === 'game' && !G.busy ? candidate() : null;
+    const zone = cand ? aimZone(cand) : 'none';
     for (const p of G.inMachine) {
       const on = p === cand;
-      p.excite(on ? 1 : 0);
+      p.excite(on ? (zone === 'hold' ? 1 : 0.3) : 0);  // it bounces only when the claw is right over it
       if (G.screen === 'game' && !G.busy) p.lookAt(on || Math.abs(p.x - claw.x) < 1.6 ? claw.holdWorld() : null);
       else if (!G.busy) p.lookAt(null);
     }
     if (cand) {
       const top = cand.root.position.y + cand.top * PS, tipY = claw.y - 0.8;
       const hgt = Math.max(0.2, tipY - top + 0.1);
-      beam.visible = true; beam.position.set(cand.x, top - 0.1 + hgt / 2, cand.z); beam.scale.set(0.9, hgt, 0.9);
-      beam.material.opacity = lerp(beam.material.opacity, 0.5, Math.min(1, dt * 6));
+      // the light falls where the claw would go down (not on the friend's middle): bright when it's right over it
+      beam.visible = true; beam.position.set(claw.x, top - 0.1 + hgt / 2, cand.z); beam.scale.set(0.9, hgt, 0.9);
+      const want = zone === 'hold' ? 0.62 : zone === 'weak' ? 0.36 : 0.18;
+      beam.material.opacity = lerp(beam.material.opacity, want, Math.min(1, dt * 6));
+      beam.material.color.lerp(zone === 'hold' ? WHITE : ORANGE, Math.min(1, dt * 8));
     } else if (beam.visible) {
       beam.material.opacity = lerp(beam.material.opacity, 0, Math.min(1, dt * 8));
       if (beam.material.opacity < 0.02) beam.visible = false;
@@ -181,8 +189,8 @@
     // "DOWN!" when the claw rests over a friend
     if (G.screen === 'game' && !G.busy) {
       G.idle += dt;
-      $('#downHint').classList.toggle('show', !!cand && G.idle > (G.round === 0 && G.tries === 0 ? 1.0 : 3.5) && Math.abs(G.aimX - claw.x) < 0.02);
-      $('#drop').classList.toggle('ready', !!cand);
+      $('#downHint').classList.toggle('show', zone === 'hold' && G.idle > (G.round === 0 && G.tries === 0 ? 1.0 : 3.5) && Math.abs(G.aimX - claw.x) < 0.02);
+      $('#drop').classList.toggle('ready', zone === 'hold');
     } else $('#downHint').classList.remove('show');
     // the round's clock
     if (G.timerOn) {
@@ -200,10 +208,15 @@
     if (burst.visible) { burst.lookAt(S.camera.position); burst.userData.disc.rotation.z += dt * 0.45; }
     FX.tick(dt);
   }
+  const WHITE = new T.Color(1, 1, 1), ORANGE = new T.Color(1, 0.62, 0.42);
   function candidate() {
-    let best = null, bd = 0.56;
+    let best = null, bd = AIM.reach;
     for (const p of G.inMachine) { const d = Math.abs(p.x - claw.x); if (d < bd) { bd = d; best = p; } }
     return best;
+  }
+  function aimZone(p) {
+    const d = Math.abs(claw.x - p.x);
+    return d <= AIM.hold ? 'hold' : d <= AIM.weak ? 'weak' : d <= AIM.reach ? 'knock' : 'none';
   }
 
   /* ── input ──────────────────────────────────────────────────────────────────────────────────────── */
@@ -249,7 +262,7 @@
       const hit = S.hits(e.clientX, e.clientY, G.inMachine.map(p => p.root)).find(h => { const q = h.object.userData.plush; return q && q.alphaAt(h.uv) > 80; });
       const p = hit ? hit.object.userData.plush : null;
       interact();
-      if (p) { G.aimX = p.x; A.sfxPlay('tap'); drag = null; return; }
+      if (p) { G.aimX = machine.group.worldToLocal(hit.point.clone()).x; A.sfxPlay('tap'); drag = null; return; }   // where it was tapped: aiming counts
       const x = xAt(e.clientX, e.clientY);
       const glassTop = S.project(V(0, machine.H, 0)).y, floorY = S.project(V(0, 0, machine.D / 2)).y;
       if (x == null || e.clientY < glassTop || e.clientY > floorY + 20) return;
@@ -311,7 +324,7 @@
     if (tok !== G.tok) return;
     app.classList.remove('coin');
     setScreen('game');
-    G.score = 0; G.caught = []; G.round = -1; G.tries = 0;
+    G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
     $('#score').textContent = '0';
     buildTray();
     const order = (qs.get('order') || '').split(',').filter(x => LETTERS.includes(x));
@@ -325,7 +338,7 @@
   async function nextRound(tok) {
     G.round++;
     if (G.round >= G.targets.length) return finish(tok);
-    G.target = G.targets[G.round]; G.tries = 0; G.time = ROUND_SEC; G.shownSec = -1;
+    G.target = G.targets[G.round]; G.tries = 0; G.miss = 0; G.time = ROUND_SEC; G.shownSec = -1;
     machine.setScreen(['FIND', G.target.toUpperCase() + ' ' + G.target], '#ff8fd0');
     setTarget(G.target);
     [...$('#tray').children].forEach((s, i) => s.classList.toggle('now', i === G.caught.length && i === G.round - (G.round - G.caught.length)));
@@ -360,15 +373,17 @@
     const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150);
     A.sfxPlay('tap');
     const cand = candidate();
+    const zone = cand ? aimZone(cand) : 'none';
+    const off = cand ? claw.x - cand.x : 0;              // the claw's offset from the head's middle
     const x0 = claw.x, z0 = claw.z, g0 = claw.grip;
-    const tx = cand ? cand.x : claw.x, tz = cand ? cand.z : claw.z;
+    const tx = claw.x, tz = cand ? cand.z : claw.z;      // straight down where it was aimed (into the friend's row)
     // the prongs will close until their knuckles touch the sides of the head; the hub stops where that puts the
     // knuckles level with the head's middle (and never lower than just over the head)
     const hy = cand ? cand.headR[1] * PS : 0, hx = cand ? cand.headR[0] * PS : 0;
     const shut = cand ? claw.gripAngle(hx * 1.02) : claw.SHUT;
     const yHead = cand ? cand.root.position.y + cand.gripY * PS : 0;
     const yBot = cand ? Math.max(yHead + claw.knuckleDrop(shut), yHead + hy + 0.03) : 1.45;
-    if (cand) { cand.lookAt(claw.holdWorld()); cand.excite(1); }
+    if (cand) { cand.lookAt(claw.holdWorld()); cand.excite(zone === 'hold' ? 1 : 0.4); }
     A.motor(true, 0.8);
     await S.tween(1300, k => {
       const kk = Math.min(1, k * 1.7);
@@ -378,20 +393,65 @@
     A.motor(false);
     if (tok !== G.tok) return;
     A.sfxPlay('grab');
-    await S.tween(360, k => claw.setGrip(lerp(claw.OPEN, shut, k)), 'out', tok);
-    if (cand) attach(cand);
+    if (zone === 'knock') {
+      // a prong comes down on the side of its head: it gets shoved away and wobbles; the claw shuts on nothing
+      A.sfxPlay('boing'); cand.nope(0.9);
+      const x1 = cand.x, dir = Math.sign(cand.x - claw.x) || 1;
+      S.tween(700, k => { cand.root.position.x = x1 + dir * 0.16 * Math.sin(Math.PI * Math.min(1, k * 1.6)) * (1 - 0.5 * k); }, 'out', tok)
+        .then(() => { cand.root.position.x = x1; });
+      await S.tween(360, k => claw.setGrip(lerp(claw.OPEN, claw.SHUT, k)), 'out', tok);
+    } else {
+      // closing prongs push the head toward the middle: all the way when it was right over it, half way on a loose grip
+      const x1 = cand ? cand.x : 0, x2 = cand ? (zone === 'hold' ? claw.x : cand.x + off * 0.5) : 0;
+      await S.tween(360, k => { claw.setGrip(lerp(claw.OPEN, shut, k)); if (cand) cand.root.position.x = lerp(x1, x2, k); }, 'out', tok);
+    }
+    const held = cand && zone !== 'knock' ? cand : null;
+    if (held) attach(held);
     await sleep(120);
+    // a loose grip: it tips toward the open side on the way up and, unless the luck (or two misses in a row) holds it,
+    // slips out part way
+    const loose = zone === 'weak';
+    const slips = loose && G.miss < 2 && G.rand() < 0.35 + 0.5 * (Math.abs(off) - AIM.hold) / (AIM.weak - AIM.hold);
+    const kSlip = 0.3 + G.rand() * 0.35, side = -Math.sign(off) || 1;
+    let slipping = null;
     A.motor(true, 1.2);
-    await S.tween(1200, k => claw.set(tx, lerp(yBot, claw.HOME_Y, k), tz), 'inOut', tok);
+    await S.tween(1200, k => {
+      claw.set(tx, lerp(yBot, claw.HOME_Y, k), tz);
+      if (loose && held && !slipping) held.tilt = side * (slips ? 0.4 * Math.min(1, k / kSlip) : 0.14 * Math.sin(k * Math.PI * 3));
+      if (slips && !slipping && k >= kSlip) slipping = slip(held, side, tok);
+    }, 'inOut', tok);
     A.motor(false);
+    if (held && !slips) held.tilt = 0;
+    if (slipping) await slipping;
     if (tok !== G.tok) return;
-    if (!cand) {
-      A.sfxPlay('whiff');
-      await A.say('t:miss');
+    if (!held || slips) {
+      G.miss++;
+      if (!cand) { A.sfxPlay('whiff'); await A.say('t:miss'); }
+      else if (zone === 'knock') { A.sfxPlay('whiff'); await A.say('t:center'); }
+      else await A.say('t:slip');
+      if (tok !== G.tok) return;
+      claw.setGrip(claw.OPEN * 0.55);
       return resume(tok);
     }
+    G.miss = 0;                                       // a good grab: the next loose grip takes its chances again
     if (cand.sound === G.target) await correct(cand, tok);
     else await wrong(cand, tok);
+  }
+  /* it slips out of a loose grip: tips over, drops back onto its seat with a bounce, and wobbles */
+  async function slip(p, side, tok) {
+    A.sfxPlay('slip');
+    const g0 = claw.grip;
+    S.tween(220, k => claw.setGrip(lerp(g0, claw.OPEN * 0.45, k)), 'out');
+    detach(p);
+    const from = p.root.position.clone(), t0 = p.tilt;
+    await S.tween(650, k => {
+      p.root.position.set(lerp(from.x, p.home.x, k), lerp(from.y, p.home.y, S.EASE.bounce(k)), lerp(from.z, p.home.z, k));
+      p.tilt = t0 + side * 0.9 * Math.sin(Math.PI * Math.min(1, k * 1.25));
+    }, 'linear', tok);
+    p.tilt = 0;
+    A.sfxPlay('thud'); p.nope(0.8);
+    p.root.position.set(p.home.x, p.home.y, p.home.z); p.x = p.home.x;
+    if (!G.inMachine.includes(p)) G.inMachine.push(p);
   }
   function attach(p) {
     claw.swing.attach(p.root);                      // keeps where it is: the claw came down right over it

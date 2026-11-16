@@ -231,6 +231,18 @@ window.CLAW_VOICE = {
 1.021,
 2.898
 ],
+"t:slip": [
+"t_slip.mp3",
+0.03,
+0.709,
+2.73
+],
+"t:center": [
+"t_center.mp3",
+0.02,
+1.042,
+1.876
+],
 "k:hello": [
 "k_hello.mp3",
 0.02,
@@ -272,6 +284,18 @@ window.CLAW_VOICE = {
 0.02,
 0.674,
 3.076
+],
+"k:slip": [
+"k_slip.mp3",
+0.03,
+0.702,
+2.586
+],
+"k:center": [
+"k_center.mp3",
+0.02,
+0.898,
+1.876
 ]
 },
 "lines": {
@@ -288,7 +312,9 @@ window.CLAW_VOICE = {
 "miss": "Oops, nothing! Try again.",
 "timeup": "Time's up!",
 "allcaught": "Wow! You caught them all!",
-"result": "Great job! Let's catch more friends!"
+"result": "Great job! Let's catch more friends!",
+"slip": "Oh no, it slipped! So close!",
+"center": "Put the claw right over your friend!"
 },
 "lines_ko": {
 "pressstart": "스타트 버튼을 눌러 봐!",
@@ -304,6 +330,8 @@ window.CLAW_VOICE = {
 "miss": "앗, 아무것도 못 잡았어! 다시 해 보자.",
 "timeup": "시간이 다 됐어!",
 "allcaught": "와! 친구들을 모두 뽑았어!",
-"result": "잘했어! 친구들을 더 뽑아 보자!"
+"result": "잘했어! 친구들을 더 뽑아 보자!",
+"slip": "아이코, 미끄러졌어! 아깝다!",
+"center": "집게를 친구 바로 위에 맞춰 봐!"
 }
 };

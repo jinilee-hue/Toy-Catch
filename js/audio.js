@@ -110,6 +110,8 @@
       case 'whiff': noise(t, 0.3, 0.25, 900, 0.7); osc('sine', 420, 180, t, 0.35, 0.18); break;
       case 'thud': osc('sine', 150, 55, t, 0.22, 0.6); noise(t, 0.08, 0.3, 600, 0.8); break;
       case 'boing': osc('sine', 220, 560, t, 0.22, 0.4); osc('sine', 560, 280, t + 0.12, 0.3, 0.22); break;
+      case 'slip':                                   // slide whistle down: it slips out of the claw
+        osc('sine', 1250, 300, t, 0.5, 0.2); osc('triangle', 625, 150, t, 0.5, 0.08); noise(t, 0.12, 0.12, 2400, 1.2); break;
       case 'chute': noise(t, 0.5, 0.3, 700, 0.6); osc('sine', 600, 160, t, 0.5, 0.2); osc('sine', 140, 60, t + 0.45, 0.25, 0.5); break;
       case 'prize': [784, 988, 1175, 1568].forEach((f, i) => osc('triangle', f, 0, t + i * 0.07, 0.3, 0.2)); noise(t, 0.4, 0.12, 7000, 0.6, 'highpass'); break;
       case 'buzz': osc('sawtooth', 160, 150, t, 0.5, 0.18); osc('sawtooth', 163, 150, t, 0.5, 0.14); break;

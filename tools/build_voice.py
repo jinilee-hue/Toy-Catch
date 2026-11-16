@@ -51,6 +51,8 @@ NEW = {
     'timeup': "Time's up!",
     'allcaught': 'Wow! You caught them all!',
     'result': "Great job! Let's catch more friends!",
+    'slip': 'Oh no, it slipped! So close!',
+    'center': 'Put the claw right over your friend!',
 }
 NEW_KO = {
     'hello': '안녕, 친구들! 토이 캐치에 온 걸 환영해!',
@@ -60,6 +62,8 @@ NEW_KO = {
     'timeup': '시간이 다 됐어!',
     'allcaught': '와! 친구들을 모두 뽑았어!',
     'result': '잘했어! 친구들을 더 뽑아 보자!',
+    'slip': '아이코, 미끄러졌어! 아깝다!',
+    'center': '집게를 친구 바로 위에 맞춰 봐!',
 }
 assert set(NEW) == set(NEW_KO)
 

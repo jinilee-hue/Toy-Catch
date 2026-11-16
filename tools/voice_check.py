@@ -12,7 +12,7 @@ import whisper
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 V = json.loads((ROOT / 'js' / 'voice.js').read_text(encoding='utf-8').split('=', 1)[1].rstrip().rstrip(';'))
 model = whisper.load_model(sys.argv[1] if len(sys.argv) > 1 else 'medium')
-NEW = ['hello', 'find', 'howto', 'miss', 'timeup', 'allcaught', 'result']
+NEW = ['hello', 'find', 'howto', 'miss', 'timeup', 'allcaught', 'result', 'slip', 'center']
 norm = lambda s: re.sub(r'[^0-9a-z가-힣 ]', '', s.lower()).split()
 for pre, table, lang in (('t', V['lines'], 'en'), ('k', V['lines_ko'], 'ko')):
     for k in NEW:

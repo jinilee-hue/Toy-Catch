@@ -2,7 +2,8 @@
  * turn to face the camera. Same interface the game used with the old procedural plushies:
  *   root (origin at the bottom middle, under the head), kind, word, sound ('cat' → c), icon (the picture),
  *   top, gripY / headR (the head the claw closes round, at scale 1), alphaAt(uv) (taps on see-through bits miss),
- *   cheer(sec), nope(sec), hold(on), lookAt(worldPoint | null), excite(0..1), update(dt, t).
+ *   cheer(sec), nope(sec), hold(on), lookAt(worldPoint | null), excite(0..1), update(dt, t),
+ *   tilt (radians, set by the game: a loose grip tips the body round the head before it slips out).
  * Rig: root > hang (pivot at the head: the body swings under the claw) > seat (pivot at the bottom: sitting wobble,
  * hops) > face (turns to the camera) > picture (a little behind the claw's axis, so the prongs stay in front of it).
  * A 600-px-tall picture is 1.3 units tall; the game scales friends by 1.3 in the machine.
@@ -85,6 +86,7 @@
     };
     P.phase = Math.random() * 10;
     P.st = { excite: 0, ek: 0, cheer: 0, ck: 0, held: 0, hk: 0, nope: 0, look: null, lean: 0 };
+    P.tilt = 0;
     P.excite = (val) => { P.st.excite = val; };
     P.cheer = (sec = 1.6) => { P.st.cheer = sec; };
     P.hold = (on) => { P.st.held = on ? 1 : 0; };
@@ -108,7 +110,7 @@
       P.seat.rotation.z = (Math.sin(t * 1.1 + ph) * 0.03 + Math.sin(t * 9 + ph) * 0.09 * s.ck + s.lean) * sit;
       // held: the body swings under the head; "no-no" wiggle when it's the wrong friend
       const shake = s.nope > 0 ? Math.sin(s.nope * 24) * 0.17 * Math.min(1, s.nope * 2) : 0;
-      P.hang.rotation.z = Math.sin(t * 2.6 + ph) * 0.07 * s.hk + shake;
+      P.hang.rotation.z = Math.sin(t * 2.6 + ph) * 0.07 * s.hk + shake + P.tilt;
       P.blob.material.opacity = Math.max(0, 1 - s.hk * 1.6);
       P.blob.visible = P.blob.material.opacity > 0.01;
       // always face the camera (turn about the vertical; whatever the parents' yaw)
