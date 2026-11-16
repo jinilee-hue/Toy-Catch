@@ -27,10 +27,16 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
   p로 시작하는 그림이 없어 p 라운드는 뺐다(사용자 결정).
 - 매 판 6마리: m·a·s·t 한 마리씩 + 2마리(그중 최소 1마리는 c/d/f, 나머지는 남은 아무나). 뒷줄 3(선반) + 앞줄 3(볼풀) 지그재그라 글자 6개가 모두 보인다.
 - 그림은 `js/friends.js`가 카메라를 늘 바라보는 컷아웃으로 세운다(가장자리는 alpha-to-coverage — 유리와 정렬 문제 없음).
-  그림은 입체로 부풀린다(`puffGeo`): 실루엣 안에서 포아송 방정식을 풀어(넓은 머리·몸은 두껍게, 팔·귀·꼬리는 얇게)
-  쿠션처럼 둥근 부조를 만들고, 그림은 정면에서 그대로 입힌다. 그림에 이미 그려진 빛을 그대로 두고(옆에서 비추는 빛은 그림의 빛과 싸워
-  어색했다) `puffShade`는 윤곽 쪽과 아랫면만 살짝 어둡게 한다(그림보다 밝아지지 않음). 천천히
-  좌우로 살짝 돌며(`PUFF.sway`) 부피가 보인다. 외곽은 여전히 그림의 알파라 디자인이 그대로다. `?flat`은 예전 평면 그림.
+- **친구들은 진짜 3D 인형**(`js/friends-3d.js`, `tools/make_3d.py`): 이 맥에서 TripoSR(MIT, 그림 한 장 → 3D, 외부 전송 없음)이
+  그림마다 앞·옆·뒤가 있는 모양과 뒤쪽 색을 추정하고, 앞에서 보이는 면에는 사용자 그림을 그대로 입힌다(정점마다 '앞면 가중치').
+  그래서 얼굴·글자는 원래 그림 그대로이고 몸통에 실제 옆과 뒤가 있다. 모양은 그림 외곽에 정확히 맞추고(가로·세로), 두께는 추정값의 92 %,
+  6000 삼각형으로 줄이고, 뒤쪽 색은 앞면에서 그림과 비교해 밝기·대비를 맞춘다(소의 흰 등이 회색으로 나왔었다).
+  움직임(`plushDeform`, 정점 셰이더 — 그림자도 같이): 통통 뛸 때 착지하며 눌리고 공중에서 살짝 늘어남, 집혀 올라갈 때 늘었다가 출렁,
+  떨어져 앉을 때 납작, 밀리거나 들려 갈 때 윗부분(매달리면 다리)이 늦게 따라옴, 집게가 쥔 머리 둘레가 살짝 눌림. 상품으로 나올 때 한 바퀴 돈다.
+  집게는 3D 몸의 실제 폭을 감싼다(`P.widthAt`): 머리보다 몸이 큰 물고기는 몸통 폭으로, 머리가 옆으로 튀어나온 거북이는 등딱지 윗부분을 잡고,
+  집게보다 살짝 넓은 몸은 집게 자리만 눌린다(프롱이 몸 안으로 사라지지 않게).
+  다시 만들기: `~/dev/tools/TripoSR/.venv/bin/python tools/make_3d.py [--only monkey]`(설치는 아래 '실행 · 도구').
+  비교용 `?puff`(예전 부풀린 그림) · `?flat`(평면 그림), `dev/friends3d.html`(친구마다 앞·3/4·옆·뒤).
   집게가 감쌀 머리 타원은 `tools/import_art.py`가 알파에서 잰다(윗부분 가장 넓은 줄 → 그 아래 가장 좁은 줄 = 목).
   옆모습(거북·물고기)과 몸통·머리가 한 덩어리인 물개, 꼬리깃이 넓은 칠면조는 `HEAD_FIX`로 지정. `--check out.png`로 타원을 그려 확인.
 - 탭은 그림의 투명한 모서리가 아니라 그림 자체를 눌렀을 때만 그 친구로 간다(64px 알파 격자).
@@ -83,6 +89,16 @@ zsh -ic '/Users/jini/.hermes/bin/uv run --with numpy python tools/build_voice.py
 /Users/jini/.hermes/bin/uv run --with numpy --with scipy python tools/make_bgm.py
 ```
 URL 옵션: `?sec=10`(라운드 시간) · `?order=m,a,s,t` · `?kinds=cat,seal,ant,turtle,monkey,dog`(뒷줄 3 → 앞줄 3, 자리 고정) · `?nohint`.
+
+3D 인형 다시 만들기(한 번만 설치, 약 3 GB: torch + TripoSR 가중치 1.7 GB):
+```sh
+git clone --depth 1 https://github.com/VAST-AI-Research/TripoSR.git ~/dev/tools/TripoSR && cd ~/dev/tools/TripoSR
+uv venv -p 3.11 .venv && uv pip install --python .venv/bin/python torch "numpy<2" omegaconf==2.3.0 Pillow einops==0.7.0 \
+  transformers==4.35.0 "huggingface-hub<0.26" trimesh PyMCubes fast-simplification scipy rtree
+# 맥 패치 2개: tsr/models/isosurface.py — torchmcubes 대신 PyMCubes(정점 순서 v[:, [2, 1, 0]]),
+#             tsr/utils.py — imageio·rembg import를 try/except(그림 → 메쉬에는 필요 없음)
+.venv/bin/python ~/Documents/Jini/2026/Phonics/Toy-Catch/tools/make_3d.py    # 10마리 약 1분(MPS), 원본 메쉬는 out/<kind>.npz에 캐시
+```
 
 ## QA
 ```sh

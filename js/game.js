@@ -622,9 +622,21 @@
     const tx = claw.x, tz = cand ? cand.z : claw.z;      // straight down where it was aimed (into the friend's row)
     // the prongs will close until their knuckles touch the sides of the head; the hub stops where that puts the
     // knuckles level with the head's middle (and never lower than just over the head)
-    const hy = cand ? cand.headR[1] * PS : 0, hx = cand ? cand.headR[0] * PS : 0;
+    let hy = cand ? cand.headR[1] * PS : 0, hx = cand ? cand.headR[0] * PS : 0, gy = cand ? cand.gripY : 0;
+    if (cand && cand.widthAt) {
+      /* a 3D friend: close round its real width there (a fish's round body is wider than its head; a little too wide
+         and it gets squeezed). Far too wide (the turtle: its head sticks out beside the shell) — hold it higher up,
+         round the top of the shell, where it fits */
+      const REACH = 0.78, w0 = cand.widthAt(gy) * PS;
+      if (w0 <= REACH * 1.12) hx = Math.max(hx, Math.min(REACH, w0));
+      else {
+        let y = gy; while (y < cand.top - 0.1 && cand.widthAt(y) * PS > REACH * 0.98) y += 0.02;
+        hx = Math.max(0.36, Math.min(REACH, cand.widthAt(y) * PS)); hy = Math.max(0.08, (cand.top - y) * PS * 0.9); gy = y;
+      }
+      cand.setGrip3d(gy, hx * 1.02 / PS);
+    }
     const shut = cand ? claw.gripAngle(hx * 1.02) : claw.SHUT;
-    const yHead = cand ? cand.root.position.y + cand.gripY * PS : 0;
+    const yHead = cand ? cand.root.position.y + gy * PS : 0;
     const yBot = cand ? Math.max(yHead + claw.knuckleDrop(shut), yHead + hy + 0.03) : 1.45;
     if (cand) { cand.lookAt(claw.holdWorld()); cand.excite(zone === 'hold' ? 1 : 0.4); }
     A.motor(true, 0.8);
@@ -695,7 +707,7 @@
       p.tilt = t0 + side * 0.9 * Math.sin(Math.PI * Math.min(1, k * 1.25));
     }, 'linear', tok);
     p.tilt = 0;
-    A.sfxPlay('thud'); p.nope(0.8); machine.balls.splash(p.home.x, p.home.z, 0.9);
+    A.sfxPlay('thud'); p.nope(0.8); machine.balls.splash(p.home.x, p.home.z, 0.9); if (p.bump) p.bump(0.7);   // lands: squash
     p.root.position.set(p.home.x, p.home.y, p.home.z); p.x = p.home.x;
     if (!G.inMachine.includes(p)) G.inMachine.push(p);
   }
@@ -704,6 +716,7 @@
     const rq = p.root.quaternion.clone(), q0 = new T.Quaternion();
     S.tween(300, k => p.root.quaternion.slerpQuaternions(rq, q0, k), 'out');
     p.hold(true); p.lookAt(null); p.excite(0); claw.setHolding(true);
+    if (p.bump) p.bump(-0.4);                       // pulled up by its head: a little stretch, then it settles
     G.inMachine = G.inMachine.filter(o => o !== p);
   }
   function detach(p) { machine.group.attach(p.root); p.hold(false); claw.setHolding(false); }
@@ -763,11 +776,16 @@
     const end = at(0.5, 0.56, 7.5);
     end.y -= 0.75;
     A.sfxPlay('prize');
-    await S.tween(700, k => {
+    // a 3D friend spins once on the way out (its cap stays under the TARGET banner); a flat picture doesn't (its edge)
+    const spin = p.is3d; if (spin) { p.faceCam = false; p.face.rotation.y = 0; }
+    const face0 = Math.atan2(cam.position.x - end.x, cam.position.z - end.z);
+    await S.tween(800, k => {
       const pos = start.clone().lerp(end, k); pos.y += Math.sin(k * Math.PI) * 1.4;
-      p.root.position.copy(pos); p.root.scale.setScalar(lerp(0.5, 1.4, k));   // its cap stays under the TARGET banner (no spin: a flat picture would show its edge)
+      p.root.position.copy(pos); p.root.scale.setScalar(lerp(0.5, 1.4, k));
+      if (spin) p.root.rotation.y = face0 - (1 - k) * Math.PI * 2;
     }, 'out', tok);
     p.root.lookAt(cam.position.x, p.root.position.y, cam.position.z);
+    if (spin) { p.faceCam = true; p.bump(0.55); }    // lands in front of you: a squash
     const mid = p.root.position.clone().add(V(0, p.top * p.root.scale.y * 0.5, 0));
     burst.position.copy(mid).addScaledVector(mid.clone().sub(cam.position).normalize(), 0.9);
     burst.scale.setScalar(p.top * p.root.scale.y * 2.3);
@@ -821,7 +839,7 @@
       p.root.position.set(lerp(from.x, p.home.x, k), lerp(from.y, p.home.y, S.EASE.bounce(k)), lerp(from.z, p.home.z, k));
       p.root.quaternion.slerpQuaternions(q0, qh, Math.min(1, k * 1.5));
     }, 'linear', tok);
-    A.sfxPlay('thud'); machine.balls.splash(p.home.x, p.home.z, 0.9);
+    A.sfxPlay('thud'); machine.balls.splash(p.home.x, p.home.z, 0.9); if (p.bump) p.bump(0.7);   // lands: squash
     p.root.position.set(p.home.x, p.home.y, p.home.z);
     G.inMachine.push(p);
     G.tries++;

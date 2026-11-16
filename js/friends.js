@@ -13,7 +13,12 @@
  * no light of ours from a side (user: "빛이 너무 어색한데" — a light from the upper left fought the painted one, washed
  * one side out and darkened the other): only a soft shade where the cushion turns away, all round, and under it.
  * The cut-out edge is still the picture's own alpha, so the silhouette and the art stay exactly the user's.
- * ?flat shows the old flat pictures (for comparison).
+ * 3D (js/friends-3d.js, made on this Mac by tools/make_3d.py): each friend is a full 3D plush — TripoSR's shape from
+ * the picture — with the picture itself on the front (the 'front weight' of every vertex) and TripoSR's guessed colours
+ * round the back, so the face is exactly the user's art and the body has a real back and sides. It moves like a soft
+ * toy (plushDeform): squash & stretch on its hops and landings, the top lagging behind when it's pushed or carried (the
+ * legs dangling while it hangs), the claw pinching its head a little. Friends without 3D data fall back to the puffed
+ * picture. ?puff / ?flat show the earlier versions (for comparison).
  */
 (function () {
   'use strict';
@@ -29,6 +34,85 @@
   const PUFF = { cells: 72, depth: 1.6, sway: 0.13 };     // grid cells across a picture; depth (2 = a full hemisphere);
                                                          // idle turn (rad) either way, so the volume shows
   const geoCache = {};
+  const D3 = window.CLAW_FRIENDS_3D || {};
+  const PUFFED = /[?&]puff\b/.test(location.search);
+  const has3d = (k) => !FLAT && !PUFFED && !!D3[k];
+  const srgb = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+
+  /* the 3D shape of one friend, in the same frame as the picture: x across (head middle at 0), y up from the bottom,
+     z toward the camera (the claw's axis at z 0). uv = the picture straight from the front; fw = how much of the
+     picture shows (1 seen from the front, 0 round the back); color = the guessed colours (linear) */
+  function geo3d(kind, w, h, u) {
+    if (geoCache['3d' + kind]) return geoCache['3d' + kind];
+    const d = D3[kind];
+    const bin = (b64) => { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; };
+    const q = new Uint16Array(bin(d.pos).buffer), c8 = bin(d.col), fw = bin(d.fw), idx = new Uint16Array(bin(d.idx).buffer);
+    const pos = new Float32Array(d.n * 3), uv = new Float32Array(d.n * 2), col = new Float32Array(d.n * 3);
+    for (let i = 0; i < d.n; i++) {
+      for (let k = 0; k < 3; k++) pos[i * 3 + k] = d.lo[k] + q[i * 3 + k] / 65535 * (d.hi[k] - d.lo[k]);
+      uv[i * 2] = pos[i * 3] / w + u; uv[i * 2 + 1] = pos[i * 3 + 1] / h;
+      for (let k = 0; k < 3; k++) col[i * 3 + k] = srgb(c8[i * 3 + k] / 255);
+    }
+    const geo = new T.BufferGeometry();
+    geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new T.BufferAttribute(uv, 2));
+    geo.setAttribute('color', new T.BufferAttribute(col, 3));
+    geo.setAttribute('fw', new T.BufferAttribute(fw, 1, true));
+    geo.setIndex(new T.BufferAttribute(idx, 1));
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    return (geoCache['3d' + kind] = geo);
+  }
+
+  /* soft-toy motion in the vertex shader (also in the shadow): squash & stretch about the bottom (sitting) or the head
+     (hanging), the top lagging (sitting) / the legs dangling (hanging) by uBend, the claw's pinch round the head */
+  const DEFORM = `
+    uniform float uSq, uH, uPiv, uGy, uGrip, uHang, uR; uniform vec2 uBend;
+    vec3 plushDeform(vec3 p) {
+      float base = uGy * uHang;
+      p.y = base + (p.y - base) * uSq;
+      float k = inversesqrt(max(uSq, 0.3)); p.x *= k; p.z *= k;
+      float tUp = clamp((p.y - uPiv) / max(uH - uPiv, 0.01), 0.0, 1.0), tDn = clamp((uGy - p.y) / max(uGy, 0.01), 0.0, 1.0);
+      p.xz += uBend * mix(tUp * tUp, tDn * tDn, uHang);
+      float g = exp(-pow((p.y - uGy) / (uH * 0.16), 2.0));
+      p.x *= 1.0 - 0.08 * uGrip * g; p.z *= 1.0 - 0.05 * uGrip * g;
+      // a body wider than the closed prongs (the fish, the turtle's shell) is pressed in where they hold it — only in
+      // front of the prongs' plane (what would hide them) and only in a narrow band (the turtle's face stays as it is)
+      if (uR > 0.0) {
+        float r0 = uR * 0.96, ax = abs(p.x);
+        float w = uGrip * exp(-pow((p.y - uGy) / (uH * 0.1), 2.0)) * smoothstep(-0.25, -0.05, p.z);
+        if (ax > r0) p.x = sign(p.x) * mix(ax, r0 + (ax - r0) * 0.3, w);
+      }
+      return p;
+    }`;
+  function deformVS(vs) {
+    return vs.replace('void main() {', DEFORM + '\nvoid main() {')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed = plushDeform(transformed);');
+  }
+  /* the 3D friend's colour: the picture where it's seen from the front, the guessed colours behind; then the same soft
+     shade as the puffed pictures (darker only where it turns away from the camera and underneath — the art's painted
+     light stays the light) and the claw's spotlight */
+  function plush3dShader(sh) {
+    Object.assign(sh.uniforms, this.userData.u);
+    sh.uniforms.uLit = this.userData.uLit;
+    sh.vertexShader = deformVS(sh.vertexShader)
+      .replace('void main() {', 'attribute float fw;\nvarying float vFw;\nvarying vec3 vPuffN;\nvoid main() {\n  vFw = fw;\n  vPuffN = normalize(normalMatrix * normal);');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', 'varying float vFw;\nvarying vec3 vPuffN;\nuniform float uLit;\nvoid main() {')
+      .replace('#include <map_fragment>', `
+      vec4 texel = texture2D(map, vMapUv);
+      diffuseColor.rgb = mix(vColor.rgb, texel.rgb, vFw * smoothstep(0.3, 0.7, texel.a));   // (vColor is a vec4 in this three)`)
+      .replace('#include <color_fragment>', `
+      {
+        vec3 n = normalize(vPuffN);
+        if (!gl_FrontFacing) n = -n;
+        float away = pow(1.0 - clamp(n.z, 0.0, 1.0), 1.5);
+        float shade = 1.0 - 0.16 * away - 0.1 * clamp(-n.y, 0.0, 1.0) * away;
+        diffuseColor.rgb *= clamp(shade, 0.72, 1.0);
+        diffuseColor.rgb *= 1.0 + uLit * (0.07 + 0.24 * smoothstep(-0.25, 0.85, n.y));
+        diffuseColor.rgb *= mix(vec3(1.0), vec3(1.03, 1.0, 0.95), uLit);
+      }`);
+  }
 
   /* the puffed relief of one picture, in the same frame as the old plane: x across (head middle at 0), y up from the
      bottom, z toward the camera from the picture plane (-BACK) */
@@ -144,15 +228,26 @@
     P.face = new T.Group(); P.seat.add(P.face);
     const tex = new T.Texture(im);
     tex.colorSpace = T.SRGBColorSpace; tex.anisotropy = 8; tex.needsUpdate = true;
-    let geo;
-    if (FLAT) { geo = new T.PlaneGeometry(w, h); geo.translate((0.5 - u) * w, h / 2, -BACK); }   // the head's middle over the root
-    else geo = puffGeo(kind, w, h, u);
-    const mat = new T.MeshBasicMaterial({ map: tex, alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+    let geo, mat, depth;
+    const is3d = has3d(kind);
+    const U = { uSq: { value: 1 }, uH: { value: h }, uPiv: { value: h * 0.22 }, uGy: { value: (1 - v) * h }, uGrip: { value: 0 }, uHang: { value: 0 }, uR: { value: 0 }, uBend: { value: new T.Vector2() } };
+    if (is3d) {
+      geo = geo3d(kind, w, h, u);
+      mat = new T.MeshBasicMaterial({ map: tex, vertexColors: true, toneMapped: false });
+      mat.userData.u = U; mat.onBeforeCompile = plush3dShader;
+      depth = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking });
+      depth.onBeforeCompile = (sh) => { Object.assign(sh.uniforms, U); sh.vertexShader = deformVS(sh.vertexShader); };
+    } else {
+      if (FLAT) { geo = new T.PlaneGeometry(w, h); geo.translate((0.5 - u) * w, h / 2, -BACK); }   // the head's middle over the root
+      else geo = puffGeo(kind, w, h, u);
+      mat = new T.MeshBasicMaterial({ map: tex, alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+      if (!FLAT) { mat.onBeforeCompile = puffShade; mat.side = T.DoubleSide; }   // (turned a little, the far edge shows its inside)
+      depth = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: tex, alphaTest: 0.5 });
+    }
     mat.userData.uLit = { value: 0 };
-    if (!FLAT) { mat.onBeforeCompile = puffShade; mat.side = T.DoubleSide; }   // (turned a little, the far edge shows its inside)
     const pic = new T.Mesh(geo, mat);
     pic.castShadow = true;
-    pic.customDepthMaterial = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking, map: tex, alphaTest: 0.5 });
+    pic.customDepthMaterial = depth;
     P.face.add(pic); P.pic = pic;
     Object.defineProperty(pic.userData, 'plush', { value: P, enumerable: false, configurable: true });
     // soft contact shadow on the shelf / balls (fades while it's held)
@@ -172,7 +267,26 @@
       return g.a[y * g.w + x];
     };
     P.phase = Math.random() * 10;
-    P.st = { excite: 0, ek: 0, cheer: 0, ck: 0, held: 0, hk: 0, nope: 0, look: null, lean: 0 };
+    P.st = { excite: 0, ek: 0, cheer: 0, ck: 0, held: 0, hk: 0, nope: 0, look: null, lean: 0,
+      sq: 1, sqv: 0, b: new T.Vector2(), bv: new T.Vector2(), wp: null, wv: new T.Vector3() };
+    P.is3d = is3d;
+    P.faceCam = true;                                     // (the dev viewer turns them by hand)
+    if (is3d) {
+      /* how wide the body is at each height (scale 1, either side of the claw's axis), counting only what's in front of
+         the prongs' plane — the claw closes round that, not round the picture's head (a fish or a turtle is far wider
+         than its head) */
+      const pos = geo.attributes.position, STEP = 0.02, N = Math.ceil(h / STEP) + 1, hw = new Float32Array(N);
+      for (let i = 0; i < pos.count; i++) {
+        if (pos.getZ(i) < -0.02) continue;
+        const y = pos.getY(i), x = Math.abs(pos.getX(i)), j = Math.round(y / STEP);
+        for (let k = Math.max(0, j - 1); k <= Math.min(N - 1, j + 1); k++) hw[k] = Math.max(hw[k], x);
+      }
+      P.widthAt = (y) => { const f = Math.max(0, Math.min(N - 1.001, y / STEP)), j = Math.floor(f); return hw[j] + (hw[j + 1] - hw[j]) * (f - j); };
+      /* where the claw holds it this time (height and the prongs' radius, scale 1): the soft squeeze and the hanging */
+      P.setGrip3d = (y, r) => { U.uGy.value = y; U.uR.value = r; };
+    }
+    /* a squash (k > 0) or stretch (k < 0) kick — landing, being grabbed */
+    P.bump = (k) => { P.st.sqv -= k * 3.5; };
     P.tilt = 0;
     P.excite = (val) => { P.st.excite = val; };
     P.cheer = (sec = 1.6) => { P.st.cheer = sec; };
@@ -203,15 +317,47 @@
       P.blob.visible = P.blob.material.opacity > 0.01;
       // always face the camera (turn about the vertical; whatever the parents' yaw)
       const cam = window.Stage && Stage.camera;
-      if (cam) {
+      if (cam && P.faceCam) {
         P.face.getWorldPosition(tmp);
         const want = Math.atan2(cam.position.x - tmp.x, cam.position.z - tmp.z);
         P.seat.getWorldQuaternion(tmpQ); tmpE.setFromQuaternion(tmpQ, 'YXZ');
-        // (puffed: a slow idle turn either way, a livelier one while it hangs from the claw — so the volume shows)
-        const sway = FLAT ? 0 : PUFF.sway * (Math.sin(t * 0.8 + ph) * sit + Math.sin(t * 2.1 + ph) * 1.1 * s.hk);
+        // (a slow idle turn either way, a livelier one while it hangs from the claw — so the volume shows; wider for
+        // the 3D friends, which have real sides)
+        const amp = FLAT ? 0 : is3d ? 0.24 : PUFF.sway;
+        const sway = amp * (Math.sin(t * 0.8 + ph) * sit + Math.sin(t * 2.1 + ph) * 1.1 * s.hk);
         P.face.rotation.y = want - tmpE.y + sway;
       }
+      if (is3d) softBody(dt, t, hop, sit);
     };
+    /* the soft-toy feel: squash & stretch (a spring, kicked by bump(), plus the hops: squashed as it lands, a little
+       stretched in the air), the bend (the top lags behind the friend's own acceleration; while it hangs, the legs),
+       the claw's pinch */
+    const acc = new T.Vector3(), qi = new T.Quaternion();
+    function softBody(dt, t, hop, sit) {
+      const s = P.st, ph = P.phase;
+      if (dt <= 0) return;
+      const h1 = Math.min(dt, 1 / 30);
+      s.sqv += (-(s.sq - 1) * 260 - s.sqv * 11) * h1; s.sq += s.sqv * h1;
+      s.sq = Math.max(0.7, Math.min(1.3, s.sq));
+      const he = Math.abs(Math.sin(t * 8.5 + ph)), hc = Math.abs(Math.sin(t * 7 + ph * 0.3));
+      const ce = Math.exp(-Math.pow(he / 0.2, 2)), cc = Math.exp(-Math.pow(hc / 0.2, 2));
+      const hopSq = 1 + sit * (s.ek * (-0.13 * ce + 0.06 * (1 - ce) * Math.abs(Math.cos(t * 8.5 + ph)))
+                              + s.ck * (-0.16 * cc + 0.07 * (1 - cc) * Math.abs(Math.cos(t * 7 + ph * 0.3))));
+      P.root.getWorldPosition(tmp);
+      if (!s.wp) s.wp = tmp.clone();
+      const vel = tmp.clone().sub(s.wp).divideScalar(dt);
+      acc.copy(vel).sub(s.wv).divideScalar(dt);
+      if (acc.length() > 400) acc.setLength(400);
+      s.wp.copy(tmp); s.wv.copy(vel);
+      P.face.getWorldQuaternion(qi); qi.invert(); acc.applyQuaternion(qi);
+      const G = 1 / (P.root.scale.x || 1);
+      s.bv.x += (-s.b.x * 120 - s.bv.x * 8 - acc.x * G) * h1; s.bv.y += (-s.b.y * 120 - s.bv.y * 8 - acc.z * G) * h1;
+      s.b.x = Math.max(-0.13, Math.min(0.13, s.b.x + s.bv.x * h1)); s.b.y = Math.max(-0.1, Math.min(0.1, s.b.y + s.bv.y * h1));
+      const up = Math.max(-0.05, Math.min(0.05, vel.y * 0.02)) * s.hk;     // pulled up fast: a little longer
+      U.uSq.value = s.sq * hopSq * (1 + up);
+      U.uBend.value.copy(s.b);
+      U.uHang.value = s.hk; U.uGrip.value = s.hk;
+    }
     return P;
   }
 
