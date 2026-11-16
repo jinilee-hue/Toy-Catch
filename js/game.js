@@ -444,7 +444,7 @@
   function interact() { G.idle = 0; G.interacted = true; stopHint(); $('#downHint').classList.remove('show'); }
 
   /* ── flow ───────────────────────────────────────────────────────────────────────────────────────── */
-  function setScreen(s) { G.screen = s; app.dataset.screen = s; machine.setDown({ show: s === 'game' }); machine.setDecor(s !== 'title'); }
+  function setScreen(s) { G.screen = s; app.dataset.screen = s; machine.setDown({ show: s === 'game' }); }
   function setDrop(on) { $('#drop').classList.toggle('off', !on); machine.setDown({ on }); }
   const sleep = ms => S.wait(ms);
   function dolly(to, ms) {
@@ -472,7 +472,6 @@
     }, 'in', tok);
     if (tok !== G.tok) return;
     A.sfxPlay('coin');
-    machine.setDecor(true);                              // the coin's in: the controls pop up round the panel
     const p = S.project(slot); FX.sparkle(p.x, p.y, 14, 4); FX.stars(p.x, p.y, 8);
     await S.tween(220, k => { coin.position.y = local.y + 0.12 - 0.2 * k; coin.scale.setScalar(1 - 0.4 * k); }, 'in', tok);
     coin.visible = false;
