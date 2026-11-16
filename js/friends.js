@@ -9,8 +9,10 @@
  * A 600-px-tall picture is 1.3 units tall; the game scales friends by 1.3 in the machine.
  * The pictures are PUFFED into soft reliefs (user: "동물이미지들 디자인 같게해서 3d 모델링"): the silhouette inflated like a
  * cushion — Poisson inflation, so wide parts (head, body) get thick and arms/ears/tails stay thin, all round at the
- * edges — with the picture mapped straight on from the front and a soft light from the upper left (the key light's
- * side). The cut-out edge is still the picture's own alpha, so the silhouette and the art stay exactly the user's.
+ * edges — with the picture mapped straight on from the front. The pictures already have their own painted light, so
+ * no light of ours from a side (user: "빛이 너무 어색한데" — a light from the upper left fought the painted one, washed
+ * one side out and darkened the other): only a soft shade where the cushion turns away, all round, and under it.
+ * The cut-out edge is still the picture's own alpha, so the silhouette and the art stay exactly the user's.
  * ?flat shows the old flat pictures (for comparison).
  */
 (function () {
@@ -78,8 +80,9 @@
     return (geoCache[kind] = geo);
   }
 
-  /* the soft light on the puffed relief: brighter where it faces the upper left, darker where it turns away and toward
-     the edges; facing the camera it is exactly the picture (so the art's colours stay as drawn) */
+  /* the shade on the puffed relief: never brighter than the picture and the same on the left and the right (the art's
+     own painted light stays the only light) — a little darker only where the cushion turns away near its outline, a
+     touch more on its underside; facing the camera it is exactly the picture */
   function puffShade(sh) {
     sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying vec3 vPuffN;\nvoid main() {\n  vPuffN = normalize(normalMatrix * normal);');
     sh.fragmentShader = sh.fragmentShader
@@ -88,12 +91,9 @@
       {
         vec3 n = normalize(vPuffN);
         if (!gl_FrontFacing) n = -n;
-        vec3 L = normalize(vec3(-0.36, 0.6, 0.71));
-        float shade = clamp(1.0 + 0.55 * (dot(n, L) - L.z), 0.6, 1.18);
-        shade *= mix(0.8, 1.0, smoothstep(0.0, 0.65, n.z));
-        diffuseColor.rgb *= shade;
-        diffuseColor.rgb += vec3(1.0, 0.97, 0.94) * pow(max(dot(n, normalize(L + vec3(0.0, 0.0, 1.0))), 0.0), 16.0) * 0.07;   // soft sheen
-        diffuseColor.rgb += vec3(1.0, 0.95, 0.97) * pow(1.0 - clamp(n.z, 0.0, 1.0), 3.0) * 0.1;                               // fuzzy rim
+        float away = pow(1.0 - clamp(n.z, 0.0, 1.0), 1.5);
+        float shade = 1.0 - 0.14 * away - 0.08 * clamp(-n.y, 0.0, 1.0) * away;
+        diffuseColor.rgb *= clamp(shade, 0.78, 1.0);
       }`);
   }
 

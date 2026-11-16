@@ -69,7 +69,15 @@
       gr.addColorStop(0, 'rgba(255,240,150,0.0)'); gr.addColorStop(0.15, 'rgba(255,240,150,0.55)'); gr.addColorStop(1, 'rgba(255,240,150,0.0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
     });
-    const m = new T.Mesh(new T.CylinderGeometry(0.1, 0.5, 1, 32, 1, true), new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, opacity: 0 }));
+    const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, opacity: 0 });
+    // soft edges: every bit of the cone fades as it turns side-on to the camera, so it reads as a glow — it was an even
+    // white trapezoid with hard sides, like a paper cone (user: "빛이 너무 어색한데")
+    mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying float vFace;\nvoid main() {\n  { vec4 mvp = modelViewMatrix * vec4(position, 1.0); vFace = abs(dot(normalize(normalMatrix * normal), normalize(-mvp.xyz))); }');
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying float vFace;\nvoid main() {')
+        .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a *= pow(vFace, 2.2);');
+    };
+    const m = new T.Mesh(new T.CylinderGeometry(0.1, 0.5, 1, 32, 1, true), mat);
     m.renderOrder = 5; m.visible = false;
     return m;
   }
