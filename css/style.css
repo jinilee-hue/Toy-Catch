@@ -109,7 +109,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 @keyframes startWave { 0%, 56%, 100% { scale: 1; } 26% { scale: 1.12 1.09; } }
 @keyframes breathe { 0%, 100% { scale: 1; } 50% { scale: 1.045; } }   /* (the results screen's play-again button) */
 .start:active { scale: .96; }
-#app:not([data-screen="title"]) .start, #app.coin .start { opacity: 0; pointer-events: none; transform: scale(.6); }
+#app:not([data-screen="title"]) .start, #app.inserting .start { opacity: 0; pointer-events: none; transform: scale(.6); }
 
 /* ── HUD: one row, no word labels (user: "상단 ui가 너무 복잡해") — score + caught-friends tray on the left, the target
    letter in the middle, time + sound / exit on the right; every piece centred on the same line (9.6u from the top) ── */

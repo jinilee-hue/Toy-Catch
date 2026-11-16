@@ -82,7 +82,7 @@
     mat.onBeforeCompile = (sh) => {           // fades as the wall turns side-on to the camera: soft sides, no outline
       sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying float vFace;\nvoid main() {\n  { vec4 mvp = modelViewMatrix * vec4(position, 1.0); vFace = abs(dot(normalize(normalMatrix * normal), normalize(-mvp.xyz))); }');
       sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying float vFace;\nvoid main() {')
-        .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a *= pow(vFace, 1.6);');
+        .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a *= vFace;');
     };
     const geo = new T.CylinderGeometry(0.08, 1, 1, 48, 1, true); geo.translate(0, -0.5, 0);   // top at 0, 1 long, downward
     const cone = new T.Mesh(geo, mat); cone.renderOrder = 5; cone.raycast = () => {};
@@ -91,7 +91,7 @@
     // it fades out before the prongs and the friend
     const texN = Mats.tex(8, 256, (g, w, h) => {
       const gr = g.createLinearGradient(0, 0, 0, h);
-      gr.addColorStop(0, 'rgba(255,244,214,0.9)'); gr.addColorStop(0.16, 'rgba(255,244,214,0.4)'); gr.addColorStop(0.36, 'rgba(255,244,214,0)');
+      gr.addColorStop(0, 'rgba(255,244,214,0.62)'); gr.addColorStop(0.14, 'rgba(255,244,214,0.26)'); gr.addColorStop(0.32, 'rgba(255,244,214,0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
     });
     const matN = mat.clone(); matN.map = texN; matN.side = T.FrontSide; matN.onBeforeCompile = mat.onBeforeCompile;
@@ -119,14 +119,14 @@
           dst.set(at.x, at.floorY, at.z);
           dir.subVectors(dst, src); const len = dir.length(); dir.divideScalar(len);
           cone.position.copy(src); cone.quaternion.setFromUnitVectors(DOWN, dir); cone.scale.set(at.r, len, at.r);
-          light.position.copy(src); light.target.position.copy(dst); light.angle = Math.atan(at.r / len) * 1.15;
+          light.position.copy(src); light.target.position.copy(dst); light.angle = Math.atan(at.r / len);
           if (lit !== at.friend) { if (lit) lit.lit(0); lit = at.friend; }
         }
         const tune = G.spotTune || {};                       // (QA: __claw.spotTune = { I, cone, lit, flare })
         if (lit) lit.lit(at ? Math.min(1.5, k * (tune.lit ?? 1.2)) : 0);
         if (!at && k < 0.02 && lit) { lit.lit(0); lit = null; }
         light.intensity = (tune.I ?? 24) * k;
-        mat.opacity = matN.opacity = (tune.cone ?? 0.42) * k;
+        mat.opacity = matN.opacity = (tune.cone ?? 0.36) * k;
         cone.visible = mat.opacity > 0.003;
         flare.material.opacity = (tune.flare ?? 0.55) * k; flare.scale.setScalar(0.2);
         flare.visible = flare.material.opacity > 0.003;
@@ -342,7 +342,8 @@
       else if (!G.busy) p.lookAt(null);
     }
     // (where the claw would go down, not the friend's middle: bright right over it, dim a little off)
-    spot.update(dt, cand ? { x: claw.x, z: cand.z, floorY: cand.root.position.y, r: cand.width * PS * 0.62,
+    // (r: the light's width on the floor — a little wider than the friend, user: "선택 빛이 좀더 넓은게")
+    spot.update(dt, cand ? { x: claw.x, z: cand.z, floorY: cand.root.position.y, r: cand.width * PS * 1.3,
       level: zone === 'hold' ? 1 : zone === 'weak' ? 0.45 : 0.2, friend: cand } : null);
     // "DOWN!" when the claw rests over a friend
     if (G.screen === 'game' && !G.busy) {
@@ -443,7 +444,7 @@
   function interact() { G.idle = 0; G.interacted = true; stopHint(); $('#downHint').classList.remove('show'); }
 
   /* ── flow ───────────────────────────────────────────────────────────────────────────────────────── */
-  function setScreen(s) { G.screen = s; app.dataset.screen = s; machine.setDown({ show: s === 'game' }); }
+  function setScreen(s) { G.screen = s; app.dataset.screen = s; machine.setDown({ show: s === 'game' }); machine.setDecor(s !== 'title'); }
   function setDrop(on) { $('#drop').classList.toggle('off', !on); machine.setDown({ on }); }
   const sleep = ms => S.wait(ms);
   function dolly(to, ms) {
@@ -459,7 +460,7 @@
     A.unlock(); A.startBgm();
     A.stopVoice();
     if (again) { setScreen('title'); await sleep(250); setupPlushes(); claw.set(claw.x, claw.HOME_Y, claw.z); }
-    app.classList.add('coin');
+    app.classList.add('inserting');                     // (not 'coin': that's the intro coins' class — it shrank the whole app into a coin)
     // the coin flips in and drops into the slot
     const slot = machine.slotPoint(), coin = machine.coin;
     const sp = slot.clone(), local = machine.group.worldToLocal(sp.clone());
@@ -471,6 +472,7 @@
     }, 'in', tok);
     if (tok !== G.tok) return;
     A.sfxPlay('coin');
+    machine.setDecor(true);                              // the coin's in: the controls pop up round the panel
     const p = S.project(slot); FX.sparkle(p.x, p.y, 14, 4); FX.stars(p.x, p.y, 8);
     await S.tween(220, k => { coin.position.y = local.y + 0.12 - 0.2 * k; coin.scale.setScalar(1 - 0.4 * k); }, 'in', tok);
     coin.visible = false;
@@ -479,7 +481,7 @@
     A.say('t:ready');
     await sleep(500);
     if (tok !== G.tok) return;
-    app.classList.remove('coin');
+    app.classList.remove('inserting');
     setScreen('game');
     G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
     $('#score').textContent = '0';
@@ -789,7 +791,7 @@
     claw.set(claw.x, claw.HOME_Y, 0.15); claw.setGrip(claw.OPEN * 0.55);
     machine.setScreen(['LEVEL 1', 'M A S T']);
     machine.coin.visible = false;
-    app.classList.remove('coin');
+    app.classList.remove('inserting');
     setScreen('title');
     S.frame.push = 0; S.resize();
   }

@@ -300,10 +300,10 @@
     const capMat = new T.MeshPhysicalMaterial({ map: capTex, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.12 });
     const downCap = mesh(capGeo, capMat, downIn, [0, CAP_Y, 0], { scale: [DOWN_CAP, DOWN_H, DOWN_CAP] });
     const downSt = { show: 0, k: 0, on: true, ready: false, press: 0, dim: 0 };
-    // joystick: base, stick, red ball (tilts while driven)
-    const joy = grp(panel, 1.55, 0.02, 0.05);
-    mesh(new T.CylinderGeometry(0.24, 0.27, 0.07, 32), M.darkMetal(), joy, [0, 0.03, 0]);
-    const stick = grp(joy, 0, 0.06, 0);
+    // joystick: base, stick, red ball (tilts while driven); joyIn pops in/out, joy stays put (joyPoint)
+    const joy = grp(panel, 1.55, 0.02, 0.05), joyIn = grp(joy);
+    mesh(new T.CylinderGeometry(0.24, 0.27, 0.07, 32), M.darkMetal(), joyIn, [0, 0.03, 0]);
+    const stick = grp(joyIn, 0, 0.06, 0);
     mesh(new T.CylinderGeometry(0.035, 0.04, 0.42, 16), M.chrome(), stick, [0, 0.21, 0]);
     mesh(SPH, M.plastic('#f0423c', { rough: 0.2, clear: 1 }), stick, [0, 0.46, 0], { scale: 0.15 });
     // the little screen
@@ -317,6 +317,12 @@
     const coinPlate = grp(panel, 3.55, 0.02, 0.1);
     mesh(rbox(0.42, 0.06, 0.62, 0.05), M.chrome(), coinPlate, [0, 0.03, 0]);
     mesh(rbox(0.06, 0.02, 0.32, 0.01), new T.MeshBasicMaterial({ color: '#111111' }), coinPlate, [0, 0.065, 0], { cast: false });
+    /* the panel's other controls — the little screen, the joystick, the round buttons — are hidden on the title, so
+       START stands alone in the middle (user: "스타트 버튼 양옆에 너무 복잡한데.. 좀 정리"); they pop up one after
+       another when the coin goes in, and go again back on the title. (The coin slot stays: the coin drops into it.) */
+    const decor = [sg, joyIn, btnYel, btnRed2, btnRed].map(g => ({ g, k: 0, v: 0 }));
+    const decorSt = { show: 0, t: 0 };
+    for (const d of decor) { d.g.scale.setScalar(0.001); d.g.visible = false; }
     const coin = mesh(new T.CylinderGeometry(0.17, 0.17, 0.04, 40), [M.plastic('#e8a816', { rough: 0.25, clear: 1 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 })], group, [0, 0, 0], { cast: false });
     coin.visible = false;
 
@@ -352,6 +358,16 @@
       downCap.position.y = ds.press > 0 ? CAP_Y - 0.03 : CAP_Y;
       ds.dim += ((ds.on ? 0 : 1) - ds.dim) * Math.min(1, dt * 8);
       capMat.color.setRGB(1 - 0.42 * ds.dim, 1 - 0.36 * ds.dim, 1 - 0.42 * ds.dim);
+      // the other controls: springy pop-in one after another, all out at once
+      decorSt.t += dt;
+      const h = Math.min(dt, 1 / 30);
+      decor.forEach((d, i) => {
+        const want = decorSt.show && decorSt.t > i * 0.08 ? 1 : 0;
+        d.v += ((want - d.k) * 190 - d.v * 15) * h; d.k += d.v * h;
+        if (!decorSt.show) d.k = Math.max(0, d.k);
+        d.g.scale.setScalar(Math.max(0.001, d.k));
+        d.g.visible = d.k > 0.01;
+      });
     }
 
     const api = {
@@ -367,6 +383,7 @@
       chase(sec = 1.5) { chaseFast = sec; },
       setJoy(v) { joyTarget = Math.max(-1, Math.min(1, v)); },
       setScreen(lines, accent) { drawScreen(scr, lines, accent); scrTex.needsUpdate = true; },
+      setDecor(on) { const v = on ? 1 : 0; if (v !== decorSt.show) { decorSt.show = v; decorSt.t = 0; } },
       press(b) { const c = b.userData.cap; c.position.y = 0.04; setTimeout(() => (c.position.y = 0.08), 160); },
       /* the DOWN button: setDown({ show, on, ready }), pressDown(); downRim() = its rim's points in world space */
       setDown(o) { if ('show' in o) downSt.show = o.show ? 1 : 0; if ('on' in o) downSt.on = !!o.on; if ('ready' in o) downSt.ready = !!o.ready; },
