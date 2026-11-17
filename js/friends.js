@@ -67,15 +67,18 @@
     geo.computeVertexNormals();
     if (t16) {
       // the atlas splits vertices along its seams: copies at one spot share one normal, else the shade shows the seams
-      const nr = geo.attributes.normal.array, sum = new Map();
+      // (and one set of pose weights, see build: geo.userData.one = each vertex's first copy)
+      const nr = geo.attributes.normal.array, first = new Map(), one = new Uint32Array(d.n);
       for (let i = 0; i < d.n; i++) {
-        const key = q[i * 3] + ',' + q[i * 3 + 1] + ',' + q[i * 3 + 2], s = sum.get(key);
-        if (s) { s[0] += nr[i * 3]; s[1] += nr[i * 3 + 1]; s[2] += nr[i * 3 + 2]; } else sum.set(key, [nr[i * 3], nr[i * 3 + 1], nr[i * 3 + 2]]);
+        const key = q[i * 3] + ',' + q[i * 3 + 1] + ',' + q[i * 3 + 2], j = first.get(key);
+        if (j === undefined) { first.set(key, i); one[i] = i; } else { one[i] = j; for (let k = 0; k < 3; k++) nr[j * 3 + k] += nr[i * 3 + k]; }
       }
       for (let i = 0; i < d.n; i++) {
-        const s = sum.get(q[i * 3] + ',' + q[i * 3 + 1] + ',' + q[i * 3 + 2]), l = Math.hypot(s[0], s[1], s[2]) || 1;
-        nr[i * 3] = s[0] / l; nr[i * 3 + 1] = s[1] / l; nr[i * 3 + 2] = s[2] / l;
+        const j = one[i], l = Math.hypot(nr[j * 3], nr[j * 3 + 1], nr[j * 3 + 2]) || 1;
+        if (j === i) for (let k = 0; k < 3; k++) nr[i * 3 + k] /= l;
+        else for (let k = 0; k < 3; k++) nr[i * 3 + k] = nr[j * 3 + k];
       }
+      geo.userData.one = one;
     }
     geo.computeBoundingSphere();
     return (geoCache['3d' + kind] = geo);
@@ -345,6 +348,15 @@ void main() {
       P.setGrip3d = (y, r) => { U.uGy.value = y; U.uR.value = r; };
     }
     if (window.Poses) Poses.attach(P, is3d ? { geo, mat, depth, U, w, h, u } : null);   // signature pose (js/poses.js)
+    if (is3d && geo.userData.one && geo.attributes.pw && !geo.userData.pwOne) {
+      // the pose weights were smoothed over the triangles: copies along the atlas seams take their average, else a
+      // pose would open the seams
+      const one = geo.userData.one, a = geo.attributes.pw.array, k = geo.attributes.pw.itemSize, n = one.length;
+      const sum = new Float32Array(n * k), cnt = new Uint16Array(n);
+      for (let i = 0; i < n; i++) { cnt[one[i]]++; for (let p = 0; p < k; p++) sum[one[i] * k + p] += a[i * k + p]; }
+      for (let i = 0; i < n; i++) for (let p = 0; p < k; p++) a[i * k + p] = sum[one[i] * k + p] / cnt[one[i]];
+      geo.attributes.pw.needsUpdate = true; geo.userData.pwOne = true;
+    }
     /* a squash (k > 0) or stretch (k < 0) kick — landing, being grabbed */
     P.bump = (k) => { P.st.sqv -= k * 3.5; };
     P.tilt = 0;
