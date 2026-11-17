@@ -68,6 +68,7 @@ SHEET_VIEWS = {
     'seal':   {'front': (179, 219), 'side': (537, 219), 'back': (179, 574)},
     'turtle': {'front': (508, 226), 'head': (179, 224), 'tail': (181, 562)},
     'fish':   {'front': (523, 220), 'head': (185, 218), 'tail': (185, 553)},
+    'duck':   {'front': (179, 260), 'side': (515, 250), 'back': (178, 560)},
 }
 SIDE_ON = ('turtle', 'fish')                     # game picture = a side view
 # a letter on a side-on friend's flank (picture pixels x0, y0, x1, y1): mirrored onto the other side it would read
