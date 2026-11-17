@@ -237,11 +237,13 @@
     mesh(rbox(0.56, 0.3, 0.56, 0.1), lav, trolley, [0, -0.16, 0]);
     // the round lamp on the trolley's front: the selection light comes out of it (game.js makeSpot)
     const lamp = mesh(SPH, new T.MeshStandardMaterial({ color: '#fff4a8', emissive: '#ffd84a', emissiveIntensity: 0.8 }), trolley, [0, -0.16, 0.29], { scale: [0.06, 0.06, 0.02], cast: false });
-    // the coiled cord: a unit-long helix, stretched to the claw
+    // the coiled cord: a unit-long helix, stretched to the claw. The cord and the claw hang from `cable` (where the cord
+    // leaves the trolley): a go that misses sets them swinging on it (claw.wobble)
     const helix = [];
     for (let i = 0; i <= 600; i++) { const t = i / 600, a = t * Math.PI * 2 * 22; helix.push(V(Math.cos(a) * 0.045, -t, Math.sin(a) * 0.045)); }
-    const coil = mesh(new T.TubeGeometry(new T.CatmullRomCurve3(helix), 900, 0.012, 6, false), new T.MeshStandardMaterial({ color: '#2b2b33', roughness: 0.45 }), trolley, [0, -0.31, 0], { cast: false });
-    const head = grp(trolley, 0, -1.2, 0);              // hub top
+    const cable = grp(trolley, 0, -0.31, 0);
+    const coil = mesh(new T.TubeGeometry(new T.CatmullRomCurve3(helix), 900, 0.012, 6, false), new T.MeshStandardMaterial({ color: '#2b2b33', roughness: 0.45 }), cable, [0, 0, 0], { cast: false });
+    const head = grp(cable, 0, -0.89, 0);               // hub top
     const CLAW_S = 1.3;
     const swing = grp(head); swing.scale.setScalar(CLAW_S);
     mesh(new T.CylinderGeometry(0.1, 0.12, 0.2, 28), M.chrome(), swing, [0, -0.1, 0]);
@@ -272,6 +274,7 @@
       prongs.push(arm);
     }
     const hold = grp(swing, 0, -0.52, 0);               // ~ where a carried head sits (look-at / sparkle point)
+    const bottom = grp(swing, 0, -0.225, 0);            // the hub's bottom (it presses a soft head in: friends.js)
     // prong angle: open (negative = tips out) ... closed (positive = tips cross)
     const OPEN = -0.8, SHUT = 0.16;
     let grip = OPEN, cordLen = 0.9;
@@ -291,17 +294,33 @@
     };
     const knuckleDrop = (a) => -knuckle(a).y;
     const angleFor = (r) => { r /= CLAW_S; let best = OPEN, err = 1e9; for (let a = OPEN; a <= SHUT; a += 0.01) { const z = PIV_R + (-0.64 * Math.sin(a) + 0.1 * Math.cos(a)); if (Math.abs(z - r) < err) { err = Math.abs(z - r); best = a; } } return best; };
+    /* the tip balls (their centres) at angle a: how far out from the claw's axis, how far under the hub top (world) —
+       for the neck grip (game.js): the tips close in round the friend's neck */
+    const TIP = [-0.64, 0.1], TIP_R = 0.045 * CLAW_S;
+    const tipR = (a) => (PIV_R + TIP[0] * Math.sin(a) + TIP[1] * Math.cos(a)) * CLAW_S;
+    const tipDrop = (a) => -(PIV_Y + TIP[0] * Math.cos(a) - TIP[1] * Math.sin(a)) * CLAW_S;
+    const angleForTip = (r) => { let best = OPEN, err = 1e9; for (let a = OPEN; a <= SHUT; a += 0.002) { const e = Math.abs(tipR(a) - r); if (e < err) { err = e; best = a; } } return best; };
+    /* a miss (nothing caught, a prong knocked the friend, it slipped out): the claw swings on its cable — a damped
+       pendulum (~1 Hz, mostly settled in ~2 s) — and its prongs rattle a little. wobble(strength, dir ±1: which way it
+       swings first, along x, rattle: the prongs' jiggle, 0 = none) */
+    const wob = { z: 0, vz: 0, x: 0, vx: 0, jig: 0, jt: 9, n: 0 };
+    const WOB_W = 2 * Math.PI * 1.05, WOB_Z = 0.17;
     const HOME_Y = H - 0.72, CARRY_Y = H - 0.42;         // hub top: claw up (clears the back row) / carrying
     const claw = {
       x: 0, z: 0.3, y: HOME_Y, vx: 0, vz: 0, swingX: 0, swingZ: 0, svx: 0, svz: 0,
-      head, swing, hold, prongs, OPEN, SHUT, HOME_Y, CARRY_Y, CLAW_S, HOLD: 0.52 * CLAW_S, setGrip, angleFor, gripAngle, knuckleDrop,
+      head, swing, hold, bottom, prongs, OPEN, SHUT, HOME_Y, CARRY_Y, CLAW_S, HOLD: 0.52 * CLAW_S, setGrip, angleFor, gripAngle, knuckleDrop,
+      tipR, tipDrop, angleForTip, TIP_R, HUB_DROP: 0.225 * CLAW_S, HUB_R: 0.135 * CLAW_S,
       setHolding(on) { tips[2].visible = !on; },
       get grip() { return grip; },
+      wobble(s = 1, dir = 1, j = 1) {
+        wob.vz += dir * s * 1.5; wob.vx += s * 0.4 * (wob.n++ % 2 ? -1 : 1);
+        if (j > 0) { wob.jig = Math.max(wob.jig * Math.exp(-wob.jt / 0.22), 0.08 * Math.min(1.2, j)); wob.jt = 0; }
+      },
       set(x, y, z) {
         claw.x = x; claw.y = y; claw.z = z;
         gantry.position.x = x; trolley.position.z = z;
         cordLen = Math.max(0.06, (RAIL_Y - 0.08 - 0.31) - y);
-        head.position.y = -0.31 - cordLen;
+        head.position.y = -cordLen;
         coil.scale.y = cordLen;
       },
       /* world position of the hold point (a carried head's centre) */
@@ -413,6 +432,16 @@
       claw.svz += (-k * claw.swingZ - c * claw.svz + Math.max(-30, Math.min(30, ax)) * 0.05) * dt; claw.swingZ += claw.svz * dt;
       claw.svx += (-k * claw.swingX - c * claw.svx - Math.max(-30, Math.min(30, az)) * 0.05) * dt; claw.swingX += claw.svx * dt;
       swing.rotation.z = claw.swingZ; swing.rotation.x = claw.swingX;
+      // a miss: the claw swings on its cable (a damped spring-pendulum) and the prongs rattle
+      for (let left = dt; left > 1e-6; left -= 1 / 120) {
+        const h = Math.min(left, 1 / 120);
+        wob.vz += (-WOB_W * WOB_W * wob.z - 2 * WOB_Z * WOB_W * wob.vz) * h; wob.z += wob.vz * h;
+        wob.vx += (-WOB_W * WOB_W * wob.x - 2 * WOB_Z * WOB_W * wob.vx) * h; wob.x += wob.vx * h;
+      }
+      cable.rotation.z = wob.z; cable.rotation.x = wob.x;
+      wob.jt += dt;
+      const jig = wob.jig * Math.exp(-wob.jt / 0.22) * Math.sin(wob.jt * Math.PI * 2 * 6.5);
+      prongs.forEach((p, i) => (p.rotation.x = grip + jig * (i === 1 ? -1 : i === 2 ? 0.6 : 1)));
       joyK += (joyTarget - joyK) * Math.min(1, dt * 12);
       stick.rotation.z = -joyK * 0.45;
       // the knob glows softly while the game shows how to move the stick (joyHint)

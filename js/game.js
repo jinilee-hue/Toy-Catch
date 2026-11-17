@@ -601,6 +601,47 @@
     const d = Math.abs(claw.x - p.x);
     return d <= AIM.hold ? 'hold' : d <= AIM.weak ? 'weak' : d <= AIM.reach ? 'knock' : 'none';
   }
+  /* where the claw holds a 3D friend: round its NECK, just under its head (user: "인형잡을때 집게가 목을 제대로 잡힌게
+     보여야해") — the tips close in at the narrowest row under the head (friends.js neckY), pressing it in a little (the
+     pinch in plushDeform), so the head rests on them; the hub stops over the crown (never into it — a head taller than
+     the prongs reach is held a little higher, at the jaw). `loose` (world): the friend sits that far off the claw's
+     middle (a loose grip): the prongs close that much less, so the far tip doesn't touch. Side-view friends have no neck
+     the side prongs could reach (GRIP_FIX: height as a fraction of the friend, `squeeze` = press the body in front of
+     the prongs where it's wider than they close). Returns y (scale 1, the grip height), r (the tips' radius, world),
+     a (the prongs' angle), hub (the hub top over the friend's root, world). */
+  const PINCH = 0.12;                                   // (friends.js plushDeform: the neck pinched by 12 % under the tips)
+  const SINK = 0.09;                                    // how far the hub may press into a soft crown (friends.js uDent)
+  /* side-view friends have no neck the side prongs could reach from the left and right (they'd close on the turtle's
+     head and the back of its shell, on the fish's lips and tail): they're held round the top, where the body is narrow
+     enough — the turtle round the top of its shell, just behind its head (picked up by the shell); the fish round its
+     back, at the root of its top fin — the tips pressing in (squeeze). The turkey's fan stands round its neck in the
+     prongs' plane: its neck's width is taken in front of the fan (r: the neck's half-width, scale 1). */
+  const GRIP_FIX = { turtle: { y: 0.76, squeeze: true }, fish: { y: 0.7, squeeze: true }, turkey: { r: 0.19 } };
+  function gripOf(p, loose = 0) {
+    const fix = GRIP_FIX[p.kind] || {};
+    let y = fix.y ? fix.y * p.top : p.neckY, r = 0, a = claw.SHUT, hub = 0;
+    const half = (yy) => (fix.r || Math.max(p.widthMid(yy), p.widthAt(yy))) * PS;
+    const crown = Math.max(p.topAt(-claw.HUB_R / PS), p.topAt(0), p.topAt(claw.HUB_R / PS)) * PS;
+    for (let it = 0; it < 4; it++) {
+      r = Math.min(claw.tipR(claw.OPEN) - 0.04, half(y) * (1 - (fix.squeeze ? 0.15 : PINCH)) + claw.TIP_R * 0.92 + loose);
+      a = claw.angleForTip(r);
+      hub = Math.max(y * PS + claw.tipDrop(a), crown + claw.HUB_DROP - SINK);
+      const yt = (hub - claw.tipDrop(a)) / PS;            // (raised over the crown: the tips sit that much higher)
+      if (yt - y < 0.004) break;
+      y = yt;
+    }
+    return { y, r, a, hub, squeeze: !!fix.squeeze };
+  }
+  /* a knock (the claw comes down beside the head): the hub stops where the open prong on the friend's side rests on the
+     top of its head (world, over the root) */
+  function knockHub(p, off) {
+    const s = Math.sign(off) || 1, tip = off - s * claw.tipR(claw.OPEN);
+    let top = 0;
+    for (let k = -1; k <= 1; k++) top = Math.max(top, p.topAt((tip + k * claw.TIP_R) / PS));
+    let hub = top * PS + claw.tipDrop(claw.OPEN) + claw.TIP_R;
+    for (let x = off - claw.HUB_R; x <= off + claw.HUB_R; x += 0.04) hub = Math.max(hub, p.topAt(x / PS) * PS + claw.HUB_DROP + 0.015);
+    return hub;
+  }
 
   /* ── input ──────────────────────────────────────────────────────────────────────────────────────── */
   function bindInput() {
@@ -769,24 +810,22 @@
     const off = cand ? claw.x - cand.x : 0;              // the claw's offset from the head's middle
     const x0 = claw.x, z0 = claw.z, g0 = claw.grip;
     const tx = claw.x, tz = cand ? cand.z : claw.z;      // straight down where it was aimed (into the friend's row)
-    // the prongs will close until their knuckles touch the sides of the head; the hub stops where that puts the
-    // knuckles level with the head's middle (and never lower than just over the head)
-    let hy = cand ? cand.headR[1] * PS : 0, hx = cand ? cand.headR[0] * PS : 0, gy = cand ? cand.gripY : 0;
-    if (cand && cand.widthAt) {
-      /* a 3D friend: close round its real width there (a fish's round body is wider than its head; a little too wide
-         and it gets squeezed). Far too wide (the turtle: its head sticks out beside the shell) — hold it higher up,
-         round the top of the shell, where it fits */
-      const REACH = 0.78, w0 = cand.widthAt(gy) * PS;
-      if (w0 <= REACH * 1.12) hx = Math.max(hx, Math.min(REACH, w0));
-      else {
-        let y = gy; while (y < cand.top - 0.1 && cand.widthAt(y) * PS > REACH * 0.98) y += 0.02;
-        hx = Math.max(0.36, Math.min(REACH, cand.widthAt(y) * PS)); hy = Math.max(0.08, (cand.top - y) * PS * 0.9); gy = y;
-      }
-      cand.setGrip3d(gy, hx * 1.02 / PS);
+    /* the claw closes round the friend's neck (gripOf): the tips at the narrowest row under its head, the hub stopping
+       over its crown. A knock: the prong on its side comes down onto its head — the hub stops where that open tip meets
+       the top of the head (never into it) */
+    let shut = claw.SHUT, yBot = 1.45;
+    if (cand && cand.neckY != null) {
+      const g = gripOf(cand, zone === 'weak' ? Math.abs(off) * 0.5 : 0);
+      cand.setGrip3d(g.y, g.squeeze ? g.r / PS : 0);
+      shut = g.a; yBot = cand.root.position.y + g.hub;
+      if (zone === 'knock') yBot = cand.root.position.y + knockHub(cand, off);
+    } else if (cand) {
+      // (a flat / puffed picture: the knuckles round the head's middle, as before)
+      const hx = cand.headR[0] * PS, hy = cand.headR[1] * PS;
+      shut = claw.gripAngle(hx * 1.02);
+      const yHead = cand.root.position.y + cand.gripY * PS;
+      yBot = Math.max(yHead + claw.knuckleDrop(shut), yHead + hy + 0.03);
     }
-    const shut = cand ? claw.gripAngle(hx * 1.02) : claw.SHUT;
-    const yHead = cand ? cand.root.position.y + gy * PS : 0;
-    const yBot = cand ? Math.max(yHead + claw.knuckleDrop(shut), yHead + hy + 0.03) : 1.45;
     if (cand) { cand.lookAt(claw.holdWorld()); cand.excite(zone === 'hold' ? 1 : 0.4); }
     if (cand && cand.poseStop) cand.poseStop();                                       // (no pose under the prongs)
     A.motor(true, 0.8);
@@ -801,16 +840,21 @@
     // the prongs dive into the balls (a friend in the front row, or nothing): they splash; on the shelf just a little
     machine.balls.splash(tx, tz, cand && cand.home.y > 0.6 ? 0.45 : 1);
     if (zone === 'knock') {
-      // a prong comes down on the side of its head: it gets shoved away and wobbles; the claw shuts on nothing
-      A.sfxPlay('boing'); cand.nope(0.9);
-      const x1 = cand.x, dir = Math.sign(cand.x - claw.x) || 1;
+      // a prong comes down on the side of its head: it gets shoved away and rocks on its bottom; the claw recoils up off
+      // it as it snaps shut on nothing, its prongs rattling (and swings on its cable on the way up — not down here,
+      // where a swing would carry the prongs back through the friend's head)
+      A.sfxPlay('boing');
+      const x1 = cand.x, dir = Math.sign(cand.x - claw.x) || 1, yK = claw.y;
+      cand.nope(0.9, dir, 1.5); claw.wobble(0, -dir, 1);
       S.tween(700, k => { cand.root.position.x = x1 + dir * 0.16 * Math.sin(Math.PI * Math.min(1, k * 1.6)) * (1 - 0.5 * k); }, 'out', tok)
         .then(() => { cand.root.position.x = x1; });
-      await S.tween(360, k => claw.setGrip(lerp(claw.OPEN, claw.SHUT, k)), 'out', tok);
+      await S.tween(360, k => { claw.setGrip(lerp(claw.OPEN, claw.SHUT, k)); claw.set(claw.x, yK + 0.3 * k, claw.z); }, 'out', tok);
     } else {
       // closing prongs push the head toward the middle: all the way when it was right over it, half way on a loose grip
       const x1 = cand ? cand.x : 0, x2 = cand ? (zone === 'hold' ? claw.x : cand.x + off * 0.5) : 0;
+      if (cand) cand.excite(0);                                                          // (held now: no more hops)
       await S.tween(360, k => { claw.setGrip(lerp(claw.OPEN, shut, k)); if (cand) cand.root.position.x = lerp(x1, x2, k); }, 'out', tok);
+      if (!cand) claw.wobble(0.3, claw.x > 0 ? -1 : 1, 1);                               // shut on nothing: a rattle
     }
     const held = cand && zone !== 'knock' ? cand : null;
     if (held) attach(held);
@@ -820,13 +864,16 @@
     const loose = zone === 'weak';
     const slips = loose && G.miss < 2 && G.rand() < 0.35 + 0.5 * (Math.abs(off) - AIM.hold) / (AIM.weak - AIM.hold);
     const kSlip = 0.3 + G.rand() * 0.35, side = -Math.sign(off) || 1;
-    let slipping = null;
+    let slipping = null, swung = !!held;
+    const yUp = claw.y;                                  // (a knock recoiled a little higher already)
     A.motor(true, 1.2);
     if (held && held.home.y < 0.6) setTimeout(() => machine.balls.splash(tx, tz, 0.6), 160);   // lifted out of the balls
     await S.tween(1200, k => {
-      claw.set(tx, lerp(yBot, claw.HOME_Y, k), tz);
+      claw.set(tx, lerp(yUp, claw.HOME_Y, k), tz);
       if (loose && held && !slipping) held.tilt = side * (slips ? 0.4 * Math.min(1, k / kSlip) : 0.14 * Math.sin(k * Math.PI * 3));
       if (slips && !slipping && k >= kSlip) slipping = slip(held, side, tok);
+      // empty, it swings on its cable on the way up (user: "놓쳤을때는 집게도 흔들흔들 해야해"), once it's clear of the friends
+      if (!swung && k > (zone === 'knock' ? 0.3 : 0.18)) { swung = true; claw.wobble(zone === 'knock' ? 0.75 : 0.8, cand ? Math.sign(claw.x - cand.x) || 1 : claw.x > 0 ? -1 : 1, 0); }
     }, 'inOut', tok);
     A.motor(false);
     if (held && !slips) held.tilt = 0;
@@ -851,14 +898,16 @@
     A.sfxPlay('slip');
     const g0 = claw.grip;
     S.tween(220, k => claw.setGrip(lerp(g0, claw.OPEN * 0.45, k)), 'out');
+    claw.wobble(1.0, -side, 0.7);                       // the weight's gone: the claw swings back the other way
     detach(p);
     const from = p.root.position.clone(), t0 = p.tilt;
     await S.tween(650, k => {
       p.root.position.set(lerp(from.x, p.home.x, k), lerp(from.y, p.home.y, S.EASE.bounce(k)), lerp(from.z, p.home.z, k));
-      p.tilt = t0 + side * 0.9 * Math.sin(Math.PI * Math.min(1, k * 1.25));
+      // (the loose grip's lean eases out on the way down: it used to stay till the landing and snap upright there)
+      p.tilt = t0 * (1 - k) + side * 0.9 * Math.sin(Math.PI * Math.min(1, k * 1.25));
     }, 'linear', tok);
     p.tilt = 0;
-    A.sfxPlay('thud'); p.nope(0.8); machine.balls.splash(p.home.x, p.home.z, 0.9); if (p.bump) p.bump(0.7);   // lands: squash
+    A.sfxPlay('thud'); p.nope(0.8, side); machine.balls.splash(p.home.x, p.home.z, 0.9); if (p.bump) p.bump(0.7);   // lands: squash
     p.root.position.set(p.home.x, p.home.y, p.home.z); p.x = p.home.x;
     if (!G.inMachine.includes(p)) G.inMachine.push(p);
   }
@@ -891,19 +940,27 @@
     fw(); setTimeout(fw, 350); setTimeout(fw, 700);
     await A.say('t:great3');
     if (tok !== G.tok) return;
-    // to the chute: up and forward over the front row first, then along the front to the left corner
+    // to the chute: up and forward over the front row first, then along the front to the left corner — only as far left
+    // as keeps the whole friend inside the glass (the turtle's head and the fish's lips went through the left wall)
     A.motor(true, 1.1);
     const x0 = claw.x, z0 = claw.z, ch = machine.chute, lane = machine.FRONT_LANE;
+    const dxr = p.root.getWorldPosition(V(0, 0, 0)).x - claw.head.getWorldPosition(V(0, 0, 0)).x;
+    const inGlass = (s) => -machine.W / 2 + 0.04 - p.span[0] * s;              // (the root's leftmost x at scale s)
+    const chx = Math.max(ch.x, inGlass(PS) - dxr);
     await S.tween(650, k => claw.set(x0, lerp(claw.HOME_Y, claw.CARRY_Y, k), lerp(z0, lane, k)), 'inOut', tok);
-    await S.tween(1100, k => claw.set(lerp(x0, ch.x, k), claw.CARRY_Y, lerp(lane, ch.z, k)), 'inOut', tok);
+    await S.tween(1100, k => claw.set(lerp(x0, chx, k), claw.CARRY_Y, lerp(lane, ch.z, k)), 'inOut', tok);
     A.motor(false);
     if (tok !== G.tok) return;
     A.sfxPlay('open');
     const g0 = claw.grip;
     S.tween(300, k => claw.setGrip(lerp(g0, claw.OPEN * 0.7, k)), 'out');
     detach(p);
-    const y0 = p.root.position.y, ry0 = p.root.rotation.y;
-    await S.tween(650, k => { p.root.position.y = lerp(y0, ch.floor, k); p.root.rotation.y = ry0 + k * 2.5; p.root.scale.setScalar(PS * (1 - 0.35 * k)); }, 'in', tok);
+    const y0 = p.root.position.y, ry0 = p.root.rotation.y, xr0 = p.root.position.x;
+    await S.tween(650, k => {
+      const s = PS * (1 - 0.35 * k);
+      p.root.position.y = lerp(y0, ch.floor, k); p.root.rotation.y = ry0 + k * 2.5; p.root.scale.setScalar(s);
+      p.root.position.x = Math.max(lerp(xr0, ch.x, k), inGlass(s));                 // (into the middle of the chute as it shrinks)
+    }, 'in', tok);
     A.sfxPlay('chute');
     machine.group.remove(p.root);
     G.caught.push(p.kind);
@@ -960,12 +1017,17 @@
     const sr = slot.getBoundingClientRect();
     const fly = document.createElement('img');
     fly.src = G.icons[p.kind];
-    const p0 = S.project(p.root.position.clone().add(V(0, 0.9, 0)));
-    const size = Math.max(120, sr.width * 2.6);
-    Object.assign(fly.style, { position: 'absolute', zIndex: 25, left: p0.x - size / 2 + 'px', top: p0.y - size / 2 + 'px', width: size + 'px', height: size + 'px', pointerEvents: 'none' });
+    // the picture takes over at the friend's own size and place, in its own proportions, and shrinks to the slot's
+    // picture (it used to start as a small square: the big friend popped into a little stretched sticker)
+    const art = window.CLAW_FRIENDS && window.CLAW_FRIENDS[p.kind], ar = art && art.h ? art.w / art.h : 1;
+    const pb = S.project(p.root.position.clone()), pt = S.project(p.root.position.clone().add(V(0, p.top * p.root.scale.y, 0)));
+    const hh = Math.max(60, Math.hypot(pt.x - pb.x, pt.y - pb.y)), ww = hh * ar;
+    const p0 = { x: (pb.x + pt.x) / 2, y: (pb.y + pt.y) / 2 };
+    const endH = Math.min(sr.height, sr.width / ar) * 0.86;          // (css .tray .slot img: 86 %, contain)
+    Object.assign(fly.style, { position: 'absolute', zIndex: 25, left: p0.x - ww / 2 + 'px', top: p0.y - hh / 2 + 'px', width: ww + 'px', height: hh + 'px', objectFit: 'contain', pointerEvents: 'none' });
     app.appendChild(fly);
     S.scene.remove(p.root);
-    const anim = fly.animate([{ transform: 'translate(0,0) scale(1)' }, { transform: `translate(${sr.left + sr.width / 2 - p0.x}px, ${sr.top + sr.height / 2 - p0.y}px) scale(${sr.width * 1.15 / size})` }], { duration: 650, easing: 'cubic-bezier(.5,0,.3,1)' });
+    const anim = fly.animate([{ transform: 'translate(0,0) scale(1)' }, { transform: `translate(${sr.left + sr.width / 2 - p0.x}px, ${sr.top + sr.height / 2 - p0.y}px) scale(${endH / hh})` }], { duration: 650, easing: 'cubic-bezier(.5,0,.3,1)' });
     await anim.finished.catch(() => {});
     fly.remove();
     slot.innerHTML = `<img src="${G.icons[p.kind]}" alt="${p.word}">`; slot.classList.add('got'); slot.classList.remove('now');
@@ -1144,6 +1206,6 @@
     if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 
-  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
+  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
   boot().catch(e => { console.error(e); const l = $('#loading'); if (l) l.innerHTML = '<p style="font:700 20px sans-serif;color:#234">Could not start: ' + e.message + '</p>'; });
 })();

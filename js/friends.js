@@ -87,21 +87,27 @@
   /* soft-toy motion in the vertex shader (also in the shadow): squash & stretch about the bottom (sitting) or the head
      (hanging), the top lagging (sitting) / the legs dangling (hanging) by uBend, the claw's pinch round the head */
   const DEFORM = `
-    uniform float uSq, uH, uPiv, uGy, uGrip, uHang, uR; uniform vec2 uBend;
+    uniform float uSq, uH, uPiv, uGy, uGrip, uHang, uR; uniform vec2 uBend; uniform vec4 uDent;
     vec3 plushDeform(vec3 p) {
       float base = uGy * uHang;
       p.y = base + (p.y - base) * uSq;
       float k = inversesqrt(max(uSq, 0.3)); p.x *= k; p.z *= k;
       float tUp = clamp((p.y - uPiv) / max(uH - uPiv, 0.01), 0.0, 1.0), tDn = clamp((uGy - p.y) / max(uGy, 0.01), 0.0, 1.0);
       p.xz += uBend * mix(tUp * tUp, tDn * tDn, uHang);
-      float g = exp(-pow((p.y - uGy) / (uH * 0.16), 2.0));
-      p.x *= 1.0 - 0.08 * uGrip * g; p.z *= 1.0 - 0.05 * uGrip * g;
+      float g = exp(-pow((p.y - uGy) / (uH * 0.085), 2.0));      // the claw's pinch round the neck (game.js PINCH)
+      p.x *= 1.0 - 0.12 * uGrip * g; p.z *= 1.0 - 0.06 * uGrip * g;
       // a body wider than the closed prongs (the fish, the turtle's shell) is pressed in where they hold it — only in
       // front of the prongs' plane (what would hide them) and only in a narrow band (the turtle's face stays as it is)
       if (uR > 0.0) {
         float r0 = uR * 0.96, ax = abs(p.x);
         float w = uGrip * exp(-pow((p.y - uGy) / (uH * 0.1), 2.0)) * smoothstep(-0.25, -0.05, p.z);
         if (ax > r0) p.x = sign(p.x) * mix(ax, r0 + (ax - r0) * 0.3, w);
+      }
+      // the claw's hub pressing down on the crown (it sits on a head taller than the prongs reach): the soft top gives
+      // under it — flattened to the hub's bottom (uDent.xyz, mesh space) within its radius (uDent.w), easing out round it
+      if (uDent.w > 0.0 && p.y > uDent.y) {
+        float wd = 1.0 - smoothstep(uDent.w * 1.05, uDent.w * 1.8, length(p.xz - uDent.xz));
+        p.y = mix(p.y, uDent.y + (p.y - uDent.y) * 0.08, wd);
       }
       return p;
     }`;
@@ -286,7 +292,7 @@ void main() {
     tex.colorSpace = T.SRGBColorSpace; tex.anisotropy = 8; tex.needsUpdate = true;
     let geo, mat, depth;
     const is3d = has3d(kind);
-    const U = { uSq: { value: 1 }, uH: { value: h }, uPiv: { value: h * 0.22 }, uGy: { value: (1 - v) * h }, uGrip: { value: 0 }, uHang: { value: 0 }, uR: { value: 0 }, uBend: { value: new T.Vector2() } };
+    const U = { uSq: { value: 1 }, uH: { value: h }, uPiv: { value: h * 0.22 }, uGy: { value: (1 - v) * h }, uGrip: { value: 0 }, uHang: { value: 0 }, uR: { value: 0 }, uBend: { value: new T.Vector2() }, uDent: { value: new T.Vector4(0, 0, 0, 0) } };
     if (is3d) {
       geo = geo3d(kind, w, h, u);
       const atl = geo.attributes.auv && atlasImgs[kind];
@@ -319,6 +325,7 @@ void main() {
     P.root.add(sh); P.blob = sh;
 
     P.top = h; P.width = w;
+    P.pivotY = gy;                                        // the hang pivot (the head; the claw's grip while it's held)
     P.span = [-u * w, (1 - u) * w];                       // the picture's left / right edge from the root (scale 1)
     P.gripY = gy;
     P.headR = [rx * w, ry * h, rx * w * 0.8];
@@ -338,14 +345,29 @@ void main() {
          the prongs' plane — the claw closes round that, not round the picture's head (a fish or a turtle is far wider
          than its head) */
       const pos = geo.attributes.position, STEP = 0.02, N = Math.ceil(h / STEP) + 1, hw = new Float32Array(N);
+      // (and in the prongs' own plane, |z| ≤ 0.06: where the side tips meet the neck; the top of the body over each x)
+      const hm = new Float32Array(N), XS = 0.02, NX = Math.ceil(w / XS) + 2, tops = new Float32Array(NX);
       for (let i = 0; i < pos.count; i++) {
-        if (pos.getZ(i) < -0.02) continue;
-        const y = pos.getY(i), x = Math.abs(pos.getX(i)), j = Math.round(y / STEP);
-        for (let k = Math.max(0, j - 1); k <= Math.min(N - 1, j + 1); k++) hw[k] = Math.max(hw[k], x);
+        const y = pos.getY(i), z = pos.getZ(i), c = Math.round((pos.getX(i) + u * w) / XS);
+        if (c >= 0 && c < NX) tops[c] = Math.max(tops[c], y);
+        if (z < -0.06) continue;
+        const x = Math.abs(pos.getX(i)), j = Math.round(y / STEP);
+        for (let k = Math.max(0, j - 1); k <= Math.min(N - 1, j + 1); k++) {
+          if (z >= -0.02) hw[k] = Math.max(hw[k], x);
+          if (Math.abs(z) <= 0.06) hm[k] = Math.max(hm[k], x);
+        }
       }
-      P.widthAt = (y) => { const f = Math.max(0, Math.min(N - 1.001, y / STEP)), j = Math.floor(f); return hw[j] + (hw[j + 1] - hw[j]) * (f - j); };
-      /* where the claw holds it this time (height and the prongs' radius, scale 1): the soft squeeze and the hanging */
-      P.setGrip3d = (y, r) => { U.uGy.value = y; U.uR.value = r; };
+      const lerpAt = (a, y) => { const f = Math.max(0, Math.min(N - 1.001, y / STEP)), j = Math.floor(f); return a[j] + (a[j + 1] - a[j]) * (f - j); };
+      P.widthAt = (y) => lerpAt(hw, y);
+      P.widthMid = (y) => lerpAt(hm, y);
+      P.topAt = (x) => { const c = Math.round((x + u * w) / XS); let t = 0; for (let k = c - 1; k <= c + 1; k++) if (k >= 0 && k < NX) t = Math.max(t, tops[k]); return t; };
+      /* the neck: the narrowest row just under the head (the head's bottom, art.head v + ry) — where the claw holds it */
+      const n0 = (1 - v - ry) * h; let nw = 1e9;
+      P.neckY = n0;
+      for (let y = n0 - 0.05 * h; y <= n0 + 0.03 * h; y += 0.005) { const ww = Math.max(P.widthMid(y), P.widthAt(y)); if (ww < nw - 1e-4) { nw = ww; P.neckY = y; } }
+      /* where the claw holds it this time (height and the prongs' radius, scale 1): the soft squeeze, the pinch and the
+         hanging — the body swings from there (the hang pivot) */
+      P.setGrip3d = (y, r) => { U.uGy.value = y; U.uR.value = r; P.pivotY = y; };
     }
     if (window.Poses) Poses.attach(P, is3d ? { geo, mat, depth, U, w, h, u } : null);   // signature pose (js/poses.js)
     if (is3d && geo.userData.one && geo.attributes.pw && !geo.userData.pwOne) {
@@ -363,7 +385,7 @@ void main() {
     P.excite = (val) => { P.st.excite = val; };
     P.cheer = (sec = 1.6) => { P.st.cheer = sec; };
     P.hold = (on) => { P.st.held = on ? 1 : 0; };
-    P.nope = (sec = 1.0) => { P.st.nope = sec; };
+    P.nope = (sec = 1.0, dir = 1, k = 1) => { P.st.nope = sec; P.st.nopeT = 0; P.st.nopeDir = (dir < 0 ? -1 : 1) * k; };
     P.lookAt = (p) => { P.st.look = p ? p.clone() : null; };
     P.lit = (v) => { mat.userData.uLit.value = v; };       // the claw's spotlight on it (0..1, eased by the game)
     P.update = function (dt, t) {
@@ -371,20 +393,25 @@ void main() {
       s.ek = ease(s.ek, s.excite, Math.min(1, dt * 6));
       s.cheer = Math.max(0, s.cheer - dt); s.ck = ease(s.ck, s.cheer > 0 ? 1 : 0, Math.min(1, dt * 7));
       s.hk = ease(s.hk, s.held, Math.min(1, dt * 5));
-      s.nope = Math.max(0, s.nope - dt);
+      s.nope = Math.max(0, s.nope - dt); s.nopeT = (s.nopeT || 0) + dt;
       const sit = 1 - s.hk;
       // sitting: breathing, a slow sway; under the claw: little hops and a lean up toward it; cheering: big hops
       const br = Math.sin(t * 2.3 + ph);
       P.seat.scale.set(1 - 0.012 * br * sit, (1 + 0.02 * br + 0.03 * s.ek) * sit + s.hk, 1);
       const hop = Math.abs(Math.sin(t * 8.5 + ph)) * 0.05 * s.ek + Math.abs(Math.sin(t * 7 + ph * 0.3)) * 0.17 * s.ck;
-      P.seat.position.y = -gy + hop * sit;
+      P.hang.position.y = P.pivotY;
+      P.seat.position.y = -P.pivotY + hop * sit;
       let lean = 0;
       if (s.look) { P.root.getWorldPosition(tmp); lean = Math.max(-0.13, Math.min(0.13, -(s.look.x - tmp.x) * 0.1)); }
       s.lean = ease(s.lean, lean, Math.min(1, dt * 4));
-      P.seat.rotation.z = (Math.sin(t * 1.1 + ph) * 0.03 + Math.sin(t * 9 + ph) * 0.09 * s.ck + s.lean) * sit;
-      // held: the body swings under the head; "no-no" wiggle when it's the wrong friend
-      const shake = s.nope > 0 ? Math.sin(s.nope * 24) * 0.17 * Math.min(1, s.nope * 2) : 0;
-      P.hang.rotation.z = Math.sin(t * 2.6 + ph) * 0.07 * s.hk + shake + P.tilt;
+      // "no-no" (nope): held, a quick wriggle under the claw's grip; sitting (knocked, landing back on its seat), it rocks
+      // on its bottom and settles — it used to shake about its head there too, so its bottom slid to and fro on the seat
+      // (both start from rest: the shake used to jump in mid-swing)
+      const nk = s.nope > 0 ? Math.min(1, s.nope * 2) : 0;
+      const shake = nk * Math.sin(s.nopeT * 24) * 0.17, rock = -nk * Math.exp(-s.nopeT * 2.2) * Math.sin(s.nopeT * 13) * 0.14 * (s.nopeDir || 1);
+      P.seat.rotation.z = (Math.sin(t * 1.1 + ph) * 0.03 + Math.sin(t * 9 + ph) * 0.09 * s.ck + s.lean + rock) * sit;
+      // held: the body swings under the claw's grip
+      P.hang.rotation.z = Math.sin(t * 2.6 + ph) * 0.07 * s.hk + shake * s.hk + P.tilt;
       P.blob.material.opacity = Math.max(0, 1 - s.hk * 1.6);
       P.blob.visible = P.blob.material.opacity > 0.01;
       // always face the camera (turn about the vertical; whatever the parents' yaw)
@@ -393,10 +420,11 @@ void main() {
         P.face.getWorldPosition(tmp);
         const want = Math.atan2(cam.position.x - tmp.x, cam.position.z - tmp.z);
         P.seat.getWorldQuaternion(tmpQ); tmpE.setFromQuaternion(tmpQ, 'YXZ');
-        // (a slow idle turn either way, a livelier one while it hangs from the claw — so the volume shows; wider for
-        // the 3D friends, which have real sides)
+        // (a slow idle turn either way, a little one while it hangs from the claw — so the volume shows; wider for
+        // the 3D friends, which have real sides. Held by the neck it can't twist far: ±5° — at ±15° its ears and
+        // cheeks swung through the prongs)
         const amp = FLAT ? 0 : is3d ? 0.24 : PUFF.sway;
-        const sway = amp * (Math.sin(t * 0.8 + ph) * sit + Math.sin(t * 2.1 + ph) * 1.1 * s.hk);
+        const sway = amp * (Math.sin(t * 0.8 + ph) * sit + Math.sin(t * 2.1 + ph) * 0.35 * s.hk);
         P.face.rotation.y = want - tmpE.y + sway;
       }
       if (P.poser) P.poser.update(dt, t);
@@ -405,7 +433,7 @@ void main() {
     /* the soft-toy feel: a squash & stretch spring kicked only by bump() (a landing, being grabbed — the hops keep their
        shape: squashing on every hop looked rubbery), the bend (the top lags behind the friend's own acceleration; while
        it hangs, the legs), the claw's pinch */
-    const acc = new T.Vector3(), qi = new T.Quaternion();
+    const acc = new T.Vector3(), qi = new T.Quaternion(), dv = new T.Vector3(), ws = new T.Vector3();
     function softBody(dt, t, hop, sit) {
       const s = P.st;
       if (dt <= 0) return;
@@ -426,6 +454,15 @@ void main() {
       U.uSq.value = s.sq * (1 + up);
       U.uBend.value.copy(s.b);
       U.uHang.value = s.hk; U.uGrip.value = s.hk;
+      // the claw's hub sitting on its crown (plushDeform uDent): the hub's bottom in the mesh's frame, while it's on it
+      const cl = window.Stage && Stage.machine && Stage.machine.claw, D4 = U.uDent.value;
+      D4.w = 0;
+      if (cl && cl.bottom && P.root.parent) {
+        cl.bottom.getWorldPosition(dv);
+        P.pic.updateWorldMatrix(true, false); P.pic.getWorldScale(ws); P.pic.worldToLocal(dv);
+        const R = cl.HUB_R / (ws.x || 1);
+        if (dv.y < P.top + 0.05 && Math.hypot(dv.x, dv.z) < P.width * 0.6 + R) D4.set(dv.x, dv.y - 0.006, dv.z, R);
+      }
     }
     return P;
   }
