@@ -1,18 +1,23 @@
 <!doctype html>
 <!-- Toy Catch — dev viewer for the friends' 3D shapes: every friend from the front, 3/4, side and back
-     (?kinds=monkey,ant  ?spin[=speed] to turn them  ?row: one view each, 5 to a row  ?puff / ?flat for the earlier versions) -->
+     (?kinds=monkey,ant  ?spin[=speed] to turn them  ?row: one view each, 5 to a row  ?ang=0,40: these views only
+     ?puff / ?flat for the earlier versions
+     ?pose[=strength]: each friend plays its signature pose (js/poses.js) over and over · ?pose=loop: the gentle loop
+     it does while the claw is over it · &weights: the pose parts' weights in colour) -->
 <html><head><meta charset="utf-8"><title>friends 3D</title><link rel="icon" href="data:,">
 <style>html,body{margin:0;height:100%;background:#cfe3f5;overflow:hidden}canvas{display:block}#l{position:fixed;left:8px;top:6px;font:600 13px system-ui;color:#234}</style>
 </head><body><div id="l"></div>
 <script src="../vendor/three.iife.js"></script>
 <script src="../js/friends-art.js"></script>
 <script src="../js/friends-3d.js"></script>
+<script src="../js/poses.js"></script>
 <script src="../js/friends.js"></script>
 <script>
 (async () => {
   const T = THREE, qs = new URLSearchParams(location.search);
   const kinds = (qs.get('kinds') || Friends.KINDS.join(',')).split(',').filter(k => Friends.KINDS.includes(k));
-  const ROW = qs.has('row'), ANG = ROW ? [0] : [0, 40, 90, 180];
+  const ROW = qs.has('row'), ANG = ROW ? [0] : qs.get('ang') ? qs.get('ang').split(',').map(Number) : [0, 40, 90, 180];
+  if (qs.has('weights') && window.Poses) Poses.debug = true;
   const r = new T.WebGLRenderer({ antialias: true }); r.setPixelRatio(devicePixelRatio); r.setSize(innerWidth, innerHeight);
   r.outputColorSpace = T.SRGBColorSpace; r.setClearColor('#cfe3f5'); document.body.appendChild(r.domElement);
   const sc = new T.Scene(); sc.add(new T.HemisphereLight('#fff', '#ccd', 1.2));
@@ -28,12 +33,26 @@
   }));
   const cam = new T.PerspectiveCamera(22, innerWidth / innerHeight, 0.1, 200);
   const span = Math.max(cols * cw / cam.aspect, rows * ch);
-  cam.position.set(0, 0.6, span / (2 * Math.tan(11 * Math.PI / 180)) + 1); cam.lookAt(0, 0, 0);
+  cam.position.set(0, 0.6, span / (2 * Math.tan(11 * Math.PI / 180)) / (parseFloat(qs.get('zoom')) || 1) + 1); cam.lookAt(0, 0, 0);
   window.Stage = { camera: cam };
-  document.getElementById('l').textContent = ROW ? '' : kinds.join(' · ') + ' — front · 3/4 · side · back' + (Object.keys(window.CLAW_FRIENDS_3D || {}).length ? '' : ' (no 3D data)');
+  document.getElementById('l').textContent = ROW ? '' : kinds.join(' · ') + ' — ' + ANG.map(a => ({ 0: 'front', 40: '3/4', 90: 'side', 180: 'back' })[a] || a + '°').join(' · ') + (Object.keys(window.CLAW_FRIENDS_3D || {}).length ? '' : ' (no 3D data)');
   let t = 0, last = performance.now();
   const spin = qs.has('spin') ? (parseFloat(qs.get('spin')) || 0.8) : 0;
-  const advance = (dt) => { t += dt; for (const [P, a] of all) { P.update(dt, t); if (spin) P.root.rotation.y = a * Math.PI / 180 + t * spin; } r.render(sc, cam); };
+  // poses: one after another with a short rest (all friends in step, so frame N is the same moment for everyone)
+  const POSE = qs.has('pose') ? qs.get('pose') : null, LOOP = POSE === 'loop', PK = parseFloat(POSE) || 1;
+  if (LOOP) for (const [P] of all) P.poseLoop && P.poseLoop(true);
+  const posing = POSE != null && !LOOP && window.Poses;
+  const next = new Map();
+  window.__poseAt = (sec) => { for (const [P] of all) next.set(P, sec); };   // (QA: restart every pose at t = sec)
+  if (posing) window.__poseAt(0.4);
+  const advance = (dt) => {
+    t += dt;
+    for (const [P, a] of all) {
+      if (posing && P.pose && t >= next.get(P)) { P.pose(PK); next.set(P, t + (Poses.DATA[P.kind] ? Poses.DATA[P.kind].dur : 1.5) + 0.6); }
+      P.update(dt, t); if (spin) P.root.rotation.y = a * Math.PI / 180 + t * spin;
+    }
+    r.render(sc, cam);
+  };
   window.__step = advance;                  // (QA: set window.__frozen = true, then step frame by frame)
   (function loop(now) {
     requestAnimationFrame(loop);
