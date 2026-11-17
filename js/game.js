@@ -487,6 +487,7 @@
   function tick(dt, t) {
     machine.tick(dt, t);
     for (const p of Object.values(G.all)) if (p.root.parent) p.update(dt, t);
+    if (window.Poses && (G.screen === 'title' || G.screen === 'game')) Poses.idle(dt, G.inMachine);   // now and then a friend poses
     // 'wiggle' hint: the 3D stick tilts with the glove's drag (left at 20 %, right at 40 %, back at 50 % of its run)
     if (JOY_HINT === 'wiggle' && hintAnim && hintAnim.playState === 'running' && !G.joy) {
       const q = Math.min(1, (hintAnim.currentTime || 0) / 3600), e = q * q * (3 - 2 * q);
@@ -600,6 +601,7 @@
       const hit = S.hits(e.clientX, e.clientY, G.inMachine.map(p => p.root)).find(h => { const q = h.object.userData.plush; return q && q.alphaAt(h.uv) > 80; });
       const p = hit ? hit.object.userData.plush : null;
       interact();
+      if (p && p.pose) p.pose(0.85);                                                // (it answers the tap with its pose)
       if (p) { G.aimX = machine.group.worldToLocal(hit.point.clone()).x; A.sfxPlay('tap'); drag = null; return; }   // where it was tapped: aiming counts
       const x = xAt(e.clientX, e.clientY);
       const glassTop = S.project(V(0, machine.H, 0)).y, floorY = S.project(V(0, 0, machine.D / 2)).y;
@@ -739,6 +741,7 @@
     const yHead = cand ? cand.root.position.y + gy * PS : 0;
     const yBot = cand ? Math.max(yHead + claw.knuckleDrop(shut), yHead + hy + 0.03) : 1.45;
     if (cand) { cand.lookAt(claw.holdWorld()); cand.excite(zone === 'hold' ? 1 : 0.4); }
+    if (cand && cand.poseStop) cand.poseStop();                                       // (no pose under the prongs)
     A.motor(true, 0.8);
     await S.tween(1300, k => {
       const kk = Math.min(1, k * 1.7);
@@ -886,6 +889,7 @@
     }, 'out', tok);
     p.root.lookAt(cam.position.x, p.root.position.y, cam.position.z);
     if (spin) { p.faceCam = true; p.bump(0.55); }    // lands in front of you: a squash
+    if (p.pose) p.pose(1);                           // and does its signature pose, big (js/poses.js)
     const mid = p.root.position.clone().add(V(0, p.top * p.root.scale.y * 0.5, 0));
     burst.position.copy(mid).addScaledVector(mid.clone().sub(cam.position).normalize(), 0.9);
     burst.scale.setScalar(p.top * p.root.scale.y * 2.3);
