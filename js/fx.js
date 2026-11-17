@@ -20,7 +20,9 @@
   const STAR_COLS = ['#ffd23f', '#ff7ac0', '#4db8ff'];
   const STAR_PICK = [0, 0, 0, 0, 1, 2];                 // 4 of 6 gold
   const NF = 40, FC = 8;                                 // star tumble frames, frames per sheet row
-  const SS = 128, DS = 64, PZ = 128, NPUFF = 3;         // sprite px: star frame, candy ball, puff cluster
+  // sprite px: star frame, candy ball, puff cluster (big enough for a Retina 1600×900 burst: 128 px stars and puffs
+  // were upscaled ~1.9× / 2.7× there and looked soft)
+  const SS = 160, DS = 64, PZ = 192, NPUFF = 3;
   const STAR_K = 2.5, BALL_K = 2.16, PUFF_K = 2.8;     // sprite width / the particle's radius
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -152,7 +154,7 @@
     let r = null;
     try { if (T) r = new T.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true }); } catch (e) { r = null; }
     if (!r) return Promise.resolve(false);
-    const B = 192;                                      // rendered at 1.5× the sprite size (smoother edges)
+    const B = 256;                                      // rendered bigger than the sprites (smoother edges)
     r.setPixelRatio(1); r.setSize(B, B, false);
     r.outputColorSpace = T.SRGBColorSpace; r.toneMapping = T.NoToneMapping;
     r.setClearColor(0x000000, 0);
