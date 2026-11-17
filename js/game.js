@@ -18,7 +18,7 @@
   const lerp = (a, b, k) => a + (b - a) * k;
   const LETTERS = ['m', 'a', 's', 't'];
   const POOL = { m: ['monkey', 'mouse'], a: ['ant'], s: ['seal'], t: ['turkey', 'turtle'] };
-  const OTHERS = ['cat', 'cow', 'dog', 'fish'];          // c d f: never a target, always a wrong answer
+  const OTHERS = ['cat', 'cow', 'dog', 'duck', 'fish'];  // c d f: never a target, always a wrong answer
   const ROUND_SEC = +(qs.get('sec') || 45);
   const PS = 1.3;                                       // plush scale in the machine
   /* aiming: how far (machine units, along x) the claw is from the middle of the friend's head when it comes down.
