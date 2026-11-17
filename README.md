@@ -28,6 +28,9 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 
 ## 친구들 (seats 6)
 - 정답 친구 `m: monkey, mouse · a: ant · s: seal · t: turkey, turtle`, 오답 친구 `c: cat, cow · d: dog, duck · f: fish`(목표 글자로는 안 나옴).
+- 결과 화면: 로고와 같은 하늘색 유리판 카드(금색 테두리, 위쪽 흰 광택), 잡은 친구는 HUD와 같은 흰 유리 트레이, 점수는 HUD
+  점수 알약(동전), PLAY AGAIN은 파란 알약, 홈은 흰 유리 버튼. 제목은 접힌 꼬리 리본(게임의 파랑) 위에 로고식 금색 젤리
+  글자(`resultTitle`, 판 없음). 비교용 `?ribbon=pink`(예전 분홍 리본), `?title=rainbow`(무지개 글자).
 - 3D 친구 11종은 캐릭터 시트(design/sheets, git 제외)로 다시 만들었다. 정면은 게임 그림 그대로(외곽선도 그림과 같음), 옆·뒤는
   시트의 측면·후면을 구운 텍스처(webp, `js/friends-3d.js` 안). 다시 만들기: `~/dev/tools/TripoSR/.venv/bin/python
   tools/make_3d.py --only dog --sheets design/sheets`(venv에 xatlas·opencv 필요). 시트와 그림이 다른 부분은 make_3d.py의

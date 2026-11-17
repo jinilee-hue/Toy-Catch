@@ -252,19 +252,26 @@
     return out;
   }
   const jellyCache = {};
-  /* the result's title in the logo's jelly letters on the logo's glass plate (was a pink ribbon — user: "전체적으로 디자인이
-     게임화면과 인트로 화면과 다른 느낌이고 컬러가 너무 많아"): one gold-yellow jelly (the logo's Y), with the stars and the
-     card's gold rim — fewer colours than the rainbow; ?title=rainbow (the logo's / START's colours letter by letter) or
-     ?title=<JELLY name> for comparing. The same letter size for every title (css height from the canvas, in --u); drawn
-     at the size it shows on this screen (F = font px: sharp on 2x and big screens, quicker on small ones), once. */
-  const TITLE_U = 15.4, TITLE_Q = qs.get('title'), titleCache = {};
+  /* the result's title: the logo's jelly letters, one gold-yellow jelly (the logo's Y — with the stars and the card's
+     gold rim, fewer colours than the rainbow), straight on a blue ribbon (the plate is off: user "퍼펙트 같은건 리본형태가
+     나았던거 같은데.." — css .ribbon); ?title=rainbow (the logo's / START's colours letter by letter) or ?title=<JELLY
+     name> for comparing, ?ribbon=pink for the earlier pink ribbon. The same letter size for every title (css height from
+     the canvas, in --u: TITLE_U = the font size); drawn at the size it shows on this screen (F = font px: sharp on 2x and
+     big screens, quicker on small ones), once. */
+  const TITLE_U = 9.3, TITLE_Q = qs.get('title'), titleCache = {};
+  if (qs.get('ribbon') === 'pink') {
+    $('#ribbon').classList.add('pink');
+    $('#ribbon').querySelectorAll('path').forEach(p => ['fill', 'stroke'].forEach(a => {
+      const v = p.getAttribute(a); if (v && v.startsWith('url(#rb')) p.setAttribute(a, v.replace(/\)$/, 'P)'));
+    }));
+  }
   const TITLE_PAL = TITLE_Q === 'rainbow' ? RAINBOW.map(k => JELLY[k]) : JELLY[Object.prototype.hasOwnProperty.call(JELLY, TITLE_Q) ? TITLE_Q : 'yellow'];
   function resultTitle(text) {
     const u = Math.min(innerHeight / 100, innerWidth / 177.78);
     const F = Math.max(160, Math.min(440, Math.round(TITLE_U * u * (window.devicePixelRatio || 1) / 20) * 20));
     let t = titleCache[text];
     if (!t || t.F !== F) {
-      t = titleCache[text] = { F, cv: jellyWord(text, TITLE_PAL, { F }) };
+      t = titleCache[text] = { F, cv: jellyWord(text, TITLE_PAL, { F, plate: false }) };
       t.cv.style.height = `calc(${(t.cv.height / F * TITLE_U).toFixed(3)} * var(--u))`;
     }
     return t.cv;
