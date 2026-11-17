@@ -154,28 +154,35 @@
     green:  ['#c4ef74', '#9fe158', '#74cc40', '#52b532', '#3f9e26', '#2a7d1b', '#dff86a'],
     orange: ['#ffcf72', '#ffaa3c', '#ff9320', '#f47f12', '#d9650a', '#ad4c05', '#ffe07a'],
     purple: ['#dc96fc', '#c35ff7', '#ad47ef', '#9a3be0', '#7c27c6', '#5c169f', '#ecb8ff'],
+    yellow: ['#fff28a', '#ffdf2e', '#ffcd14', '#f4b30a', '#df9804', '#a96f02', '#fffbae'],   // (the logo's Y)
+    blue:   ['#97e4ff', '#66cbf9', '#45b2f3', '#2f98e4', '#2383d1', '#13589e', '#94ecff'],   // (the logo's first C)
   };
   const LETTER_JELLY = { m: 'purple', a: 'green', s: 'orange', t: 'pink' };
+  const RAINBOW = ['pink', 'orange', 'yellow', 'green', 'blue', 'purple'];   // the logo's / START's order, letter by letter
+  /* opts: plate (false: no plate — the letters stand straight on their pill, HUD) · F (font px, default 220: the
+     canvas resolution). pal: one palette, or a list of palettes the letters take in turn (spaces take none) */
   function jellyWord(text, pal, opts = {}) {
-    const [fTop, fMid, fLow, bevel, side, sideDk, glow] = pal;
     const PLATE = opts.plate !== false;                  // (no plate: the letters stand straight on their pill — HUD)
     // (B: fatter than Baloo 800, like the logo's letters — but the small holes of a / s / e must stay open: kids read
     //  the shape (B .13 closed them: "a" and "s" looked like "8"); R: a thin bevel, so the face is most of the letter)
-    const F = 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = PLATE ? F * 0.095 : 0, TRACK = -F * 0.02;
+    const F = opts.F || 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = PLATE ? F * 0.095 : 0, TRACK = -F * 0.02;
     const font = `800 ${F}px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif`;
     const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const mix = (a, b, k) => 'rgb(' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k)).join(',') + ')';
     const rgba = (a, al) => 'rgba(' + hex(a).join(',') + ',' + al + ')';
     const g0 = document.createElement('canvas').getContext('2d'); g0.font = font;
     const chars = [...text], ms = chars.map(ch => g0.measureText(ch));
+    const pals = []; { let j = 0; for (const ch of chars) pals.push(ch === ' ' ? null : Array.isArray(pal[0]) ? pal[j++ % pal.length] : pal); }
     const asc = Math.max(...ms.map(m => m.actualBoundingBoxAscent)), desc = Math.max(0, ...ms.map(m => m.actualBoundingBoxDescent));
     const pad = PL + G + B + 6;
     const xs = []; let x = 0;
-    ms.forEach((m, i) => { xs.push(x + m.actualBoundingBoxLeft); x += m.actualBoundingBoxLeft + m.actualBoundingBoxRight + (i < ms.length - 1 ? TRACK + B : 0); });
+    ms.forEach((m, i) => { xs.push(x + m.actualBoundingBoxLeft); x += chars[i] === ' ' ? F * 0.13 : m.actualBoundingBoxLeft + m.actualBoundingBoxRight + (i < ms.length - 1 ? TRACK + B : 0); });   // (a narrow space: the plate stays one piece)
     const W = Math.ceil(x + 2 * pad), H = Math.ceil(asc + desc + E + 2 * pad), base = pad + asc;
-    const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.font = font; g.lineJoin = 'round'; g.textBaseline = 'alphabetic'; return [c, g]; };
+    // (scratch canvases are emptied as soon as they're drawn: iPad Safari caps the memory all canvases may hold)
+    const scratch = [], free = () => { for (const c of scratch.splice(0)) c.width = c.height = 0; };
+    const mk = (keep) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.font = font; g.lineJoin = 'round'; g.textBaseline = 'alphabetic'; if (!keep) scratch.push(c); return [c, g]; };
     const glyph = (g, i, dy, lw) => { const gx = pad + xs[i]; g.fillText(chars[i], gx, base + dy); g.lineWidth = lw; g.strokeText(chars[i], gx, base + dy); };
-    const [out, o] = mk();
+    const [out, o] = mk(true);
     // the plate: every letter (with its side) grown by PL, merged into one rounded cloud (blur + cut at half)
     const gooey = (c, r) => {
       const g = c.getContext('2d'), img = g.getImageData(0, 0, W, H), d = img.data, a = new Float32Array(W * H), b = new Float32Array(W * H), n = 2 * r + 1;
@@ -189,7 +196,11 @@
       g.putImageData(img, 0, 0); return c;
     };
     const plateMask = (grow) => { const [c, g] = mk(); g.fillStyle = g.strokeStyle = '#fff';
-      chars.forEach((_, i) => { for (let dy = 0; dy <= E; dy += 2) glyph(g, i, dy, B + 2 * grow); }); return gooey(c, Math.round(PL * 0.45)); };
+      chars.forEach((_, i) => { for (let dy = 0; dy <= E; dy += 2) glyph(g, i, dy, B + 2 * grow); });
+      // (and a band through the letters' middles, first to last: one plate, no pinholes or gaps between letters / words)
+      const vis = pals.map((p, i) => p ? i : -1).filter(i => i >= 0), mid = (i) => pad + xs[i] + (ms[i].actualBoundingBoxRight - ms[i].actualBoundingBoxLeft) / 2;
+      if (vis.length > 1) g.fillRect(mid(vis[0]), base - asc * 0.72 - grow, mid(vis[vis.length - 1]) - mid(vis[0]), asc * 0.72 + E + 2 * grow);
+      return gooey(c, Math.round(PL * 0.45)); };
     const tint = (mask, fill) => { const [c, g] = mk(); g.drawImage(mask, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = fill; g.fillRect(0, 0, W, H); return c; };
     if (PLATE) {
     const outer = plateMask(PL), inner = plateMask(PL - G);
@@ -203,9 +214,12 @@
       pg.shadowColor = 'rgba(255,255,255,.9)'; pg.shadowBlur = F * 0.02; pg.shadowOffsetY = F * 0.022; pg.drawImage(ic, 0, 0);
       pg.shadowColor = 'rgba(40,120,190,.35)'; pg.shadowBlur = F * 0.04; pg.shadowOffsetY = -F * 0.03; pg.drawImage(ic, 0, 0);
       o.drawImage(pc, 0, 0); }
+    free();
     }
     // the letters, left to right (each a little over the one before, like the logo's)
     chars.forEach((_, i) => {
+      if (!pals[i]) return;                              // (a space)
+      const [fTop, fMid, fLow, bevel, side, sideDk, glow] = pals[i];
       const top = base - ms[i].actualBoundingBoxAscent - B / 2, bot = base + ms[i].actualBoundingBoxDescent + B / 2, gh = bot - top;
       // gold line round the letter and its side, then the side
       o.fillStyle = o.strokeStyle = '#f5c45c'; for (let dy = E; dy >= 0; dy -= 1) glyph(o, i, dy, B + 2 * G);
@@ -232,11 +246,29 @@
           let run = 0; while (xx + run < W && d[(y * W + xx + run) * 4 + 3] > 200) run += 2;
           if (run > F * 0.12) { best = [xx + F * 0.07, y + F * 0.06]; } break; }
         if (best) { o.save(); o.translate(best[0], best[1]); o.rotate(-0.5); o.fillStyle = 'rgba(255,255,255,.92)'; o.beginPath(); o.ellipse(0, 0, F * 0.034, F * 0.02, 0, 0, Math.PI * 2); o.fill(); o.restore(); } }
+      free();
     });
     out.className = 'jelly';
     return out;
   }
   const jellyCache = {};
+  /* the result's title in the logo's jelly letters on the logo's glass plate (was a pink ribbon — user: "전체적으로 디자인이
+     게임화면과 인트로 화면과 다른 느낌이고 컬러가 너무 많아"): one gold-yellow jelly (the logo's Y), with the stars and the
+     card's gold rim — fewer colours than the rainbow; ?title=rainbow (the logo's / START's colours letter by letter) or
+     ?title=<JELLY name> for comparing. The same letter size for every title (css height from the canvas, in --u); drawn
+     at the size it shows on this screen (F = font px: sharp on 2x and big screens, quicker on small ones), once. */
+  const TITLE_U = 15.4, TITLE_Q = qs.get('title'), titleCache = {};
+  const TITLE_PAL = TITLE_Q === 'rainbow' ? RAINBOW.map(k => JELLY[k]) : JELLY[Object.prototype.hasOwnProperty.call(JELLY, TITLE_Q) ? TITLE_Q : 'yellow'];
+  function resultTitle(text) {
+    const u = Math.min(innerHeight / 100, innerWidth / 177.78);
+    const F = Math.max(160, Math.min(440, Math.round(TITLE_U * u * (window.devicePixelRatio || 1) / 20) * 20));
+    let t = titleCache[text];
+    if (!t || t.F !== F) {
+      t = titleCache[text] = { F, cv: jellyWord(text, TITLE_PAL, { F }) };
+      t.cv.style.height = `calc(${(t.cv.height / F * TITLE_U).toFixed(3)} * var(--u))`;
+    }
+    return t.cv;
+  }
 
   /* the START button, after the intro mockup (design/intro_ref.png, the button at x 1050–1720, y 1300–1530): chunky
      block letters — a front face, a deep darker side under it, a thick round white outline with its own lavender side —
@@ -977,18 +1009,21 @@
 
   async function finish(tok) {
     G.busy = true; G.timerOn = false; setDrop(false);
+    const n = G.caught.length;
+    const all = n >= LETTERS.length;
+    const title = all ? 'PERFECT!' : n >= 2 ? 'GREAT JOB!' : 'NICE TRY!';
+    const titleCv = resultTitle(title);                  // (drawn now, the first time, while nothing moves yet)
     await dolly(0, 900);
     if (tok !== G.tok) return;
     setScreen('result');
-    const n = G.caught.length;
-    const all = n >= LETTERS.length;
     const stars = all ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0;
     [...$('#stars').children].forEach((s, i) => s.classList.toggle('on', i < stars));
-    $('#rbText').textContent = all ? 'PERFECT!' : n >= 2 ? 'GREAT JOB!' : 'NICE TRY!';
+    $('#resTitle').replaceChildren(titleCv); $('#resTitle').setAttribute('aria-label', title);
     $('#finalScore').textContent = G.score;
+    // (the word under each friend in navy, its first letter in that letter's jelly colour — the HUD target's)
     $('#caught').innerHTML = G.targets.map((L, i) => {
       const k = G.caught.find(kind => G.all[kind].sound === L);
-      return k ? `<div class="slot got"><img src="${G.icons[k]}" alt=""><em><b>${G.all[k].word[0]}</b>${G.all[k].word.slice(1)}</em></div>` : `<div class="slot">${L}</div>`;
+      return k ? `<div class="slot got"><img src="${G.icons[k]}" alt=""><em style="--lc:${JELLY[LETTER_JELLY[L] || 'pink'][3]}"><b>${G.all[k].word[0]}</b>${G.all[k].word.slice(1)}</em></div>` : `<div class="slot">${L}</div>`;
     }).join('');
     machine.setScreen(['GREAT', 'JOB!'], '#ffd23f'); machine.chase(4);
     A.sfxPlay('win'); FX.rain(160);
