@@ -169,6 +169,73 @@ def ear_clip(xy):
     return tris
 
 
+def split_tris(v, f, attrs, uid, labw, Phi, depth):
+    """cut the triangles whose corners have different labels along the smooth boundary (where the two labels' smoothed
+    fields are equal), so a cut is a clean seam, not a zig-zag of whole triangles: new vertices on those edges (and one
+    in the middle where three labels meet), attributes interpolated. -> v, f, attrs, face labels, vertex labels"""
+    nv = len(v)
+    newv, edge_new, out_f, out_l = [], {}, [], []
+
+    def cross(oa, ob):
+        key = (oa, ob) if oa < ob else (ob, oa)
+        if key in edge_new:
+            return edge_new[key]
+        xa, xb = uid[key[0]], uid[key[1]]
+        la, lb = labw[xa], labw[xb]
+        da, db = Phi[xa, la] - Phi[xa, lb], Phi[xb, la] - Phi[xb, lb]
+        t = da / (da - db) if da - db > 1e-9 else 0.5
+        t = min(0.8, max(0.2, t))
+        i = nv + len(newv)
+        newv.append(((key[0], 1 - t), (key[1], t), la if depth[la] >= depth[lb] else lb))
+        edge_new[key] = i
+        return i
+    for tri in f:
+        o = [int(x) for x in tri]
+        ls = [labw[uid[x]] for x in o]
+        if ls[0] == ls[1] == ls[2]:
+            out_f.append(o); out_l.append(ls[0])
+            continue
+        if len(set(ls)) == 2:
+            k = [i for i in range(3) if ls.count(ls[i]) == 1][0]
+            a_, b_, c_ = o[k], o[(k + 1) % 3], o[(k + 2) % 3]
+            la_, lb_ = ls[k], ls[(k + 1) % 3]
+            cab, cac = cross(a_, b_), cross(a_, c_)
+            out_f += [[a_, cab, cac], [cab, b_, c_], [cab, c_, cac]]
+            out_l += [la_, lb_, lb_]
+            continue
+        a_, b_, c_ = o
+        cab, cbc, cca = cross(a_, b_), cross(b_, c_), cross(c_, a_)
+        g = nv + len(newv)
+        newv.append(((a_, 1 / 3), (b_, 1 / 3), (c_, 1 / 3), max(ls, key=lambda l: depth[l])))
+        out_f += [[a_, cab, g], [a_, g, cca], [b_, cbc, g], [b_, g, cab], [c_, cca, g], [c_, g, cbc]]
+        out_l += [ls[0], ls[0], ls[1], ls[1], ls[2], ls[2]]
+    vl = [labw[uid[i]] for i in range(nv)]
+    if newv:
+        add = {k: [] for k in attrs}
+        vs = []
+        for nvx in newv:
+            ws = nvx[:-1]
+            vs.append(sum(v[i] * w for i, w in ws))
+            for k in attrs:
+                add[k].append(sum(np.asarray(attrs[k][i], np.float64) * w for i, w in ws))
+            vl.append(nvx[-1])
+        v = np.concatenate([v, np.array(vs)])
+        for k in attrs:
+            attrs[k] = np.concatenate([np.asarray(attrs[k], np.float64), np.array(add[k])])
+    return v, np.array(out_f, np.int64), attrs, np.array(out_l, np.int64), np.array(vl, np.int64)
+
+
+def atlas_of(r):
+    """the atlas as an array (rows from the top), to pick membrane colours"""
+    if 'tex' in r and not isinstance(r['tex'], str):
+        return np.asarray(r['tex'], np.float32)
+    url = r.get('tex_url')
+    if url:
+        import io
+        return np.asarray(Image.open(io.BytesIO(base64.b64decode(url.split(',', 1)[1]))).convert('RGB'), np.float32) / 255
+    return None
+
+
 def rig_mesh(kind, r, art, cut=True, log=print):
     """r: {'v','f','fw', 'uv' (atlas) or 'c' (colours)} -> the same, cut and grown, + r['rig'] (packed fields)"""
     pk = load_parts(kind)
@@ -327,15 +394,53 @@ def rig_mesh(kind, r, art, cut=True, log=print):
                 break
             for x, vs in votes.items():
                 lab[x] = np.bincount(vs).argmax(); bad[x] = False
-    # faces take their vertices' majority
-    la, lb, lc = lab[F].T
-    fl = np.where((la == lb) | (la == lc), la, np.where(lb == lc, lb, np.maximum(la, np.maximum(lb, lc))))
+    nb = len(names) if len(names) <= NB else NB
+    depth = [0] * nb
+    for b in range(1, nb):
+        q, k = b, 0
+        while q and k < 8:
+            q, k = par[q], k + 1
+        depth[b] = k
+    # smooth boundaries: each label's indicator smoothed over the mesh, the strongest wins; then the triangles on a
+    # boundary are cut along it (clean seams)
+    Phi = np.zeros((nu, nb))
+    Phi[np.arange(nu), np.minimum(lab, nb - 1)] = 1
+    deg = np.bincount(E.ravel(), minlength=nu).astype(np.float64)
+    for _ in range(5):
+        acc = np.zeros_like(Phi)
+        np.add.at(acc, E[:, 0], Phi[E[:, 1]]); np.add.at(acc, E[:, 1], Phi[E[:, 0]])
+        Phi = 0.5 * Phi + 0.5 * acc / np.maximum(deg, 1)[:, None]
+    lab = np.where(extra, lab, Phi.argmax(1))
+    attrs = {'fw': fw}
+    if 'uv' in r:
+        attrs['uv'] = r['uv']
+    if 'c' in r:
+        attrs['c'] = np.asarray(r['c'], np.float64)
+    v, f, attrs, fl_o, vl = split_tris(v, f, attrs, uid, lab, Phi, depth)
+    fw = attrs['fw']
+    r = dict(r)
+    if 'uv' in attrs:
+        r['uv'] = attrs['uv']
+    if 'c' in attrs:
+        r['c'] = np.clip(np.round(attrs['c']), 0, 255).astype(np.uint8)
+    uid, P = weld(v)
+    nu = len(P)
+    lab = np.zeros(nu, np.int64)
+    lab[uid] = vl
+    F = uid[f]
+    fl = fl_o
+    N = vnormals(P, F)
+    G, E = graph(P, F)
+    ncomp, comp = connected_components(G, directed=False)
+    extra = comp != np.bincount(comp).argmax()
+    fwu = np.zeros(nu)
+    np.maximum.at(fwu, uid, fw)
     # vertex -> faces
     vf = [[] for _ in range(nu)]
     for fi, tri in enumerate(F):
-        for x in tri:
+        for x in set(tri.tolist()):
             vf[x].append(fi)
-    nb = len(names) if len(names) <= NB else NB
+
     # 2. joints
     bones = [dict(n='body', t='body', p=0, o=[0.0, 0.0, 0.0], d=[0.0, -1.0, 0.0], l=0.0, r=0.0)]
     piv = np.zeros((nb, 3)); jr = np.zeros(nb); band = np.zeros(nb)
@@ -386,12 +491,6 @@ def rig_mesh(kind, r, art, cut=True, log=print):
         bones.append(dict(n=p['name'], t=p['type'], p=par[b], o=[round(float(x), 5) for x in o],
                           d=[round(float(x), 4) for x in dvec], l=round(ln, 4), r=round(float(min(jr[b], 1.0)), 4)))
     # 3. which faces round each vertex stay joined: a part and its parent within the part's joint radius (or never cut)
-    depth = [0] * nb
-    for b in range(1, nb):
-        q, k = b, 0
-        while q and k < 8:
-            q, k = par[q], k + 1
-        depth[b] = k
 
     def joined(x, a, b):
         if a == b:
@@ -465,8 +564,7 @@ def rig_mesh(kind, r, art, cut=True, log=print):
         return (0, 1.0) if t == 0 else (t, s_bone(t, x))
     # 4. the cut: a vertex copy used by faces of more than one group splits into one copy per group
     nv0 = len(v)
-    keep = (uid[f][:, 0] != uid[f][:, 1]) & (uid[f][:, 1] != uid[f][:, 2]) & (uid[f][:, 0] != uid[f][:, 2])
-    fidx = np.nonzero(keep)[0]
+    fidx = np.arange(len(f))
     f2 = f.copy()
     key_new, newsrc, newgrp, first_group = {}, [], [], {}
     for k, fi in enumerate(fidx):
@@ -515,11 +613,28 @@ def rig_mesh(kind, r, art, cut=True, log=print):
     for o in range(nv0):
         first_copy.setdefault(uid[o], o)
 
-    def texel(side, c0):
-        cand = np.nonzero(lab == side)[0]
+    atl = atlas_of(r) if 'uv' in r else None
+
+    def texel(side, c0, rad, lips=None):
+        """a vertex of that side on the cut (its lip) whose colour is the median there: the membrane's flat colour"""
+        cand = np.array(lips if lips is not None and len(lips) >= 3 else [], np.int64)
+        if len(cand) < 3:
+            cand = np.nonzero((lab == side) & (np.linalg.norm(P - c0, axis=1) < rad))[0]
+        if len(cand) < 3:
+            cand = np.nonzero(lab == side)[0]
         if not len(cand):
             cand = np.arange(nu)
-        return first_copy[cand[np.argmin(np.linalg.norm(P[cand] - c0, axis=1))]]
+        oo = np.array([first_copy[x] for x in cand])
+        if atl is not None:
+            Hh_, Ww_ = atl.shape[:2]
+            uvv = r['uv'][oo]
+            col = atl[np.clip(((1 - uvv[:, 1]) * Hh_).astype(int), 0, Hh_ - 1), np.clip((uvv[:, 0] * Ww_).astype(int), 0, Ww_ - 1)]
+        elif 'c' in r:
+            col = np.asarray(r['c'], np.float64)[oo]
+        else:
+            return oo[np.argmin(np.linalg.norm(P[cand] - c0, axis=1))]
+        med = np.median(col, 0)
+        return oo[np.argmin(np.linalg.norm(col - med, axis=1))]
     if cut:
         for b in range(1, nb):
             if b >= len(bones) or bones[b].get('off') or not TYPE.get(bones[b]['t'], TYPE['arm'])['cut']:
@@ -561,8 +676,12 @@ def rig_mesh(kind, r, art, cut=True, log=print):
                     others.append(max(set(gs), key=gs.count) if gs else group.get((x, b), b))
                 labs_o = [min(members.get((x, g), {g}), key=lambda l: depth[l]) for x, g in zip(loop, others)]
                 oth = max(set(labs_o), key=labs_o.count)
+                rad = 1.3 * float(np.max(np.linalg.norm(Q - c0, axis=1)))
+                ring1 = set(x2 for x in loop for x2 in nbr[x])
+                lips_p = [x for x in ring1 if lab[x] == b] or None
+                lips_o = [x for x in ring1 if lab[x] == oth] or None
                 for side in ('part', 'other'):
-                    o_t = texel(b if side == 'part' else oth, c0)
+                    o_t = texel(b if side == 'part' else oth, c0, rad, lips_p if side == 'part' else lips_o)
                     base = len(v2) + nmem
                     sign = -1.0 if side == 'part' else 1.0
                     for i in lp:

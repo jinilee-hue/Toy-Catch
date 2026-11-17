@@ -1232,6 +1232,7 @@ def pack(r, quality=86):
         buf = io.BytesIO()
         Image.fromarray(np.clip(r['tex'] * 255 + 0.5, 0, 255).astype(np.uint8)).save(buf, 'WEBP', quality=quality, method=6)
         out['tex'] = 'data:image/webp;base64,' + base64.b64encode(buf.getvalue()).decode()
+    out.update(r.get('rig', {}))                  # (tools/rig.py: bones + sk, when the friend has part masks)
     return out
 
 
@@ -1256,6 +1257,8 @@ def main():
         print(k)
         dbg = {} if o.debug else None
         r = build(k, art, o.res, o.target, o.sheets, dbg)
+        from rig import rig_hook                    # its limbs on joints: tools/rig.py (design/parts/ masks)
+        r = rig_hook(k, r, art)
         assert len(r['v']) < 65536
         data[k] = pack(r)
         print(f'  packed {sum(len(x) for x in data[k].values() if isinstance(x, str)) // 1024} KB')

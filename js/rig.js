@@ -47,7 +47,7 @@
     antenna: { f: 3.6, z: 0.08, max: 0.8, droop: 0.05, lin: 2, rot: 10, gain: 1.1 },
     arm: { f: 2.5, z: 0.2, max: 0.95, droop: 0.45, lin: 3, rot: 14, gain: 1, inward: 0.1 },
     wing: { f: 2.7, z: 0.2, max: 0.9, droop: 0.35, lin: 3, rot: 14, gain: 1, inward: 0.1 },
-    leg: { f: 2.2, z: 0.26, max: 1.25, droop: 1, lin: 2.5, rot: 10, gain: 0.9, inward: 0.12, feet: true },
+    leg: { f: 2.2, z: 0.26, max: 0.9, droop: 0.65, lin: 2.5, rot: 10, gain: 0.9, inward: 0.12, feet: true },
     tail: { f: 1.9, z: 0.14, max: 0.9, droop: 0.5, lin: 3, rot: 16, gain: 1 },
     fin: { f: 3, z: 0.2, max: 0.5, droop: 0.15, lin: 2.5, rot: 10, gain: 0.8 },
     fan: { f: 3, z: 0.3, max: 0.35, droop: 0.05, lin: 1.5, rot: 6, gain: 0.5 },
