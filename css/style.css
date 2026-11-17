@@ -153,18 +153,30 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   box-shadow: inset 0 calc(1 * var(--u)) calc(1.4 * var(--u)) rgba(255,255,255,.3), inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(10,60,160,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
   font: 800 calc(7 * var(--u)) / 1 var(--font); color: #ffe14a; -webkit-text-stroke: calc(.75 * var(--u)) #163d8f; paint-order: stroke fill;
 }
-/* the target letter pair: a canvas in the logo's jelly style (game.js jellyWord) — standing a little out of the pill */
+/* the target letter pair: the logo's jelly letters (game.js jellyWord, no plate) standing on the pill, with a soft
+   shadow on it; the speaker button below is the same jelly in the same colour (--j* set by setTarget) */
 .tg-letter { display: block; line-height: 0; }
-.tg-letter .jelly { display: block; height: calc(13.6 * var(--u)); width: auto; margin: calc(-1.2 * var(--u)) 0; }
+.tg-letter .jelly { display: block; height: calc(10.6 * var(--u)); width: auto; margin: calc(-.6 * var(--u)) 0 0; filter: drop-shadow(0 calc(.45 * var(--u)) calc(.5 * var(--u)) rgba(8,40,120,.4)); }
 .tg-letter.pop { animation: letterPop .7s cubic-bezier(.3, 1.7, .5, 1); }
 @keyframes letterPop { 0% { scale: .2; rotate: -30deg; } 60% { scale: 1.25; rotate: 8deg; } 100% { scale: 1; rotate: 0; } }
 .tg-snd {
-  pointer-events: auto; width: calc(9 * var(--u)); height: calc(9 * var(--u)); border-radius: 50%;
-  display: grid; place-items: center; color: #fff;
-  background: radial-gradient(circle at 35% 30%, #ffd27a, #ff9a1f 60%, #f07800);
-  box-shadow: inset 0 calc(-.6 * var(--u)) calc(1 * var(--u)) rgba(190,80,0,.35), 0 calc(.5 * var(--u)) calc(1 * var(--u)) rgba(0,0,60,.28);
+  --g: calc(.3 * var(--u)); --e: calc(.8 * var(--u));       /* the gold line, the jelly's side */
+  position: relative; pointer-events: auto; width: calc(8.2 * var(--u)); height: calc(8.2 * var(--u)); border-radius: 50%;
+  display: grid; place-items: center; color: #fff; translate: 0 calc(-.4 * var(--u)); transition: translate .08s, box-shadow .08s;
+  background:
+    radial-gradient(130% 80% at 50% -6%, rgba(255,255,255,.5) 0 40%, rgba(255,255,255,.3) 47%, rgba(255,255,255,0) 52%),
+    radial-gradient(circle at 50% 118%, var(--jg, #ffe07a) 0, rgba(255,255,255,0) 46%),
+    linear-gradient(var(--jt, #ffcf72), var(--jm, #ffaa3c) 50%, var(--jl, #ff9320));
+  box-shadow:
+    inset 0 0 calc(.55 * var(--u)) var(--jb, #f47f12),
+    0 var(--e) 0 0 var(--js, #d9650a),
+    0 0 0 var(--g) #f5c45c,
+    0 var(--e) 0 var(--g) #f5c45c,
+    0 calc(var(--e) + .5 * var(--u)) calc(1.1 * var(--u)) rgba(8,40,120,.38);
 }
-.tg-snd svg { width: 62%; height: 62%; margin-left: 6%; }
+.tg-snd::after { content: ''; position: absolute; left: 21%; top: 16%; width: 15%; height: 9%; border-radius: 50%; background: rgba(255,255,255,.92); rotate: -32deg; pointer-events: none; }
+.tg-snd svg { width: 54%; height: 54%; margin-left: 6%; filter: drop-shadow(0 calc(.22 * var(--u)) 0 var(--jd, #ad4c05)); }
+.tg-snd:active { translate: 0 calc(.15 * var(--u)); --e: calc(.25 * var(--u)); }
 .tg-snd.play { animation: bump .5s ease-out 2; }
 .target.swap .tg-main { animation: swapIn .6s cubic-bezier(.3, 1.5, .5, 1); }
 @keyframes swapIn { 0% { transform: scale(.5) translateY(-30%); opacity: 0; } 100% { transform: none; opacity: 1; } }

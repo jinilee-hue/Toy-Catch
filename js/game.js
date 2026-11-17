@@ -150,11 +150,12 @@
     purple: ['#dc96fc', '#c35ff7', '#ad47ef', '#9a3be0', '#7c27c6', '#5c169f', '#ecb8ff'],
   };
   const LETTER_JELLY = { m: 'purple', a: 'green', s: 'orange', t: 'pink' };
-  function jellyWord(text, pal) {
+  function jellyWord(text, pal, opts = {}) {
     const [fTop, fMid, fLow, bevel, side, sideDk, glow] = pal;
+    const PLATE = opts.plate !== false;                  // (no plate: the letters stand straight on their pill — HUD)
     // (B: fatter than Baloo 800, like the logo's letters — but the small holes of a / s / e must stay open: kids read
     //  the shape (B .13 closed them: "a" and "s" looked like "8"); R: a thin bevel, so the face is most of the letter)
-    const F = 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = F * 0.095, TRACK = -F * 0.02;
+    const F = 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = PLATE ? F * 0.095 : 0, TRACK = -F * 0.02;
     const font = `800 ${F}px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif`;
     const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const mix = (a, b, k) => 'rgb(' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k)).join(',') + ')';
@@ -184,6 +185,7 @@
     const plateMask = (grow) => { const [c, g] = mk(); g.fillStyle = g.strokeStyle = '#fff';
       chars.forEach((_, i) => { for (let dy = 0; dy <= E; dy += 2) glyph(g, i, dy, B + 2 * grow); }); return gooey(c, Math.round(PL * 0.45)); };
     const tint = (mask, fill) => { const [c, g] = mk(); g.drawImage(mask, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = fill; g.fillRect(0, 0, W, H); return c; };
+    if (PLATE) {
     const outer = plateMask(PL), inner = plateMask(PL - G);
     o.save(); o.shadowColor = 'rgba(12,50,130,.38)'; o.shadowBlur = F * 0.05; o.shadowOffsetY = F * 0.03;
     o.drawImage(tint(outer, '#f2c766'), 0, 0); o.restore();
@@ -195,6 +197,7 @@
       pg.shadowColor = 'rgba(255,255,255,.9)'; pg.shadowBlur = F * 0.02; pg.shadowOffsetY = F * 0.022; pg.drawImage(ic, 0, 0);
       pg.shadowColor = 'rgba(40,120,190,.35)'; pg.shadowBlur = F * 0.04; pg.shadowOffsetY = -F * 0.03; pg.drawImage(ic, 0, 0);
       o.drawImage(pc, 0, 0); }
+    }
     // the letters, left to right (each a little over the one before, like the logo's)
     chars.forEach((_, i) => {
       const top = base - ms[i].actualBoundingBoxAscent - B / 2, bot = base + ms[i].actualBoundingBoxDescent + B / 2, gh = bot - top;
@@ -688,8 +691,13 @@
   }
   function setTarget(L) {
     const up = L.toUpperCase();
-    const cv = jellyCache[L] || (jellyCache[L] = jellyWord(up + L, JELLY[LETTER_JELLY[L] || 'pink']));
+    // the letters and the speaker button as one set: jelly letters straight on the blue pill (no plate of their own —
+    // a pale plate inside the pill looked pasted on) and the button in the same jelly, the letters' colour (user:
+    // "전체적인 박스와 글자와 버튼이 이질감이 없게")
+    const pal = JELLY[LETTER_JELLY[L] || 'pink'];
+    const cv = jellyCache[L] || (jellyCache[L] = jellyWord(up + L, pal, { plate: false }));
     $('#tgLetter').replaceChildren(cv); $('#tgLetter').setAttribute('aria-label', up + L);
+    ['--jt', '--jm', '--jl', '--jb', '--js', '--jd', '--jg'].forEach((k, i) => $('#target').style.setProperty(k, pal[i]));
     const tg = $('#target'); tg.classList.remove('swap'); void tg.offsetWidth; tg.classList.add('swap');
     const le = $('#tgLetter'); le.classList.remove('pop'); void le.offsetWidth; le.classList.add('pop');
   }
