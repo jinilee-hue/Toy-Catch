@@ -138,6 +138,97 @@
     };
   }
 
+  /* letters in the LOGO's jelly style (user: "상단에 스펠링 부분은 로고와 같은형태로"; assets/img/logo.webp): each letter a
+     glossy candy jelly — a thin gold line round the whole letter, a deep same-colour side under it, a darker bevel round
+     the face, the face lighter in its top half (a soft curved edge, like the logo's), a light glow inside the bottom edge,
+     a crisp white shine along the top-left edges and a white spot — all on the logo's pale-cyan glass plate with its own
+     gold edge. Drawn once per word into a canvas (soft edges with shadowBlur, not ctx.filter: older iPad Safari). */
+  const JELLY = {                                        // the logo's letter colours: face top / mid / low, bevel, side, side dark, glow
+    pink:   ['#ff7aa6', '#fb4479', '#f2265b', '#e41f56', '#c9134a', '#9c0b35', '#ffb0c8'],
+    green:  ['#c4ef74', '#9fe158', '#74cc40', '#52b532', '#3f9e26', '#2a7d1b', '#dff86a'],
+    orange: ['#ffcf72', '#ffaa3c', '#ff9320', '#f47f12', '#d9650a', '#ad4c05', '#ffe07a'],
+    purple: ['#dc96fc', '#c35ff7', '#ad47ef', '#9a3be0', '#7c27c6', '#5c169f', '#ecb8ff'],
+  };
+  const LETTER_JELLY = { m: 'purple', a: 'green', s: 'orange', t: 'pink' };
+  function jellyWord(text, pal) {
+    const [fTop, fMid, fLow, bevel, side, sideDk, glow] = pal;
+    // (B: fatter than Baloo 800, like the logo's letters — but the small holes of a / s / e must stay open: kids read
+    //  the shape (B .13 closed them: "a" and "s" looked like "8"); R: a thin bevel, so the face is most of the letter)
+    const F = 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = F * 0.095, TRACK = -F * 0.02;
+    const font = `800 ${F}px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif`;
+    const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const mix = (a, b, k) => 'rgb(' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k)).join(',') + ')';
+    const rgba = (a, al) => 'rgba(' + hex(a).join(',') + ',' + al + ')';
+    const g0 = document.createElement('canvas').getContext('2d'); g0.font = font;
+    const chars = [...text], ms = chars.map(ch => g0.measureText(ch));
+    const asc = Math.max(...ms.map(m => m.actualBoundingBoxAscent)), desc = Math.max(0, ...ms.map(m => m.actualBoundingBoxDescent));
+    const pad = PL + G + B + 6;
+    const xs = []; let x = 0;
+    ms.forEach((m, i) => { xs.push(x + m.actualBoundingBoxLeft); x += m.actualBoundingBoxLeft + m.actualBoundingBoxRight + (i < ms.length - 1 ? TRACK + B : 0); });
+    const W = Math.ceil(x + 2 * pad), H = Math.ceil(asc + desc + E + 2 * pad), base = pad + asc;
+    const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.font = font; g.lineJoin = 'round'; g.textBaseline = 'alphabetic'; return [c, g]; };
+    const glyph = (g, i, dy, lw) => { const gx = pad + xs[i]; g.fillText(chars[i], gx, base + dy); g.lineWidth = lw; g.strokeText(chars[i], gx, base + dy); };
+    const [out, o] = mk();
+    // the plate: every letter (with its side) grown by PL, merged into one rounded cloud (blur + cut at half)
+    const gooey = (c, r) => {
+      const g = c.getContext('2d'), img = g.getImageData(0, 0, W, H), d = img.data, a = new Float32Array(W * H), b = new Float32Array(W * H), n = 2 * r + 1;
+      for (let k = 0; k < W * H; k++) a[k] = d[k * 4 + 3] / 255;
+      const hb = (s, t) => { for (let y = 0; y < H; y++) { const q = y * W; let sum = 0; for (let k = -r; k <= r; k++) sum += s[q + Math.min(W - 1, Math.max(0, k))];
+        for (let k = 0; k < W; k++) { t[q + k] = sum / n; sum += s[q + Math.min(W - 1, k + r + 1)] - s[q + Math.max(0, k - r)]; } } };
+      const vb = (s, t) => { for (let k = 0; k < W; k++) { let sum = 0; for (let y = -r; y <= r; y++) sum += s[Math.min(H - 1, Math.max(0, y)) * W + k];
+        for (let y = 0; y < H; y++) { t[y * W + k] = sum / n; sum += s[Math.min(H - 1, y + r + 1) * W + k] - s[Math.max(0, y - r) * W + k]; } } };
+      for (let k = 0; k < 2; k++) { hb(a, b); vb(b, a); }
+      for (let k = 0; k < W * H; k++) { d[k * 4] = d[k * 4 + 1] = d[k * 4 + 2] = 255; d[k * 4 + 3] = Math.round(255 * Math.min(1, Math.max(0, (a[k] - 0.5) * 7 + 0.5))); }
+      g.putImageData(img, 0, 0); return c;
+    };
+    const plateMask = (grow) => { const [c, g] = mk(); g.fillStyle = g.strokeStyle = '#fff';
+      chars.forEach((_, i) => { for (let dy = 0; dy <= E; dy += 2) glyph(g, i, dy, B + 2 * grow); }); return gooey(c, Math.round(PL * 0.45)); };
+    const tint = (mask, fill) => { const [c, g] = mk(); g.drawImage(mask, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = fill; g.fillRect(0, 0, W, H); return c; };
+    const outer = plateMask(PL), inner = plateMask(PL - G);
+    o.save(); o.shadowColor = 'rgba(12,50,130,.38)'; o.shadowBlur = F * 0.05; o.shadowOffsetY = F * 0.03;
+    o.drawImage(tint(outer, '#f2c766'), 0, 0); o.restore();
+    { const gr = o.createLinearGradient(0, pad - PL, 0, H - pad + PL); gr.addColorStop(0, 'rgba(222,248,255,.97)'); gr.addColorStop(0.55, 'rgba(160,228,254,.95)'); gr.addColorStop(1, 'rgba(126,203,240,.95)');
+      const [pc, pg] = mk(); pg.drawImage(tint(inner, gr), 0, 0);
+      // (the glass: a white shine inside its top edge, a little shade inside its bottom)
+      const [ic, ig] = mk(); ig.fillStyle = '#000'; ig.fillRect(0, 0, W, H); ig.globalCompositeOperation = 'destination-out'; ig.drawImage(inner, 0, 0);
+      pg.globalCompositeOperation = 'source-atop';
+      pg.shadowColor = 'rgba(255,255,255,.9)'; pg.shadowBlur = F * 0.02; pg.shadowOffsetY = F * 0.022; pg.drawImage(ic, 0, 0);
+      pg.shadowColor = 'rgba(40,120,190,.35)'; pg.shadowBlur = F * 0.04; pg.shadowOffsetY = -F * 0.03; pg.drawImage(ic, 0, 0);
+      o.drawImage(pc, 0, 0); }
+    // the letters, left to right (each a little over the one before, like the logo's)
+    chars.forEach((_, i) => {
+      const top = base - ms[i].actualBoundingBoxAscent - B / 2, bot = base + ms[i].actualBoundingBoxDescent + B / 2, gh = bot - top;
+      // gold line round the letter and its side, then the side
+      o.fillStyle = o.strokeStyle = '#f5c45c'; for (let dy = E; dy >= 0; dy -= 1) glyph(o, i, dy, B + 2 * G);
+      for (let dy = E; dy >= 0.5; dy -= 0.5) { o.fillStyle = o.strokeStyle = mix(side, sideDk, Math.min(1, dy / E)); glyph(o, i, dy, B); }
+      { const gr = o.createLinearGradient(0, top, 0, bot); gr.addColorStop(0, mix(bevel, '#ffffff', 0.18)); gr.addColorStop(1, bevel); o.fillStyle = o.strokeStyle = gr; glyph(o, i, 0, B); }
+      // the face: the letter shrunk by R, with the jelly lights on it
+      const [fc, fg] = mk();
+      { const gr = fg.createLinearGradient(0, top, 0, bot); gr.addColorStop(0, fTop); gr.addColorStop(0.5, fMid); gr.addColorStop(0.56, fLow); gr.addColorStop(1, fLow);
+        fg.fillStyle = fg.strokeStyle = gr; glyph(fg, i, 0, B - 2 * R); }     // (the fat letter shrunk by R = a stroke 2R thinner)
+      const [ic, ig] = mk(); ig.fillStyle = '#000'; ig.fillRect(0, 0, W, H); ig.globalCompositeOperation = 'destination-out'; ig.drawImage(fc, 0, 0);
+      fg.globalCompositeOperation = 'source-atop';
+      // the top half lighter, with a soft curved lower edge (the logo's two-tone jelly)
+      { const yS = top + gh * 0.5, gr = fg.createLinearGradient(0, top, 0, yS + gh * 0.04);
+        gr.addColorStop(0, 'rgba(255,255,255,.5)'); gr.addColorStop(0.85, 'rgba(255,255,255,.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        fg.fillStyle = gr; fg.beginPath(); const x0 = pad + xs[i] - F * 0.2, x1 = x0 + ms[i].actualBoundingBoxRight + ms[i].actualBoundingBoxLeft + F * 0.4;
+        fg.moveTo(x0, top - F); fg.lineTo(x1, top - F); fg.lineTo(x1, yS - gh * 0.03); fg.quadraticCurveTo((x0 + x1) / 2, yS + gh * 0.09, x0, yS - gh * 0.03); fg.closePath(); fg.fill(); }
+      fg.shadowColor = rgba(bevel, 0.6); fg.shadowBlur = F * 0.025; fg.shadowOffsetY = 0; fg.drawImage(ic, 0, 0);                  // soft bevel into the face
+      fg.shadowColor = rgba(glow, 0.95); fg.shadowBlur = F * 0.05; fg.shadowOffsetY = -F * 0.05; fg.drawImage(ic, 0, 0);           // glow inside the bottom
+      fg.shadowColor = 'rgba(255,255,255,.8)'; fg.shadowBlur = F * 0.01; fg.shadowOffsetX = F * 0.008; fg.shadowOffsetY = F * 0.013; fg.drawImage(ic, 0, 0);   // shine on the top-left edges
+      o.drawImage(fc, 0, 0);
+      // the white spot: just inside the face's top-left, where the face starts
+      { const d = fg.getImageData(0, 0, W, H).data; let best = null;
+        for (let y = Math.floor(top); y < top + gh * 0.45 && !best; y += 2) for (let xx = 0; xx < W; xx += 2) if (d[(y * W + xx) * 4 + 3] > 200) {
+          let run = 0; while (xx + run < W && d[(y * W + xx + run) * 4 + 3] > 200) run += 2;
+          if (run > F * 0.12) { best = [xx + F * 0.07, y + F * 0.06]; } break; }
+        if (best) { o.save(); o.translate(best[0], best[1]); o.rotate(-0.5); o.fillStyle = 'rgba(255,255,255,.92)'; o.beginPath(); o.ellipse(0, 0, F * 0.034, F * 0.02, 0, 0, Math.PI * 2); o.fill(); o.restore(); } }
+    });
+    out.className = 'jelly';
+    return out;
+  }
+  const jellyCache = {};
+
   /* the START button, after the intro mockup (design/intro_ref.png, the button at x 1050–1720, y 1300–1530): chunky
      block letters — a front face, a deep darker side under it, a thick round white outline with its own lavender side —
      on a royal-blue slab with a darker front edge. The slab's top face and the letters lie on the panel together: one
@@ -597,7 +688,8 @@
   }
   function setTarget(L) {
     const up = L.toUpperCase();
-    $('#tgLetter').textContent = up + L;
+    const cv = jellyCache[L] || (jellyCache[L] = jellyWord(up + L, JELLY[LETTER_JELLY[L] || 'pink']));
+    $('#tgLetter').replaceChildren(cv); $('#tgLetter').setAttribute('aria-label', up + L);
     const tg = $('#target'); tg.classList.remove('swap'); void tg.offsetWidth; tg.classList.add('swap');
     const le = $('#tgLetter'); le.classList.remove('pop'); void le.offsetWidth; le.classList.add('pop');
   }
@@ -949,6 +1041,6 @@
     if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 
-  window.__clawApi = { G, drop, startGame, goTitle, candidate, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
+  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
   boot().catch(e => { console.error(e); const l = $('#loading'); if (l) l.innerHTML = '<p style="font:700 20px sans-serif;color:#234">Could not start: ' + e.message + '</p>'; });
 })();

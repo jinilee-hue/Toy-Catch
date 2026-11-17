@@ -153,7 +153,9 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   box-shadow: inset 0 calc(1 * var(--u)) calc(1.4 * var(--u)) rgba(255,255,255,.3), inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(10,60,160,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
   font: 800 calc(7 * var(--u)) / 1 var(--font); color: #ffe14a; -webkit-text-stroke: calc(.75 * var(--u)) #163d8f; paint-order: stroke fill;
 }
-.tg-letter { font-size: calc(9.6 * var(--u)); color: #ff4fa3; -webkit-text-stroke: calc(.9 * var(--u)) #fff; text-shadow: 0 calc(.5 * var(--u)) 0 #b0186a; letter-spacing: .02em; }
+/* the target letter pair: a canvas in the logo's jelly style (game.js jellyWord) — standing a little out of the pill */
+.tg-letter { display: block; line-height: 0; }
+.tg-letter .jelly { display: block; height: calc(13.6 * var(--u)); width: auto; margin: calc(-1.2 * var(--u)) 0; }
 .tg-letter.pop { animation: letterPop .7s cubic-bezier(.3, 1.7, .5, 1); }
 @keyframes letterPop { 0% { scale: .2; rotate: -30deg; } 60% { scale: 1.25; rotate: 8deg; } 100% { scale: 1; rotate: 0; } }
 .tg-snd {
