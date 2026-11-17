@@ -28,6 +28,11 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 
 ## 친구들 (seats 6)
 - 정답 친구 `m: monkey, mouse · a: ant · s: seal · t: turkey, turtle`, 오답 친구 `c: cat, cow · d: dog, duck · f: fish`(목표 글자로는 안 나옴).
+- 3D 친구 11종은 캐릭터 시트(design/sheets, git 제외)로 다시 만들었다. 정면은 게임 그림 그대로(외곽선도 그림과 같음), 옆·뒤는
+  시트의 측면·후면을 구운 텍스처(webp, `js/friends-3d.js` 안). 다시 만들기: `~/dev/tools/TripoSR/.venv/bin/python
+  tools/make_3d.py --only dog --sheets design/sheets`(venv에 xatlas·opencv 필요). 시트와 그림이 다른 부분은 make_3d.py의
+  SHEET_SKIP/SHEET_DROP으로 뺀다(거북이 머리 크기, 칠면조 꼬리 부채, 쥐 꼬리). 확인: `dev/friends3d.html?ortho`(정면을 그림과
+  비교) · `?still` · `?row&weights`(포즈 부위).
 - 시그니처 포즈: `js/poses.js` — 친구마다 귀·꼬리·팔·더듬이·지느러미 등 최대 4부위를 그림 비율 좌표로 정의해 셰이더에서
   움직임(그림자도 같이). 집게가 바로 위에 있으면 잔잔한 반복(내려가기 시작하면 멈춤), 상품으로 나올 때 크게 1번, 탭하면 1번,
   대기 중 5~8초마다 랜덤 1명. 확인: `dev/friends3d.html?pose` · `?pose=loop` · `&weights`(부위 색 표시) · `&ang=0,40&zoom=1.6`.
