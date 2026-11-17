@@ -41,19 +41,26 @@
 
   /* ── boot ───────────────────────────────────────────────────────────────────────────────────────── */
   async function boot() {
-    const bar = $('#loading .bar i');
+    // the loading bar (css #loading): the jelly grows and the coin on its end rolls the distance it moves
+    const bar = $('#loading .bar i'), coin = bar.querySelector('.load-coin'), rolls = bar.querySelectorAll('.roll');
+    const setBar = pct => {
+      bar.style.width = pct + '%';
+      const run = bar.parentElement.clientWidth * pct / 100, d = coin ? coin.getBoundingClientRect().width : 0;
+      if (d) rolls.forEach(r => (r.style.transform = `rotate(${(run / (Math.PI * d) * 360).toFixed(1)}deg)`));
+    };
+    window.__loadBar = setBar;                          // (QA: the loading screen's bar at any point)
     try { await Promise.race([document.fonts.load('800 100px "Baloo 2"'), A.sleep(2500)]); } catch (e) { /* fallback font */ }
-    bar.style.width = '30%';
+    setBar(30);
     buildStart();
     S.init($('#stage'), { preserve: qs.has('preserve') });
     machine = Machine.build(); claw = machine.claw;
     S.machine = machine; S.scene.add(machine.group);
     FX.init($('#fx'));
-    bar.style.width = '55%';
+    setBar(55);
     await A.sleep(20);
     await Friends.load();
     for (const k of Friends.KINDS) { G.all[k] = Friends.build(k); G.icons[k] = G.all[k].icon; }
-    bar.style.width = '85%';
+    setBar(85);
     spot = makeSpot(); machine.group.add(spot.group);
     burst = makeBurst(); S.scene.add(burst);
     S.onResize = layout;
@@ -64,7 +71,7 @@
     S.start();
     bindInput();
     await A.sleep(60);
-    bar.style.width = '100%';
+    setBar(100);
     await A.sleep(250);
     app.classList.remove('booting');
     G.busy = false;
