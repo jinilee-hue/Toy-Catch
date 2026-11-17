@@ -294,8 +294,12 @@ def rig_mesh(kind, r, art, cut=True, log=print):
     gx = np.floor(P[:, 0] / cell).astype(int); gy = np.floor(P[:, 1] / cell).astype(int)
     gx -= gx.min(); gy -= gy.min()
     zhi = np.full((gx.max() + 3, gy.max() + 3), -9.0)
+    zlo = np.full((gx.max() + 3, gy.max() + 3), 9.0)
     np.maximum.at(zhi, (gx + 1, gy + 1), P[:, 2])
+    np.minimum.at(zlo, (gx + 1, gy + 1), P[:, 2])
     zf = ndi.maximum_filter(zhi, 3)[gx + 1, gy + 1]
+    zb = ndi.minimum_filter(zlo, 3)[gx + 1, gy + 1]
+    thick_of, front_of = {}, {}
     upp = h / Hh                                    # friend units per mask pixel
     inner = ndi.minimum_filter(L, 3) == ndi.maximum_filter(L, 3)
     # (how deep, as a share of the part's width in the picture: a head or an ear is about as deep as it is wide; an arm a
@@ -309,6 +313,11 @@ def rig_mesh(kind, r, art, cut=True, log=print):
         if not m.any():
             continue
         th = 2 * ndi.distance_transform_edt(m).max() * upp
+        # (lying in front of the body — a paw on the chest, feet on the tummy, a fin on the flank: most of its front
+        # has much more mesh behind it than its own thickness. Those bend softly instead of being cut loose)
+        fr = (seed == bi[p['name']]) & (fwu > 0.35)
+        front_of[p['name']] = float(np.mean(zf[fr] - zb[fr] > 1.6 * th + 0.03)) if fr.sum() >= 3 else 0.0
+        thick_of[p['name']] = th
         col = (seed < 0) & (lid == p['id']) & inner[py, px] & (zf - P[:, 2] < DEEP.get(p['type'], 0.8) * th + 0.015)
         seed[col] = bi[p['name']]
     # the body's own columns are the body all the way to its back (the back of the torso behind the shirt)
@@ -482,14 +491,24 @@ def rig_mesh(kind, r, art, cut=True, log=print):
         radial = np.linalg.norm(rel - np.outer(rel @ dvec, dvec), axis=1)
         thick = 2 * float(np.median(radial))
         piv[b] = o
-        if t['cut']:
+        # (both sides alike: the pair's average decides; legs always bend softly — seated, they're fused along the
+        # tummy and the floor, and cut loose they showed gaps at the hips when they dangled)
+        nm = p['name']
+        twin = nm[:-2] + ('_r' if nm.endswith('_l') else '_l') if nm[-2:] in ('_l', '_r') else None
+        fo = front_of.get(nm, 0.0) if not twin or twin not in front_of else (front_of[nm] + front_of[twin]) / 2
+        lying = p['type'] == 'leg' or fo > 0.5
+        cutb = t['cut'] and not lying
+        if cutb:
             jr[b] = float(np.clip(t['jr'] * thick, 0.02, 0.12))
             band[b] = max(0.015, t['band'] * jr[b])
         else:
             jr[b] = 1e9
-            band[b] = t['band']
+            band[b] = t['band'] if not t['cut'] else max(0.05, 0.45 * ln)
         bones.append(dict(n=p['name'], t=p['type'], p=par[b], o=[round(float(x), 5) for x in o],
-                          d=[round(float(x), 4) for x in dvec], l=round(ln, 4), r=round(float(min(jr[b], 1.0)), 4)))
+                          d=[round(float(x), 4) for x in dvec], l=round(ln, 4), r=round(float(min(jr[b], 1.0)), 4),
+                          c=1 if cutb else 0))
+        if lying and t['cut']:
+            log(f'  rig: {nm} bends softly (in front of the body {fo:.2f}), not cut')
     # 3. which faces round each vertex stay joined: a part and its parent within the part's joint radius (or never cut)
 
     def joined(x, a, b):
@@ -497,7 +516,7 @@ def rig_mesh(kind, r, art, cut=True, log=print):
             return True
         for c, q in ((a, b), (b, a)):
             if c > 0 and par[c] == q:
-                if not cut or not TYPE.get(bones[c]['t'], TYPE['arm'])['cut']:
+                if not cut or not bones[c].get('c', 0):
                     return True
                 if np.linalg.norm(P[x] - piv[c]) < jr[c]:
                     return True
@@ -637,7 +656,7 @@ def rig_mesh(kind, r, art, cut=True, log=print):
         return oo[np.argmin(np.linalg.norm(col - med, axis=1))]
     if cut:
         for b in range(1, nb):
-            if b >= len(bones) or bones[b].get('off') or not TYPE.get(bones[b]['t'], TYPE['arm'])['cut']:
+            if b >= len(bones) or bones[b].get('off') or not bones[b].get('c', 0):
                 continue
             fb = np.nonzero(fl == b)[0]
             if not len(fb):
