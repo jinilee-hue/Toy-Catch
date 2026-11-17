@@ -1236,6 +1236,7 @@ def pack(r, quality=86):
 
 
 def main():
+    import eyes as eyes_stage                       # tools/eyes.py (the friends' new eyes, build side)
     ap = argparse.ArgumentParser()
     ap.add_argument('--only', default='')
     ap.add_argument('--res', type=int, default=256)
@@ -1256,6 +1257,7 @@ def main():
         print(k)
         dbg = {} if o.debug else None
         r = build(k, art, o.res, o.target, o.sheets, dbg)
+        eyes_stage.post_bake(k, r, art)             # (tools/eyes.py: no painted eyes left on the atlas by js/eyes.js's domes)
         assert len(r['v']) < 65536
         data[k] = pack(r)
         print(f'  packed {sum(len(x) for x in data[k].values() if isinstance(x, str)) // 1024} KB')
