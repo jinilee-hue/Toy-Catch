@@ -2,6 +2,7 @@
 <!-- Toy Catch — dev viewer for the friends' 3D shapes: every friend from the front, 3/4, side and back
      (?kinds=monkey,ant  ?spin[=speed] to turn them  ?row: one view each, 5 to a row  ?ang=0,40: these views only
      ?ortho: straight on, no perspective  ?still: no idle motion  ?puff / ?flat for the earlier versions
+     ?parts: the rig's bones in colour (js/rig.js) · &held: hanging by the neck · &hop: the selection hops
      ?pose[=strength]: each friend plays its signature pose (js/poses.js) over and over · ?pose=loop: the gentle loop
      it does while the claw is over it · &weights: the pose parts' weights in colour) -->
 <html><head><meta charset="utf-8"><title>friends 3D</title><link rel="icon" href="data:,">
@@ -10,6 +11,7 @@
 <script src="../vendor/three.iife.js"></script>
 <script src="../js/friends-art.js"></script>
 <script src="../js/friends-3d.js"></script>
+<script src="../js/rig.js"></script>
 <script src="../js/poses.js"></script>
 <script src="../js/friends.js"></script>
 <script>
@@ -18,6 +20,7 @@
   const kinds = (qs.get('kinds') || Friends.KINDS.join(',')).split(',').filter(k => Friends.KINDS.includes(k));
   const ROW = qs.has('row'), ANG = ROW ? [0] : qs.get('ang') ? qs.get('ang').split(',').map(Number) : [0, 40, 90, 180];
   if (qs.has('weights') && window.Poses) Poses.debug = true;
+  if (qs.has('parts') && window.Rig) Rig.debug = true;
   const r = new T.WebGLRenderer({ antialias: true }); r.setPixelRatio(devicePixelRatio); r.setSize(innerWidth, innerHeight);
   r.outputColorSpace = T.SRGBColorSpace; r.setClearColor('#cfe3f5'); document.body.appendChild(r.domElement);
   const sc = new T.Scene(); sc.add(new T.HemisphereLight('#fff', '#ccd', 1.2));
@@ -29,6 +32,8 @@
     const c = ROW ? j % cols : i, rr = ROW ? Math.floor(j / cols) : j;
     P.root.position.set((c - (cols - 1) / 2) * cw, -(rr - (rows - 1) / 2) * ch - 0.65, 0);
     P.root.rotation.y = a * Math.PI / 180;
+    if (qs.has('held')) P.hold(true);                 // &held: hanging from the claw by the neck (limbs dangle)
+    if (qs.has('hop')) P.excite(1);                   // &hop: under the claw (selection hops)
     sc.add(P.root); all.push([P, a]);
   }));
   const cam = new T.PerspectiveCamera(22, innerWidth / innerHeight, 0.1, 200);
