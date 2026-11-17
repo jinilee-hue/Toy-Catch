@@ -41,18 +41,20 @@
      unsupported: held by the claw) · lin / rot drag (it trails behind when moved / turned) · inward: how far an arm may
      swing into the body (rad) · gain: how much it answers its friend's motion */
   const TYPES = {
-    head: { f: 3.4, z: 0.5, max: 0.12, droop: 0, lin: 0.5, rot: 2, gain: 0.35 },
-    hat: { f: 4.2, z: 0.32, max: 0.16, droop: 0.05, lin: 1, rot: 4, gain: 0.5 },
-    ear: { f: 2.9, z: 0.17, max: 0.7, droop: 0.25, lin: 2.5, rot: 10, gain: 1 },
-    antenna: { f: 3.6, z: 0.08, max: 0.8, droop: 0.05, lin: 2, rot: 10, gain: 1.1 },
-    arm: { f: 2.5, z: 0.2, max: 0.95, droop: 0.45, lin: 3, rot: 14, gain: 1, inward: 0.1 },
-    wing: { f: 2.7, z: 0.2, max: 0.9, droop: 0.35, lin: 3, rot: 14, gain: 1, inward: 0.1 },
-    leg: { f: 2.2, z: 0.26, max: 0.9, droop: 0.65, lin: 2.5, rot: 10, gain: 0.9, inward: 0.12, feet: true },
-    tail: { f: 1.9, z: 0.14, max: 0.9, droop: 0.5, lin: 3, rot: 16, gain: 1 },
-    fin: { f: 3, z: 0.2, max: 0.5, droop: 0.15, lin: 2.5, rot: 10, gain: 0.8 },
-    fan: { f: 3, z: 0.3, max: 0.35, droop: 0.05, lin: 1.5, rot: 6, gain: 0.5 },
-    lips: { f: 5, z: 0.4, max: 0.2, droop: 0, lin: 0.5, rot: 2, gain: 0.3 },
+    head: { f: 3.4, z: 0.5, max: 0.12, droop: 0, lin: 0.2, rot: 0.5, gain: 0.35 },
+    hat: { f: 4.2, z: 0.32, max: 0.16, droop: 0.05, lin: 0.3, rot: 1, gain: 0.5 },
+    ear: { f: 2.9, z: 0.17, max: 0.6, droop: 0.25, lin: 0.6, rot: 2.5, gain: 1 },
+    antenna: { f: 3.6, z: 0.08, max: 0.7, droop: 0.05, lin: 0.6, rot: 2.5, gain: 1.1 },
+    arm: { f: 2.5, z: 0.2, max: 0.8, droop: 0.4, lin: 0.8, rot: 3, gain: 1, inward: 0.1 },
+    wing: { f: 2.7, z: 0.2, max: 0.8, droop: 0.3, lin: 0.8, rot: 3, gain: 1, inward: 0.1 },
+    leg: { f: 2.2, z: 0.26, max: 0.85, droop: 0.65, lin: 0.6, rot: 2.5, gain: 0.9, inward: 0.12, feet: true },
+    tail: { f: 1.9, z: 0.14, max: 0.8, droop: 0.2, lin: 0.8, rot: 3, gain: 1 },
+    fin: { f: 3, z: 0.2, max: 0.45, droop: 0.1, lin: 0.6, rot: 2.5, gain: 0.8 },
+    fan: { f: 3, z: 0.3, max: 0.3, droop: 0.05, lin: 0.4, rot: 1.5, gain: 0.5 },
+    lips: { f: 5, z: 0.4, max: 0.2, droop: 0, lin: 0.2, rot: 0.5, gain: 0.3 },
   };
+  const H_GAIN = 0.5;                                    // sideways / fore-aft pushes count half (carrying it about);
+                                                         // up-down ones (hops, landings, the lift) in full
 
   const bin = (b64) => { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; };
 
@@ -180,7 +182,7 @@
           tmp.crossVectors(al, rc); F.sub(tmp);
           tmp.crossVectors(om, rc); tmp2.crossVectors(om, tmp); F.sub(tmp2);
           F.addScaledVector(tmp, -t.rot);
-          F.sub(acc);
+          F.x -= acc.x * H_GAIN; F.y -= acc.y; F.z -= acc.z * H_GAIN;
           F.addScaledVector(vel, -t.lin);
           if (t.feet) F.y *= 0.25 + 0.75 * hk;              // (sitting, the feet rest on the floor)
           if (t.type === 'head') F.multiplyScalar(1 - 0.85 * hk);
@@ -194,9 +196,11 @@
           for (const b of B) {
             if (!b.i) continue;
             const k = k2(b), cc = c2(b);
-            b.av.x += h * (b.tq.x - k * b.a.x - cc * b.av.x);
-            b.av.y += h * (b.tq.y - k * b.a.y - cc * b.av.y);
-            b.av.z += h * (b.tq.z - k * b.a.z - cc * b.av.z);
+            const m = b.a.length(), lim = 0.7 * b.t.max;
+            const kk = m > lim ? k * (1 + 6 * (m - lim) / (b.t.max - lim)) : k;     // (stuffing: stiffer near the end)
+            b.av.x += h * (b.tq.x - kk * b.a.x - cc * b.av.x);
+            b.av.y += h * (b.tq.y - kk * b.a.y - cc * b.av.y);
+            b.av.z += h * (b.tq.z - kk * b.a.z - cc * b.av.z);
             b.a.addScaledVector(b.av, h);
           }
         }
@@ -209,7 +213,7 @@
             if (inz > t.inward) { b.a.z = -b.side * t.inward; if (-b.av.z * b.side > 0) b.av.z = 0; }
           }
           const m = b.a.length();
-          if (m > t.max) { b.a.multiplyScalar(t.max / m); b.av.multiplyScalar(0.5); }
+          if (m > t.max) { b.a.multiplyScalar(t.max / m); b.av.multiplyScalar(0.85); }
           b.aw.copy(b.av).sub(b.pav).divideScalar(dt); b.pav.copy(b.av);
           if (b.aw.length() > 200) b.aw.setLength(200);
         }
