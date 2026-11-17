@@ -185,7 +185,8 @@
     const asc = Math.max(...ms.map(m => m.actualBoundingBoxAscent)), desc = Math.max(0, ...ms.map(m => m.actualBoundingBoxDescent));
     const pad = PL + G + B + 6;
     const xs = []; let x = 0;
-    ms.forEach((m, i) => { xs.push(x + m.actualBoundingBoxLeft); x += chars[i] === ' ' ? F * 0.13 : m.actualBoundingBoxLeft + m.actualBoundingBoxRight + (i < ms.length - 1 ? TRACK + B : 0); });   // (a narrow space: the plate stays one piece)
+    const SP = F * (opts.space || 0.13);                 // (a narrow space by default: a plate stays one piece)
+    ms.forEach((m, i) => { xs.push(x + m.actualBoundingBoxLeft); x += chars[i] === ' ' ? SP : m.actualBoundingBoxLeft + m.actualBoundingBoxRight + (i < ms.length - 1 ? TRACK + B : 0); });
     const W = Math.ceil(x + 2 * pad), H = Math.ceil(asc + desc + E + 2 * pad), base = pad + asc;
     // (scratch canvases are emptied as soon as they're drawn: iPad Safari caps the memory all canvases may hold)
     const scratch = [], free = () => { for (const c of scratch.splice(0)) c.width = c.height = 0; };
@@ -290,6 +291,22 @@
      screen's pixel ratio — drawn at 220 px and shrunk ~2x by the browser, their thin gold line and bevel broke into dark
      dashes (user: "상단에 음가 스펠링도 테두리 어두운색이 깨져보이는 현상이 있어"); layout swaps them when that size changes */
   const TG_U = 10.6, jellyCache = {};
+  /* the game's pop-up words — GO! at each round, TIME'S UP! — in the same jelly letters (user: "게임에 들어가는 go
+     텍스트들도 스타일 다 맞춰줘"; they were plain text with a white stroke): GO! the logo's yellow (the result title's),
+     TIME'S UP! its pink. size = the letters' font size in --mu; drawn at ~1.25x the size they show here, once per size */
+  let curMu = 0;
+  const promptCache = {};
+  function showPrompt(el, text, pal, size) {
+    const mu = curMu || 8, F = Math.max(60, Math.min(520, Math.round(size * mu * (window.devicePixelRatio || 1) * 1.25 / 10) * 10));
+    const key = text + '|' + pal + '|' + F;
+    let cv = promptCache[key];
+    if (!cv) {
+      cv = promptCache[key] = jellyWord(text, JELLY[pal], { F, plate: false, space: 0.3 });   // (a full word space: TIME'S UP!)
+      cv.style.height = `calc(${(cv.height / F * size).toFixed(3)} * var(--mu))`;
+    }
+    el.replaceChildren(cv); el.setAttribute('aria-label', text);
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  }
   function targetJelly(L) {
     const u = Math.min(innerHeight / 100, innerWidth / 177.78), h = Math.round(TG_U * u * (window.devicePixelRatio || 1) * 1.25);
     const key = L + ':' + Math.round(h / 6);
@@ -674,6 +691,7 @@
     const M = machine, top = M.H + 1.02, zf = M.D / 2 + 0.1 + 0.39;
     const L = S.project(V(-(M.W + 0.95) / 2, top, zf)), R = S.project(V((M.W + 0.95) / 2, top, zf)), C = S.project(V(0, top, zf));
     const mw = R.x - L.x, mu = mw / 125.07;
+    curMu = mu;
     const st = app.style;
     st.setProperty('--mx', C.x + 'px'); st.setProperty('--mt', C.y + 'px'); st.setProperty('--mu', mu + 'px');
     // the START canvases at the size they show — on the title only: the camera's push-in into the game changes mu, and
@@ -934,7 +952,7 @@
     [...$('#tray').children].forEach((s, i) => s.classList.toggle('now', i === G.caught.length && i === G.round - (G.round - G.caught.length)));
     $('#timeBox').classList.remove('low');
     $('#time').textContent = ROUND_SEC + 's';
-    const go = $('#go'); go.classList.remove('show'); void go.offsetWidth; go.classList.add('show');
+    showPrompt($('#go'), 'GO!', 'yellow', 19);
     A.sfxPlay('pop');
     await announce(G.target);
     if (tok !== G.tok) return;
@@ -1233,7 +1251,7 @@
     const tok = G.tok;
     G.busy = true; setDrop(false);
     A.sfxPlay('buzz');
-    const big = $('#bigMsg'); big.textContent = 'TIME’S UP!'; big.classList.remove('show'); void big.offsetWidth; big.classList.add('show');
+    showPrompt($('#bigMsg'), 'TIME’S UP!', 'pink', 10.5);
     await A.say('t:timeup');
     const right = G.inMachine.filter(p => p.sound === G.target);
     right.forEach(p => p.cheer(2.4));
