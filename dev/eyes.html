@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- Toy Catch — dev viewer for the friends' eyes (js/eyes.js): each friend in a row, one column per view
+     (?views=yaw:pitch,… degrees; default front, 3/4, side, back, from above 60 / 90, from below 60 — pitch + = seen from
+     above) · ?kinds=monkey,ant · ?head: close on the head · ?cell=css px · ?spin=rad/s (yaw) · ?sweep: pitch sweep
+     -90..90 · ?zoom=2 · ?ortho · ?pose (the gentle pose loop) · window.__frozen = true + __step(dt) for frame-exact QA -->
+<html><head><meta charset="utf-8"><title>friends — eyes</title><link rel="icon" href="data:,">
+<style>html,body{margin:0;background:#cfe3f5;overflow:hidden}canvas{display:block}
+.l{position:fixed;font:600 11px system-ui;color:#234;pointer-events:none}</style>
+</head><body>
+<script src="../vendor/three.iife.js"></script>
+<script src="../js/friends-art.js"></script>
+<script src="../js/friends-3d.js"></script>
+<script src="../js/poses.js"></script>
+<script src="../js/eyes.js"></script>
+<script src="../js/friends.js"></script>
+<script>
+(async () => {
+  const T = THREE, qs = new URLSearchParams(location.search);
+  const kinds = (qs.get('kinds') || Friends.KINDS.join(',')).split(',').filter(k => Friends.KINDS.includes(k));
+  const views = (qs.get('views') || '0:0,40:0,90:0,180:0,0:60,0:90,0:-60').split(',').map(s => s.split(':').map(Number));
+  const HEAD = qs.has('head'), CELL = +(qs.get('cell') || 220), SPIN = qs.has('spin') ? (parseFloat(qs.get('spin')) || 0.8) : 0;
+  const SWEEP = qs.has('sweep'), POSE = qs.has('pose'), LAB = qs.has('nolabel') ? 0 : 16;
+  const cols = views.length, rows = kinds.length, W = cols * CELL, H = rows * CELL + LAB;
+  const r = new T.WebGLRenderer({ antialias: true }); r.setPixelRatio(devicePixelRatio); r.setSize(W, H);
+  r.outputColorSpace = T.SRGBColorSpace; r.setClearColor('#cfe3f5'); r.setScissorTest(true);
+  document.body.appendChild(r.domElement);
+  const sc = new T.Scene(); sc.add(new T.HemisphereLight('#fff', '#ccd', 1.2));
+  await Friends.load();
+  const all = [];
+  kinds.forEach((k, j) => views.forEach(([yaw, pitch], i) => {
+    const P = Friends.build(k); P.faceCam = false;
+    // ?head: centred on the eyes (their middle in the mesh), else on the body
+    const E = P.pic.geometry.userData.eyes, near = E ? E.list.filter(e => !e.far) : [];
+    let cx = 0, cy = P.top / 2, size = Math.max(P.top, P.width) * 1.12;
+    if (HEAD) {
+      if (near.length) {
+        cx = near.reduce((s, e) => s + e.O[0], 0) / near.length; cy = near.reduce((s, e) => s + e.O[1], 0) / near.length - 0.04;
+        const xs = near.map(e => e.O[0]), R = Math.max(...near.map(e => Math.max(e.a, e.b)));
+        size = Math.max(0.62, Math.max(...xs) - Math.min(...xs) + R * 7);
+      } else { cy = P.gripY; size = Math.max(P.headR[0], P.headR[1]) * 3; }
+    }
+    size /= +(qs.get('zoom') || 1);
+    const piv = new T.Group();
+    P.root.position.set(-cx, -cy, 0); piv.add(P.root);
+    piv.position.set((j * cols + i) * 12, 0, 0);          // (far apart: each cell is rendered on its own)
+    piv.rotation.set(pitch * Math.PI / 180, yaw * Math.PI / 180, 0, 'XYZ');
+    const fov = 14, cam = qs.has('ortho') ? new T.OrthographicCamera(-size / 2, size / 2, size / 2, -size / 2, 0.1, 100) : new T.PerspectiveCamera(fov, 1, 0.1, 100);
+    cam.position.set(piv.position.x, 0, cam.isPerspectiveCamera ? size / 2 / Math.tan(fov / 2 * Math.PI / 180) : 20);
+    cam.lookAt(piv.position.x, 0, 0);
+    sc.add(piv); all.push({ P, piv, yaw, pitch, cam, i, j });
+  }));
+  window.Stage = { camera: all[0] && all[0].cam };
+  if (LAB) views.forEach(([y, p], i) => {
+    const d = document.createElement('div'); d.className = 'l';
+    d.style.left = (i * CELL + 6) + 'px'; d.style.top = (rows * CELL + 1) + 'px';
+    d.textContent = `yaw ${y}° · pitch ${p}°`; document.body.appendChild(d);
+  });
+  let t = 0, last = performance.now();
+  if (POSE) all.forEach(({ P }) => P.poseLoop && P.poseLoop(true));
+  const advance = (dt) => {
+    t += dt;
+    r.setScissor(0, 0, W, H); r.setViewport(0, 0, W, H); r.clear();
+    for (const o of all) {
+      if (POSE) o.P.update(dt, t);
+      if (SPIN) o.piv.rotation.y = (o.yaw * Math.PI / 180) + t * SPIN;
+      if (SWEEP) o.piv.rotation.x = Math.sin(t * 0.9) * Math.PI / 2 * 0.98;
+      const x = o.i * CELL, y = H - (o.j + 1) * CELL;
+      r.setViewport(x, y, CELL, CELL); r.setScissor(x, y, CELL, CELL);
+      window.Stage.camera = o.cam;
+      r.render(sc, o.cam);
+    }
+  };
+  window.__step = advance; window.__all = all;
+  (function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (!window.__frozen) advance(dt);
+  })(last);
+  advance(0);
+  window.__ready = true;
+})();
+</script></body></html>

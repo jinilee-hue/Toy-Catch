@@ -80,6 +80,7 @@
       }
       geo.userData.one = one;
     }
+    if (window.Eyes) Eyes.add(kind, geo, { w, h, u });   // glossy eyes with whites, in this mesh (js/eyes.js)
     geo.computeBoundingSphere();
     return (geoCache['3d' + kind] = geo);
   }
@@ -184,6 +185,7 @@ void main() {
         diffuseColor.rgb *= mix(vec3(1.0), vec3(1.03, 1.0, 0.95), uLit);
       }`)
       .replace('#include <colorspace_fragment>', SAT_GLSL);
+    if (window.Eyes) Eyes.shader(sh, this);              // (#ifdef CLAW_EYES: the eyes' drawing, gloss, contact shadow)
   }
 
   /* the puffed relief of one picture, in the same frame as the old plane: x across (head middle at 0), y up from the
@@ -281,7 +283,7 @@ void main() {
       };
       im.onerror = () => { console.warn('friend picture failed:', k); res(); };
       im.src = ART[k].src;
-    }))));
+    })))).then(() => (window.Eyes && !FLAT && !PUFFED ? Eyes.icons(imgs) : null));   // (2D icons with the new eyes)
   }
 
   let blobTex = null;
@@ -301,7 +303,7 @@ void main() {
     const w = a.w * PX, h = a.h * PX;
     const [u, v, rx, ry] = a.head;
     const gy = (1 - v) * h;                              // head centre above the bottom
-    const P = { kind, word: kind, sound: kind[0], icon: a.src };
+    const P = { kind, word: kind, sound: kind[0], icon: (has3d(kind) && window.Eyes && Eyes.icon(kind)) || a.src };
     P.root = new T.Group(); P.root.name = kind;
     P.hang = new T.Group(); P.hang.position.y = gy; P.root.add(P.hang);
     P.seat = new T.Group(); P.seat.position.y = -gy; P.hang.add(P.seat);
@@ -321,6 +323,7 @@ void main() {
         at.colorSpace = T.SRGBColorSpace; at.anisotropy = 8; at.needsUpdate = true;
         mat.userData.uAtlas = { value: at }; mat.defines = { CLAW_ATLAS: '' };
       }
+      if (window.Eyes) Eyes.setup(mat, geo);
       depth = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking });
       depth.onBeforeCompile = (sh) => { Object.assign(sh.uniforms, U); sh.vertexShader = deformVS(sh.vertexShader); };
     } else {
@@ -397,6 +400,7 @@ void main() {
       for (let i = 0; i < n; i++) for (let p = 0; p < k; p++) a[i * k + p] = sum[one[i] * k + p] / cnt[one[i]];
       geo.attributes.pw.needsUpdate = true; geo.userData.pwOne = true;
     }
+    if (is3d && window.Eyes) Eyes.sync(geo);               // (the eyes take the face's pose weights … under them)
     /* a squash (k > 0) or stretch (k < 0) kick — landing, being grabbed */
     P.bump = (k) => { P.st.sqv -= k * 3.5; };
     P.tilt = 0;
