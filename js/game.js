@@ -18,13 +18,19 @@
   const lerp = (a, b, k) => a + (b - a) * k;
   const LETTERS = ['m', 'a', 's', 't'];
   const POOL = { m: ['monkey', 'mouse'], a: ['ant'], s: ['seal'], t: ['turkey', 'turtle'] };
-  const OTHERS = ['cat', 'cow', 'dog', 'fish'];          // c d f: never a target, always a wrong answer
+  const OTHERS = ['cat', 'cow', 'dog', 'duck', 'fish'];  // c d f: never a target, always a wrong answer
   const ROUND_SEC = +(qs.get('sec') || 45);
   const PS = 1.3;                                       // plush scale in the machine
   /* aiming: how far (machine units, along x) the claw is from the middle of the friend's head when it comes down.
      ≤ hold: a sure catch · ≤ weak: a loose grip that may slip out on the way up · ≤ reach: a prong knocks the friend,
      nothing caught · further: nothing under the claw. Two misses in a row in a round and a loose grip holds. */
   const AIM = { hold: 0.2, weak: 0.4, reach: 0.62 };
+  /* coins (user: "못 잡으면 동전 점수가 깍이고 한번 게임을 할때마다 점수가 차감되게해줘. 물론 맞추면 … 지금처럼 늘어나는거"):
+     the score is your coins. You start with COINS.start; every go of the claw costs COINS.play (a coin drops into the
+     machine's slot); a go that doesn't bring up the target friend (nothing caught, it slipped out, the
+     wrong friend) costs COINS.miss more; the right friend pays 100 (+50 at the first try), as before. Never below 0 —
+     with no coins left the claw still plays (it's a learning game). */
+  const COINS = { start: 100, play: 10, miss: 20 };
   const G = {
     screen: 'title', all: {}, inMachine: [], targets: [], round: -1, target: null, score: 0, caught: [], tries: 0,
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
@@ -150,11 +156,12 @@
     purple: ['#dc96fc', '#c35ff7', '#ad47ef', '#9a3be0', '#7c27c6', '#5c169f', '#ecb8ff'],
   };
   const LETTER_JELLY = { m: 'purple', a: 'green', s: 'orange', t: 'pink' };
-  function jellyWord(text, pal) {
+  function jellyWord(text, pal, opts = {}) {
     const [fTop, fMid, fLow, bevel, side, sideDk, glow] = pal;
+    const PLATE = opts.plate !== false;                  // (no plate: the letters stand straight on their pill — HUD)
     // (B: fatter than Baloo 800, like the logo's letters — but the small holes of a / s / e must stay open: kids read
     //  the shape (B .13 closed them: "a" and "s" looked like "8"); R: a thin bevel, so the face is most of the letter)
-    const F = 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = F * 0.095, TRACK = -F * 0.02;
+    const F = 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = PLATE ? F * 0.095 : 0, TRACK = -F * 0.02;
     const font = `800 ${F}px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif`;
     const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const mix = (a, b, k) => 'rgb(' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k)).join(',') + ')';
@@ -184,6 +191,7 @@
     const plateMask = (grow) => { const [c, g] = mk(); g.fillStyle = g.strokeStyle = '#fff';
       chars.forEach((_, i) => { for (let dy = 0; dy <= E; dy += 2) glyph(g, i, dy, B + 2 * grow); }); return gooey(c, Math.round(PL * 0.45)); };
     const tint = (mask, fill) => { const [c, g] = mk(); g.drawImage(mask, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = fill; g.fillRect(0, 0, W, H); return c; };
+    if (PLATE) {
     const outer = plateMask(PL), inner = plateMask(PL - G);
     o.save(); o.shadowColor = 'rgba(12,50,130,.38)'; o.shadowBlur = F * 0.05; o.shadowOffsetY = F * 0.03;
     o.drawImage(tint(outer, '#f2c766'), 0, 0); o.restore();
@@ -195,6 +203,7 @@
       pg.shadowColor = 'rgba(255,255,255,.9)'; pg.shadowBlur = F * 0.02; pg.shadowOffsetY = F * 0.022; pg.drawImage(ic, 0, 0);
       pg.shadowColor = 'rgba(40,120,190,.35)'; pg.shadowBlur = F * 0.04; pg.shadowOffsetY = -F * 0.03; pg.drawImage(ic, 0, 0);
       o.drawImage(pc, 0, 0); }
+    }
     // the letters, left to right (each a little over the one before, like the logo's)
     chars.forEach((_, i) => {
       const top = base - ms[i].actualBoundingBoxAscent - B / 2, bot = base + ms[i].actualBoundingBoxDescent + B / 2, gh = bot - top;
@@ -661,6 +670,7 @@
     setScreen('game');
     G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
     $('#score').textContent = '0';
+    setTimeout(() => { if (tok === G.tok) addScore(COINS.start); }, 500);   // this game's coins come in as the HUD shows
     buildTray();
     const order = (qs.get('order') || '').split(',').filter(x => LETTERS.includes(x));
     G.targets = order.length ? order : LETTERS.slice().sort(() => Math.random() - 0.5);
@@ -688,8 +698,13 @@
   }
   function setTarget(L) {
     const up = L.toUpperCase();
-    const cv = jellyCache[L] || (jellyCache[L] = jellyWord(up + L, JELLY[LETTER_JELLY[L] || 'pink']));
+    // the letters and the speaker button as one set: jelly letters straight on the blue pill (no plate of their own —
+    // a pale plate inside the pill looked pasted on) and the button in the same jelly, the letters' colour (user:
+    // "전체적인 박스와 글자와 버튼이 이질감이 없게")
+    const pal = JELLY[LETTER_JELLY[L] || 'pink'];
+    const cv = jellyCache[L] || (jellyCache[L] = jellyWord(up + L, pal, { plate: false }));
     $('#tgLetter').replaceChildren(cv); $('#tgLetter').setAttribute('aria-label', up + L);
+    ['--jt', '--jm', '--jl', '--jb', '--js', '--jd', '--jg'].forEach((k, i) => $('#target').style.setProperty(k, pal[i]));
     const tg = $('#target'); tg.classList.remove('swap'); void tg.offsetWidth; tg.classList.add('swap');
     const le = $('#tgLetter'); le.classList.remove('pop'); void le.offsetWidth; le.classList.add('pop');
   }
@@ -707,6 +722,7 @@
     $('#timeBox').classList.add('paused');
     const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150); machine.pressDown();
     A.sfxPlay('tap');
+    payCoin(tok);                                        // a go costs a coin
     const cand = candidate();
     const zone = cand ? aimZone(cand) : 'none';
     const off = cand ? claw.x - cand.x : 0;              // the claw's offset from the head's middle
@@ -776,6 +792,7 @@
     if (tok !== G.tok) return;
     if (!held || slips) {
       G.miss++;
+      loseCoins(tok, 250);                              // nothing brought up: coins off
       if (!cand) { A.sfxPlay('whiff'); await A.say('t:miss'); }
       else if (zone === 'knock') { A.sfxPlay('whiff'); await A.say('t:center'); }
       else await A.say('t:slip');
@@ -827,7 +844,7 @@
     for (const o of G.inMachine) o.cheer(2.6);
     p.cheer(3);
     const gain = 100 + (G.tries === 0 ? 50 : 0);
-    countScore(G.score, G.score + gain); G.score += gain;
+    addScore(gain);
     const fw = () => { const r = S.project(V(lerp(-3, 3, Math.random()), lerp(2.4, 3.8, Math.random()), 0)); FX.firework(r.x, r.y); A.sfxPlay('pop'); };
     fw(); setTimeout(fw, 350); setTimeout(fw, 700);
     await A.say('t:great3');
@@ -914,6 +931,7 @@
 
   async function wrong(p, tok) {
     A.sfxPlay('uhoh'); p.nope(1.4);
+    loseCoins(tok, 450);                                // the wrong friend: coins off
     const x0 = claw.x;
     S.tween(600, k => claw.set(x0 + Math.sin(k * Math.PI * 6) * 0.06 * (1 - k), claw.y, claw.z), 'linear');
     await A.say('t:uhoh');
@@ -994,6 +1012,45 @@
     S.frame.push = 0; S.resize();
   }
 
+  /* the score (coins) goes up or down: it counts to the new value — up: the coin flips and the pill bumps; down: the pill
+     shakes — and a little "+150" / "−20" tag drops out under it. Returns the change (0 when there was nothing to take). */
+  function addScore(n) {
+    const a = G.score, b = Math.max(0, a + n);
+    if (b === a) return 0;
+    G.score = b;
+    const el = $('#score'), box = el.parentElement, up = b > a;
+    box.classList.remove('bump', 'minus'); void box.offsetWidth; box.classList.add(up ? 'bump' : 'minus');
+    S.tween(700, k => (el.textContent = Math.round(lerp(a, b, k))), 'out');
+    box.querySelectorAll('.score-delta').forEach(t => t.remove());
+    const tag = document.createElement('i');
+    tag.className = 'score-delta' + (up ? '' : ' minus'); tag.textContent = (up ? '+' : '\u2212') + Math.abs(b - a);
+    tag.setAttribute('aria-hidden', 'true');
+    box.appendChild(tag); setTimeout(() => tag.remove(), 1500);
+    return b - a;
+  }
+  /* a go of the claw costs a coin: the score shows −10 and a coin drops into the machine's slot by the DOWN button (the
+     START coin, shorter) — right where the child is looking (a coin flying over from the score cut across the glass and
+     the claw on its way down) */
+  function payCoin(tok) {
+    if (!addScore(-COINS.play)) return;                 // no coins left: the go is free
+    A.sfxPlay('coin');                                  // (its clink, half a second in, is the coin going in)
+    const coin = machine.coin, local = machine.group.worldToLocal(machine.slotPoint());
+    coin.visible = true;
+    S.tween(420, k => {
+      coin.position.set(local.x, local.y + 0.12 + 0.8 * (1 - k), local.z + 0.22 * (1 - k));
+      coin.rotation.set(Math.PI / 2, 0, k * Math.PI * 3); coin.scale.setScalar(1.35 - 0.35 * k);
+    }, 'in', tok)
+      .then(() => S.tween(170, k => { coin.position.y = local.y + 0.12 - 0.2 * k; coin.scale.setScalar(1 - 0.4 * k); }, 'in', tok))
+      .then(() => {
+        coin.visible = false;
+        if (tok !== G.tok) return;
+        const q = S.project(machine.slotPoint()); FX.sparkle(q.x, q.y, 8, 3);
+      });
+  }
+  /* a go that didn't bring up the target friend: coins off (after a beat, so it lands with the "oh no") */
+  function loseCoins(tok, delay = 0) {
+    setTimeout(() => { if (tok === G.tok && addScore(-COINS.miss)) A.sfxPlay('lose'); }, delay);
+  }
   function countScore(a, b) {
     const el = $('#score'), box = el.parentElement;
     box.classList.remove('bump'); void box.offsetWidth; box.classList.add('bump');
