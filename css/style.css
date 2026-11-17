@@ -366,16 +366,23 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 #app[data-screen="result"] .ribbon { animation: titlePop .6s cubic-bezier(.3, 1.6, .5, 1) .1s backwards; }
 @keyframes titlePop { 0% { scale: .4; } 100% { scale: 1; } }
 .stars { display: flex; gap: calc(2 * var(--u)); margin-top: calc(-1 * var(--u)); }
-/* 3D stars (user: "별들 3d로 바꿔줘"), the score coin's family: index.html SVG (#st3*), no outlines. Each star is a slot
-   pressed into the glass (a deeper blue, shaded at the top, a light lip at the bottom); an earned one is a puffy gold
-   star (thickness band, soft shadow, shine) that pops into it. */
-.stars i { position: relative; display: block; width: calc(13.6 * var(--u)); height: calc(13.6 * var(--u)); }
+/* three coin-stars (user: "별은 동전 별로 세개 바꿔주고"): the HUD score coin (gold coin, the star raised on it; index.html
+   SVG with the HUD's sc* gradients), no outlines. Each is a round slot sunk into the glass with a faint star; an earned
+   one pops in as the gold coin and flips once, like the HUD coin when points come in. */
+.stars i { position: relative; display: block; width: calc(12.6 * var(--u)); height: calc(12.6 * var(--u)); }
 .stars i svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.stars i:nth-child(2) { translate: 0 calc(-2.4 * var(--u)); }
-.stars i .gold { opacity: 0; transform-origin: 50% 55%; transform-box: view-box; }
-.stars i.on .gold { opacity: 1; animation: starPop .6s cubic-bezier(.3, 1.8, .5, 1) backwards; }
+.stars i:nth-child(2) { translate: 0 calc(-2.2 * var(--u)); }
+.stars i .gold { opacity: 0; transform-origin: 50% 52%; transform-box: view-box; filter: drop-shadow(0 calc(.5 * var(--u)) calc(.6 * var(--u)) rgba(150,70,0,.3)); }
+.stars i.on .gold { opacity: 1; animation: coinPop .8s cubic-bezier(.3, 1.4, .5, 1) backwards; }
 .stars i.on:nth-child(2) .gold { animation-delay: .25s; } .stars i.on:nth-child(3) .gold { animation-delay: .5s; }
-@keyframes starPop { 0% { scale: 0; rotate: -90deg; } 100% { scale: 1; rotate: 0; } }
+@keyframes coinPop { 0% { scale: 0 0; } 40% { scale: 1.14 1.14; } 58% { scale: .08 1.08; } 76% { scale: 1.04 1.02; } 100% { scale: 1 1; } }
+/* the score under the coins (user: "밑에 점수 나오게 해주고 … 주황색 점수나오는 박스는 삭제"): no box — gold numerals like
+   the coins (the coin rim's gradient, the coin's edge as their thickness), counting up (game.js finish) */
+.res-score {
+  margin-top: calc(-1.2 * var(--u)); font: 800 calc(10 * var(--u)) / 1 var(--font); letter-spacing: .02em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(#fff3a6, #ffd23e 45%, #f39d0f); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 calc(.5 * var(--u)) 0 #c27a08) drop-shadow(0 calc(.9 * var(--u)) calc(1 * var(--u)) rgba(12,50,130,.3));
+}
 /* the caught friends: a white glass tray like the HUD's — round slots sunk into it, an earned one light yellow with a
    glow; the word under each in navy, its first letter in that letter's jelly colour (--lc, game.js) */
 .caught { display: flex; gap: calc(1.4 * var(--u)); padding: calc(1.2 * var(--u)); margin-bottom: calc(4.2 * var(--u)); border-radius: 999px;
@@ -391,7 +398,6 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   font: 800 calc(3.8 * var(--u)) / 1 var(--font); font-style: normal; color: #163d8f; }
 .caught .slot em b { color: var(--lc, #163d8f); }
 /* the score: the HUD's score pill — orange, the same 3D coin, a white number (.score), a little bigger */
-.score.final { --hb: calc(9 * var(--u)); }
 .btns { display: flex; align-items: center; gap: calc(3 * var(--u)); margin-top: calc(.6 * var(--u)); }
 /* Home: a white glass button with a blue line icon, like sound / exit */
 .res-home {

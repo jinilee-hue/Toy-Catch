@@ -1030,7 +1030,10 @@
     const stars = all ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0;
     [...$('#stars').children].forEach((s, i) => s.classList.toggle('on', i < stars));
     $('#resTitle').replaceChildren(titleCv); $('#resTitle').setAttribute('aria-label', title);
-    $('#finalScore').textContent = G.score;
+    // the score under the coins counts up once they've popped in
+    const fs = $('#finalScore'), total = G.score;
+    fs.textContent = '0';
+    setTimeout(() => { if (tok === G.tok) S.tween(900, k => { if (tok === G.tok) fs.textContent = Math.round(total * k); }, 'out'); }, 700);
     // (the word under each friend in navy, its first letter in that letter's jelly colour — the HUD target's)
     $('#caught').innerHTML = G.targets.map((L, i) => {
       const k = G.caught.find(kind => G.all[kind].sound === L);
