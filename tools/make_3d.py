@@ -79,7 +79,8 @@ FLANK_LETTER = {'fish': (338, 194, 424, 372)}
 #            views would paint the face onto the shell, and its depth would squeeze the shell. Picture + mirror only.
 #   turkey — the sheet fans the tail out backwards (side view) where the picture's turkey holds it up behind its
 #            head: fitting the depth to it tore the fan into a blade; no depth fit, no added parts
-SHEET_SKIP = {'turtle': ('depth', 'ends'), 'turkey': ('depth', 'tails')}
+#   mouse  — the sheet lays the tail on the floor where the picture's mouse holds it up: no second (floor) tail
+SHEET_SKIP = {'turtle': ('depth', 'ends'), 'turkey': ('depth', 'tails'), 'mouse': ('tails',)}
 # bits of a sheet view to leave out (view, box as fractions of the figure x0, y0, x1, y1, what): the turkey's back view
 # paints the back of its head brown where its side view (and the picture) have it pink all round
 SHEET_DROP = {'turkey': [('back', (0.0, 0.0, 1.0, 0.36), 'brown')]}
