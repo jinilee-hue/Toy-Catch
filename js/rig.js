@@ -87,8 +87,20 @@
     const d = c && c.d;
     if (!d || !d.bones || !d.sk || !c.geo || !c.geo.attributes.position) return false;
     if (!c.geo.attributes.rsk) {
-      const sk = bin(d.sk);
-      if (sk.length !== c.geo.attributes.position.count * 2) { console.warn('rig: skin size mismatch', P.kind); return false; }
+      let sk = bin(d.sk);
+      const pos = c.geo.attributes.position, n0 = sk.length >> 1, n = pos.count;
+      if (n0 > n) { console.warn('rig: skin size mismatch', P.kind); return false; }
+      if (n > n0) {
+        // vertices added to the mesh after it was built (eye domes …): the skin of the nearest original vertex
+        const s2 = new Uint8Array(n * 2); s2.set(sk);
+        for (let i = n0; i < n; i++) {
+          let best = 0, bd = 1e9;
+          const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+          for (let j = 0; j < n0; j++) { const dx = pos.getX(j) - x, dy = pos.getY(j) - y, dz = pos.getZ(j) - z, dd = dx * dx + dy * dy + dz * dz; if (dd < bd) { bd = dd; best = j; } }
+          s2[i * 2] = sk[best * 2]; s2[i * 2 + 1] = sk[best * 2 + 1];
+        }
+        sk = s2;
+      }
       c.geo.setAttribute('rsk', new T.BufferAttribute(sk, 2));
     }
     const B = d.bones.slice(0, NB).map((b, i) => {
