@@ -8,10 +8,37 @@
   const S = { renderer: null, scene: null, camera: null, canvas: null, onTick: [], tweens: [], time: 0, fps: 0, ray: new T.Raycaster(), frame: { top: 0.125, span: 0.76, el: 6, push: 0 } };
   const V = (x, y, z) => new T.Vector3(x, y, z);
 
+  /* drawing-buffer pixels per CSS pixel: the screen's own (at most 2) — but 2 on a 1x screen too, which the browser
+     scales down, so with the 4x MSAA every edge pixel gets 16 samples. At 1x the friends' curvy outlines (and the balls')
+     stair-stepped and crawled as they swayed (user: "3d 동물들도 테두리 깔끔하게"). Never past ~9.5 million buffer
+     pixels (a big 1x monitor gets less, a 4K one none), and a computer too slow for it drops back to its own ratio:
+     once, 3 s in, a few frames are timed to the end of the GPU's work (a 1-px read) — more than 14 ms a frame (this
+     Mac: 7-10 ms at 1920 x 1200), and it goes back to 1x (the frame rate can't tell: it is capped by power saving,
+     background tabs and headless test browsers as well). ?pr=1.5 forces a ratio (QA) */
+  const PR_Q = parseFloat(new URLSearchParams(location.search).get('pr'));
+  const pickRatio = (w, h) => (PR_Q > 0 ? PR_Q : S.prBase >= 1.5 || S.prDown ? S.prBase
+    : Math.max(S.prBase, Math.min(2, Math.floor(Math.sqrt(9.5e6 / Math.max(1, w * h)) * 4) / 4)));
+  let probed = false;
+  function probe() {
+    const r = S.renderer;
+    if (PR_Q > 0 || document.hidden || S.time < 3 || r.getPixelRatio() <= S.prBase) return;
+    probed = true;
+    const gl = r.getContext(), px = new Uint8Array(4), t = [];
+    for (let i = 0; i < 7; i++) {
+      const t0 = performance.now();
+      r.render(S.scene, S.camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      t.push(performance.now() - t0);
+    }
+    t.sort((a, b) => a - b);
+    S.probeMs = t[3];
+    if (t[3] > 14) { S.prDown = true; S.resize(); }
+  }
+
   S.init = function (canvas, o = {}) {
     S.canvas = canvas;
     const r = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance', preserveDrawingBuffer: !!o.preserve });
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, o.maxDpr || 2));
+    S.prBase = Math.min(window.devicePixelRatio || 1, o.maxDpr || 2);
+    r.setPixelRatio(pickRatio(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight));
     r.outputColorSpace = T.SRGBColorSpace;
     r.toneMapping = T.NeutralToneMapping;
     r.toneMappingExposure = 1.02;
@@ -47,6 +74,8 @@
   S.target = V(0, 2.45, 0);
   S.resize = function () {
     const c = S.canvas, w = c.clientWidth || innerWidth, h = c.clientHeight || innerHeight;
+    const pr = pickRatio(w, h);
+    if (pr !== S.renderer.getPixelRatio()) S.renderer.setPixelRatio(pr);
     S.renderer.setSize(w, h, false);
     const cam = S.camera, f = S.frame, M = S.machine;
     cam.aspect = w / h;
@@ -135,6 +164,7 @@
     if (acc > 1) { S.fps = Math.round(frames / acc); acc = 0; frames = 0; }
     step(dt);
     S.renderer.render(S.scene, S.camera);
+    if (!probed) probe();
   }
   S.start = () => requestAnimationFrame(loop);
   /* deterministic stepping for tests */

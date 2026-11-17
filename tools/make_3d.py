@@ -80,10 +80,22 @@ FLANK_LETTER = {'fish': (338, 194, 424, 372)}
 #   turkey — the sheet fans the tail out backwards (side view) where the picture's turkey holds it up behind its
 #            head: fitting the depth to it tore the fan into a blade; no depth fit, no added parts
 #   mouse  — the sheet lays the tail on the floor where the picture's mouse holds it up: no second (floor) tail
-SHEET_SKIP = {'turtle': ('depth', 'ends'), 'turkey': ('depth', 'tails'), 'mouse': ('tails',)}
-# bits of a sheet view to leave out (view, box as fractions of the figure x0, y0, x1, y1, what): the turkey's back view
-# paints the back of its head brown where its side view (and the picture) have it pink all round
-SHEET_DROP = {'turkey': [('back', (0.0, 0.0, 1.0, 0.36), 'brown')]}
+#   ant    — has no tail: bits of its hat brim and abdomen the side fit doesn't reach came out as stray tubes
+SHEET_SKIP = {'turtle': ('depth', 'ends'), 'turkey': ('depth', 'tails'), 'mouse': ('tails',), 'ant': ('tails',)}
+# bits of a sheet view to leave out (view, box as fractions of the figure x0, y0, x1, y1, what, cut from the outline
+# too): the turkey's back view paints the back of its head brown where its side view (and the picture) have it pink
+# all round; its side view draws the fan upright behind the body, far bigger than the picture's fan behind the head —
+# warped onto the mesh it smeared feathers over the head and the body; the mouse's sheet lays the tail on the floor
+# (side and back views), which painted a pink stub on its bottom and dragged the side view's warp
+SHEET_DROP = {'turkey': [('back', (0.0, 0.0, 1.0, 0.36), 'brown', False),
+                         ('side', (0.64, 0.10, 1.0, 0.93), 'fan', True)],
+              'mouse': [('back', (0.38, 0.82, 1.0, 1.0), 'pink', True),
+                        ('side', (0.45, 0.78, 1.0, 1.0), 'pink', True),
+                        ('side', (0.10, 0.62, 0.21, 0.78), 'light', False)],
+              # the shirt's letter seen edge-on from the side: a white stripe that the warp laid along the arm
+              'monkey': [('side', (0.18, 0.58, 0.36, 0.84), 'white', False)],
+              # the ant's antenna in front of its hat's crown (side view): it landed on the crown as brown smears
+              'ant': [('side', (0.22, 0.0, 0.62, 0.145), 'antenna', False)]}
 
 
 def load_art():
@@ -320,6 +332,45 @@ def warp_mask(M, u):
     return ndi.map_coordinates(M.astype(np.float32), [yy + u[0], xx + u[1]], order=1, mode='constant') > 0.5
 
 
+def warp_trust(u, squeeze=(2.3, 1.6), stretch=(0.32, 0.5)):
+    """how far a warp's colours can be trusted, per pixel: 1 where it moves the image about rigidly, 0 where it squeezes
+    it (one pixel here takes more than `squeeze` image pixels in some direction) or stretches it (less than `stretch`)
+    — the singular values of the warp's Jacobian"""
+    from scipy import ndimage as ndi
+    a = 1 + np.gradient(u[0], axis=0); b = np.gradient(u[0], axis=1)
+    c = np.gradient(u[1], axis=0); d = 1 + np.gradient(u[1], axis=1)
+    s2 = a * a + b * b + c * c + d * d
+    det = a * d - b * c
+    r = np.sqrt(np.maximum(s2 * s2 - 4 * det * det, 0))
+    smax, smin = np.sqrt((s2 + r) / 2), np.sqrt(np.maximum(s2 - r, 0) / 2)
+    ss = lambda x, e0, e1: (lambda t: t * t * (3 - 2 * t))(np.clip((x - e0) / (e1 - e0), 0, 1))
+    t = ss(smax, squeeze[0], squeeze[1]) * ss(smin, stretch[0], stretch[1])
+    return ndi.gaussian_filter(t.astype(np.float32), 1.5)
+
+
+def wmedian(C, W):
+    """per-channel weighted medians: C (N x k x 3) colours, W (N x k) weights"""
+    out = np.empty((C.shape[0], C.shape[2]), np.float32)
+    half = 0.5 * W.sum(1)
+    for ch in range(C.shape[2]):
+        o = np.argsort(C[..., ch], axis=1)
+        cs = np.take_along_axis(C[..., ch], o, 1)
+        cw = np.cumsum(np.take_along_axis(W, o, 1), 1)
+        j = np.minimum((cw < half[:, None]).sum(1), C.shape[1] - 1)
+        out[:, ch] = cs[np.arange(len(cs)), j]
+    return out
+
+
+def smooth_normals(v, f, its=24):
+    """vertex normals of a smoothed copy of the mesh: the way each part faces, without TripoSR's lumps and the warps'
+    ripples"""
+    import trimesh
+    m = trimesh.Trimesh(np.asarray(v, np.float64).copy(), f, process=False)
+    trimesh.smoothing.filter_taubin(m, lamb=0.5, nu=-0.53, iterations=its)
+    n = np.asarray(m.vertex_normals, np.float64)
+    return n / np.maximum(np.linalg.norm(n, axis=1), 1e-9)[:, None]
+
+
 def iou(a, b):
     return (a & b).sum() / max(1, (a | b).sum())
 
@@ -376,21 +427,51 @@ def sheet_views(kind, sheets):
         i = max(cand, key=lambda i: sizes[i])
         sl = objs[i]
         m = lab[sl] == i + 1
+        m0 = m.copy()                                  # (the figure's own pixels: the specks filled in are background)
         m = m | (ndi.binary_fill_holes(m) & ~ndi.binary_opening(ndi.binary_fill_holes(m) & ~m, iterations=2))   # specks only
         rgb = a[sl].astype(np.float32) / 255
         mt = m.copy()                                  # (what the texture may use; the outline stays whole)
-        for vname, (bx0, by0, bx1, by1), what in SHEET_DROP.get(kind, ()):
+        for vname, (bx0, by0, bx1, by1), what, cut in SHEET_DROP.get(kind, ()):
             if vname != name:
                 continue
             import cv2
             hsv = cv2.cvtColor(a[sl], cv2.COLOR_RGB2HSV).astype(np.int32)
+            hh, ss, vv = hsv[..., 0], hsv[..., 1], hsv[..., 2]
             H_, W_ = m.shape
             box = np.zeros_like(m); box[int(by0 * H_):int(by1 * H_), int(bx0 * W_):int(bx1 * W_)] = True
+            cutm = None                                # (what leaves the outline, when cut: the default, all of it)
             if what == 'brown':
-                drop = box & (hsv[..., 0] <= 25) & (hsv[..., 2] < 150) & (hsv[..., 1] > 60)
+                drop = box & (hh <= 25) & (vv < 150) & (ss > 60)
+            elif what == 'pink':                       # the mouse's floor tail: thin, and pinker than its fur
+                thin = box & m & ~opened(m, 7)         # (only its thin part leaves the outline: cutting where it
+                drop = thin | (box & m & ((hh >= 150) | (hh <= 5)) & (ss > 60) & (vv > 150))   # lies on the body
+                cutm = ndi.binary_dilation(ndi.binary_opening(thin, iterations=2), iterations=2)  # notched the hem)
+            elif what == 'fan':                        # everything there but the body's brown
+                drop = box & m & ~((hh <= 30) & (vv < 150) & (ss > 70))
+            elif what == 'white':                      # a letter seen edge-on
+                drop = box & m & (vv > 185) & (ss < 50)
+            elif what == 'light':                      # (a greyer one, in a tight box)
+                drop = box & m & (vv > 150) & (ss < 60)
+            elif what == 'antenna':                    # brown, darker than the hat's beige
+                drop = box & m & (hh <= 16) & (vv < 185) & (ss > 125)
+            else:
+                raise ValueError(what)
+            if what not in ('white', 'light'):         # (specks off; a letter's edge is itself thin)
                 drop = ndi.binary_opening(drop, iterations=2)
-                mt = mt & ~ndi.binary_dilation(drop, iterations=2)
-        out[name] = (bleed(rgb, m), m, mt)
+            drop = ndi.binary_dilation(drop, iterations=2)
+            mt = mt & ~drop
+            if cut:
+                cutm = drop if cutm is None else cutm
+                m = m & ~cutm
+                m0 = m0 & ~cutm
+                lab2, n2 = ndi.label(m)                # (what's left of the figure: its biggest piece)
+                if n2 > 1:
+                    m = lab2 == 1 + np.argmax(ndi.sum(m, lab2, range(1, n2 + 1)))
+                    m0 &= m
+                mt &= m
+        # colours: the figure's own pixels bled outward — the specks filled into the mask (thin gaps between an arm and
+        # the body: the sheet's white) take their neighbours' colours, else they painted thin white lines
+        out[name] = (bleed(rgb, m0), m, mt)
     return out
 
 
@@ -562,6 +643,8 @@ def fit_depth(v, f, views, k, kind, h, dbg=None):
         rgb, m = views['side'][:2]; d, r = (1, 0, 0), (0, 0, -1)
     else:
         rgb, m = views['head'][:2]; d, r = (-1, 0, 0), (0, 0, 1)
+    from scipy import ndimage as ndi
+    import scipy.sparse as sp
     pl = Plane.around(v, d, r, margin=60)
     S0 = pl.mask(v, f)
     q, ox, oy, sx, sy = place(m, k, S0)
@@ -570,6 +653,16 @@ def fit_depth(v, f, views, k, kind, h, dbg=None):
     u = demons(opened(S0, ro), opened(T, ro), its=(70, 50, 20), sig=(6.0, 6.0, 6.0), lock=0)
     lim = 0.1 * h / PX
     du = np.clip(sample(u[1], pl.pix(v)), -lim, lim)
+    # the shift smoothed over the mesh's surface: a thin part's two faces (an ear, an antenna, a brim seen edge-on) are
+    # close along the surface and move together, all of a piece, while the body's front and back stay far apart and
+    # keep their own shifts. Straight from the side field, the field varying across the mouse's edge-on ear squeezed it
+    # into a pointed spike (a rabbit's ear) and the ant's antennae into a bunch of stubs
+    E = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    Adj = sp.coo_matrix((np.ones(len(E) * 2), (np.r_[E[:, 0], E[:, 1]], np.r_[E[:, 1], E[:, 0]])), shape=(len(v),) * 2).tocsr()
+    Adj.data[:] = 1
+    deg = np.maximum(np.asarray(Adj.sum(1)).ravel(), 1)
+    for _ in range(400):
+        du = 0.5 * du + 0.5 * (Adj @ du) / deg
     v = v + pl.move(du, np.zeros_like(du))
     S1 = pl.mask(v, f)
     print(f'  side outline: placed iou {q:.3f} (scale {sx / k:.3f}) -> {iou(S1, T):.3f}  (max shift {np.abs(du).max() * PX:.3f})')
@@ -578,10 +671,11 @@ def fit_depth(v, f, views, k, kind, h, dbg=None):
     return v
 
 
-def add_tails(v, f, views, k, h, dbg=None):
+def add_tails(v, f, views, k, h, gy, dbg=None):
     """parts the sheet's side view has but the mesh doesn't — tails, mostly (the front picture never shows them) — added
     as round soft tubes: the missing piece of the side outline, as thick across (x) as it is wide, down the body's
-    middle, reaching a little into the body (no gap). Wide missing pieces (not a tail) are left alone"""
+    middle, reaching a little into the body (no gap). Wide missing pieces (not a tail) are left alone, and so are pieces
+    in front of the body's middle or above the head's middle (a cap's visor, a hat brim's back edge)"""
     from scipy import ndimage as ndi
     if 'side' in views:
         m = views['side'][1]; d, r = (1, 0, 0), (0, 0, -1)
@@ -597,6 +691,8 @@ def add_tails(v, f, views, k, h, dbg=None):
     base = len(v)
     hp = h / PX
     added = []
+    cols = np.nonzero(S)[1]
+    mid = (cols.min() + cols.max()) / 2                  # (image x runs backwards: r = -z)
     for i in range(1, n + 1):
         C = lab == i
         area = C.sum()
@@ -605,7 +701,13 @@ def add_tails(v, f, views, k, h, dbg=None):
         dC = ndi.distance_transform_edt(C)
         if dC.max() > 0.045 * hp:                       # too wide for a tail: a part the sheet just draws differently
             continue
-        C2 = C | (ndi.binary_dilation(C, iterations=6) & S)
+        if np.nonzero(C)[1].mean() < mid:               # in front: not a tail (the monkey's cap visor, drawn longer
+            continue                                    # on the sheet, came out as a spike over its brow)
+        if pl.b1 - (np.nonzero(C)[0].mean() + 0.5) * PX > gy:   # above the head's middle: a hat's brim, not a tail
+            continue
+        # the tube reaches from the tail well into the body, across the gap between the sheet's outline and the mesh's
+        # (else a sliver of background showed between them: a white line down the monkey's back)
+        C2 = C | (ndi.binary_dilation(C, iterations=12) & (S | T | ndi.binary_dilation(S, iterations=3)))
         dt = ndi.distance_transform_edt(C2) - 0.8          # (~0 on the outline: the two halves meet there)
         rad = ndi.maximum_filter(dt, size=int(2 * dC.max() + 3))
         t = np.sqrt(np.maximum(0, 2 * rad * dt - dt * dt))
@@ -726,10 +828,12 @@ class BakeView:
     """one picture of the friend for the texture: seen along d (z-buffer in its own plane), sampled in an image plane
     (maybe another one: the mirrored side shares the side's image), warped onto the mesh's outline there"""
 
-    def __init__(self, name, d, vis_plane, img_plane, rgb, mask, warp=None, power=3.0, prio=1.0, valid=None, floor=0.0):
+    def __init__(self, name, d, vis_plane, img_plane, rgb, mask, warp=None, power=3.0, prio=1.0, valid=None, floor=0.0,
+                 band=None):
         self.name, self.d = name, np.asarray(d, np.float64)
         self.vp, self.ip, self.rgb, self.mask, self.warp = vis_plane, img_plane, rgb, mask, warp
         self.power, self.prio, self.valid, self.floor = power, prio, valid, floor
+        self.band = band                               # (only where |n.z| < band: the middle of a side-on friend)
         self.zb = None
 
     def prepare(self, v, f):
@@ -746,6 +850,9 @@ class BakeView:
         if self.floor:
             s = np.clip((nd - self.floor) / 0.2, 0, 1)
             w *= s * s * (3 - 2 * s)                  # (a picture smeared along the steep sides: none of it there)
+        if self.band:
+            s = np.clip(1 - np.abs(n[:, 2]) / self.band, 0, 1)
+            w *= s * s * (3 - 2 * s)
         sel = np.nonzero(w > 1e-4)[0]
         col = np.zeros((len(p), 3), np.float32)
         if not len(sel):
@@ -791,6 +898,9 @@ def make_views(kind, v, f, art, views, pic, fp, k, lut, dbg=None):
         tol = 0.03 * S.shape[0]
         far = ndi.distance_transform_edt(~T)
         valid = np.clip(1 - (far - tol) / 8.0, 0, 1).astype(np.float32)
+        # nor where the warp squeezes or stretches the sheet a lot: there the sheet draws that part differently (the
+        # mouse's ear turned toward the viewer, a hat's brim wider than the mesh's) and its colours came out as streaks
+        valid *= warp_trust(u)
         if dbg is not None:
             dbg['view_' + name] = (T, S, T2, img, u)
         return pl, img, mk, u, valid
@@ -808,6 +918,32 @@ def make_views(kind, v, f, art, views, pic, fp, k, lut, dbg=None):
             rgbB = flip_letter(rgbB, alP, box, fp.margin)
         back = Plane.around(v, (0, 0, -1), (-1, 0, 0), margin=24)
         out.append(BakeView('flank', (0, 0, -1), back, fp, rgbB, alP, power=4.0, prio=9.0, floor=0.2))
+        if 'ends' in SHEET_SKIP.get(kind, ()):
+            # no face-on view (the turtle's): the narrow band down the middle of the face, which neither flank sees
+            # squarely, takes the picture straight across — both halves meet there on the same pixels (the profile's
+            # edge), so the smile runs on through the middle instead of a seam or a smudge where they met
+            mid = Plane.around(v, (-1, 0, 0), (0, 0, 1), margin=24)
+            amid = ndi.binary_dilation(alP > 0.5, iterations=4).astype(np.float32)   # (it lands on the very edge)
+            # (from a few pixels inside the profile, softened along it: the outline's own fuzz and rim shading,
+            # stretched across, came out as stripes. And without the nostril: it sits right on the profile's edge, and
+            # stretched across the middle it made a dark bar over the snout — small dark blots near the edge are
+            # painted over with the skin round them; the smile, long, stays)
+            rgbN = rgbP.copy()
+            import cv2
+            A5 = alP > 0.5
+            lum = rgbP.mean(-1)
+            dark = A5 & (ndi.distance_transform_edt(A5) < 26) & (lum < ndi.median_filter(lum, 25) - 0.07)
+            lab, nb = ndi.label(ndi.binary_dilation(dark, iterations=1))
+            blot = np.zeros_like(dark)
+            for i, sl in enumerate(ndi.find_objects(lab)):
+                if sl is not None and sl[0].stop - sl[0].start <= 24 and sl[1].stop - sl[1].start <= 16:
+                    blot[sl] |= lab[sl] == i + 1
+            if blot.any():
+                u8 = (np.clip(rgbP, 0, 1) * 255).astype(np.uint8)
+                rgbN = cv2.inpaint(u8, ndi.binary_dilation(blot, iterations=2).astype(np.uint8) * 255, 6, cv2.INPAINT_TELEA).astype(np.float32) / 255
+            rgbM = np.empty_like(rgbN); rgbM[:, :-6] = rgbN[:, 6:]; rgbM[:, -6:] = rgbN[:, -6:]
+            rgbM = np.stack([ndi.gaussian_filter(rgbM[..., c], (3.0, 1.0)) for c in range(3)], -1)
+            out.append(BakeView('mid', (-1, 0, 0), mid, fp, rgbM, amid, power=1.0, prio=1.0, band=0.32))
     else:
         pl, img, mk, u, ok = sheet_view('side', (1, 0, 0), (0, 0, -1))
         out.append(BakeView('side', (1, 0, 0), pl, pl, img, mk, u, power=4.0, valid=ok))
@@ -840,11 +976,14 @@ def flip_letter(rgb, al, box, margin):
     return out
 
 
-def bake(v, f, n, views, res=1024, pad=4, dbg=None):
+def bake(v, f, n, views, res=1024, pad=8, dbg=None):
     """UV atlas (xatlas) + the texture: every texel's colour from the views that see it squarely, what none sees filled
-    from around it (over the mesh), the empty atlas around the charts filled with the nearest chart colour"""
+    from around it (over the mesh), the empty atlas around the charts filled with the nearest chart colour.
+    pad: texels between the charts — 8, not 4: the game draws the atlas mip-mapped, and at a quarter size two charts
+    4 texels apart already ran into each other (thin lines of a neighbouring part's colour along the seams)"""
     import xatlas
     from scipy import ndimage as ndi
+    from scipy.spatial import cKDTree
     import scipy.sparse as sp
     atlas = xatlas.Atlas()
     atlas.add_mesh(v.astype(np.float32), f.astype(np.uint32))
@@ -855,6 +994,10 @@ def bake(v, f, n, views, res=1024, pad=4, dbg=None):
     atlas.generate(co, po)
     vmap, idx, uv = atlas[0]
     print(f'  atlas: {atlas.chart_count} charts, {len(vmap)} verts (was {len(v)}), utilisation {float(np.ravel(atlas.utilization)[0]):.2f}')
+    # which way each part faces, for the views' weights: from a smoothed copy — with the mesh's own lumpy normals the
+    # hand-over from one view to the next followed every bump, a jagged, torn-looking edge wherever the two views
+    # disagree a little (the mouse's and the monkey's shirt hems at the side)
+    n = smooth_normals(v, f)
 
     def colours(p, nn, bary_tri):
         """bary_tri: (barycentrics, triangle corners in vmap'd vertices) to interpolate per-vertex trust, or None (p are
@@ -936,6 +1079,30 @@ def bake(v, f, n, views, res=1024, pad=4, dbg=None):
     fb = (b[:, :, None] * ff[tri]).sum(1)
     acc, ws = colours(p, nrm, (b, tri))
     W0 = 0.04
+    # what no view sees well, texel by texel (the vertex fill alone is coarse: a smudge down the middle of the turtle's
+    # face, between the picture and its mirror): the colours of the nearest texels that are seen and face about the
+    # same way — a median, so an eye or a line beside it doesn't run in; deeper in, from a wider ring of them, so it
+    # stays smooth instead of streaking out from the nearest one
+    kn = ws > 0.12
+    need = np.nonzero(ws < 0.8)[0]
+    if kn.sum() > 50 and len(need):
+        kc = (acc[kn] / ws[kn, None]).astype(np.float32)
+        kp, kq = p[kn], nrm[kn]
+        t1 = cKDTree(kp)
+        sub = np.random.default_rng(0).choice(len(kp), size=max(50, min(len(kp), len(kp) // 16)), replace=False)
+        t2 = cKDTree(kp[sub])
+        kd = np.zeros((len(need), 3), np.float32); dm = np.zeros(len(need), np.float32)
+        for s0 in range(0, len(need), 60000):
+            qi = need[s0:s0 + 60000]
+            d1, i1 = t1.query(p[qi], k=12)
+            d2, i2 = t2.query(p[qi], k=24)
+            D = np.concatenate([d1, d2], 1); I = np.concatenate([i1, sub[i2]], 1)
+            d0 = D.min(1, keepdims=True)
+            wg = np.exp(-((D - d0) / (1.5 * d0 + 0.004)) ** 2) * np.clip((nrm[qi, None, :] * kq[I]).sum(-1) + 0.3, 0.02, 1)
+            kd[s0:s0 + len(qi)] = wmedian(kc[I], wg)
+            dm[s0:s0 + len(qi)] = d0[:, 0]
+        cf = np.exp(-(dm / 0.12) ** 2)[:, None]
+        fb[need] = cf * kd + (1 - cf) * fb[need]
     col = (acc + W0 * fb) / (ws + W0)[:, None]
     img = np.zeros((res, res, 3), np.float32)
     img[on] = col
@@ -944,6 +1111,19 @@ def bake(v, f, n, views, res=1024, pad=4, dbg=None):
     if dbg is not None:
         seen = np.zeros((res, res), np.float32); seen[on] = np.clip(ws, 0, 1)
         dbg['atlas'] = (img, seen)
+        # which view gave each texel its colour (grey: the fill)
+        VC = {'front': (1, .3, .3), 'side': (.25, .8, .25), 'side2': (.1, .45, .1), 'back': (.25, .35, 1),
+              'head': (1, .8, 0), 'tail': (.8, 0, .8), 'flank': (1, .6, .6), 'mid': (0, 1, 1)}
+        vm = np.zeros((len(p), 3), np.float32); wsum = np.zeros(len(p), np.float32)
+        for bv in views:
+            w_, _ = bv.weights_colours(p, nrm)
+            tv = getattr(bv, 'trust_v', None)
+            if tv is not None:
+                w_ = w_ * (b * tv[vmap][tri]).sum(1)
+            vm += w_[:, None] * np.array(VC.get(bv.name, (1, 1, 1)), np.float32); wsum += w_
+        vm = (vm + W0 * 0.5) / (wsum + W0)[:, None]
+        vimg = np.zeros((res, res, 3), np.float32); vimg[on] = vm
+        dbg['viewmap'] = vimg[iy, ix]
     return vmap, idx, uv, img
 
 
@@ -985,7 +1165,7 @@ def build(kind, art, res, target, sheets=None, dbg=None):
         if kind in SIDE_ON:
             v = centre_flank(v, f, fp)
         if kind not in SIDE_ON and 'tails' not in skip:
-            v, f = add_tails(v, f, views, k, h, dbg)
+            v, f = add_tails(v, f, views, k, h, gy, dbg)
         v = recentre(v, gy, h)
     else:
         print('  (no character sheet: guessed colours round the back)')
@@ -1112,6 +1292,8 @@ def save_debug(d, kind, dbg):
         img, seen = dbg['atlas']
         Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8)).save(os.path.join(d, f'{kind}_atlas.png'))
         Image.fromarray((seen * 255).astype(np.uint8)).save(os.path.join(d, f'{kind}_seen.png'))
+    if 'viewmap' in dbg:
+        Image.fromarray((np.clip(dbg['viewmap'], 0, 1) * 255).astype(np.uint8)).save(os.path.join(d, f'{kind}_viewmap.png'))
 
 
 if __name__ == '__main__':

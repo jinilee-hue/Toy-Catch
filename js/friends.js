@@ -144,13 +144,17 @@ void main() {
       vec4 texel = texture2D(map, vMapUv);
       #ifdef CLAW_ATLAS
         vec3 behind = texture2D(uAtlas, vAuv).rgb;
-        vec2 th = mix(vec2(-0.08, 0.1), vec2(0.42, 0.62), vTurn);
-        float pw = vFw * smoothstep(th.x, th.y, vNz);
+        // (seen about straight on — sitting and swaying, held by the claw — the picture runs right on to the outline:
+        // the outline's own vertices face a little backward, and a threshold above 0 there, with the picture's soft
+        // alpha edge, left a ring of the atlas all round: a 1-px line of the sheet's colours — dark brown along the
+        // cat's yellow patch. The picture's rgb is bled past its edge, so it holds up to where it is nearly see-through)
+        vec2 th = mix(vec2(-0.45, -0.25), vec2(0.42, 0.62), vTurn);
+        float pw = vFw * smoothstep(th.x, th.y, vNz) * mix(smoothstep(0.02, 0.25, texel.a), smoothstep(0.3, 0.7, texel.a), vTurn);
       #else
         vec3 behind = vColor.rgb;                                       // (vColor is a vec4 in this three)
-        float pw = vFw;
+        float pw = vFw * smoothstep(0.3, 0.7, texel.a);
       #endif
-      diffuseColor.rgb = mix(behind, texel.rgb, pw * smoothstep(0.3, 0.7, texel.a));`)
+      diffuseColor.rgb = mix(behind, texel.rgb, pw);`)
       .replace('#include <color_fragment>', `
       {
         vec3 n = normalize(vPuffN);
