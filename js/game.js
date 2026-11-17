@@ -160,12 +160,21 @@
   const LETTER_JELLY = { m: 'purple', a: 'green', s: 'orange', t: 'pink' };
   const RAINBOW = ['pink', 'orange', 'yellow', 'green', 'blue', 'purple'];   // the logo's / START's order, letter by letter
   /* opts: plate (false: no plate — the letters stand straight on their pill, HUD) · F (font px, default 220: the
-     canvas resolution). pal: one palette, or a list of palettes the letters take in turn (spaces take none) */
+     canvas resolution) or H (the canvas height in px: F to fit it). pal: one palette, or a list of palettes the letters
+     take in turn (spaces take none). Draw it at about the size it shows (× 1.25): a canvas drawn much bigger and shrunk
+     by the browser (no mipmaps) broke its thin gold line and bevel into dashes. */
   function jellyWord(text, pal, opts = {}) {
     const PLATE = opts.plate !== false;                  // (no plate: the letters stand straight on their pill — HUD)
+    let F = opts.F || 220;
+    if (opts.H) {                                        // H = F · (ascent + descent + E + 2 (PL + G + B)) / F + 2 · 6
+      const g1 = document.createElement('canvas').getContext('2d'); g1.font = "800 100px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif";
+      const m1 = [...text].map(ch => g1.measureText(ch));
+      const k = (Math.max(...m1.map(m => m.actualBoundingBoxAscent)) + Math.max(0, ...m1.map(m => m.actualBoundingBoxDescent))) / 100;
+      F = Math.max(40, (opts.H - 12) / (k + 0.09 + 2 * ((PLATE ? 0.095 : 0) + 0.022 + 0.075)));
+    }
     // (B: fatter than Baloo 800, like the logo's letters — but the small holes of a / s / e must stay open: kids read
     //  the shape (B .13 closed them: "a" and "s" looked like "8"); R: a thin bevel, so the face is most of the letter)
-    const F = opts.F || 220, B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = PLATE ? F * 0.095 : 0, TRACK = -F * 0.02;
+    const B = F * 0.075, E = F * 0.09, G = F * 0.022, R = F * 0.03, PL = PLATE ? F * 0.095 : 0, TRACK = -F * 0.02;
     const font = `800 ${F}px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif`;
     const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const mix = (a, b, k) => 'rgb(' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k)).join(',') + ')';
@@ -180,7 +189,8 @@
     const W = Math.ceil(x + 2 * pad), H = Math.ceil(asc + desc + E + 2 * pad), base = pad + asc;
     // (scratch canvases are emptied as soon as they're drawn: iPad Safari caps the memory all canvases may hold)
     const scratch = [], free = () => { for (const c of scratch.splice(0)) c.width = c.height = 0; };
-    const mk = (keep) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.font = font; g.lineJoin = 'round'; g.textBaseline = 'alphabetic'; if (!keep) scratch.push(c); return [c, g]; };
+    // (scratch canvases are read back: kept in memory, not on the GPU — getImageData from a GPU canvas is a slow round trip)
+    const mk = (keep) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d', keep ? undefined : { willReadFrequently: true }); g.font = font; g.lineJoin = 'round'; g.textBaseline = 'alphabetic'; if (!keep) scratch.push(c); return [c, g]; };
     const glyph = (g, i, dy, lw) => { const gx = pad + xs[i]; g.fillText(chars[i], gx, base + dy); g.lineWidth = lw; g.strokeText(chars[i], gx, base + dy); };
     const [out, o] = mk(true);
     // the plate: every letter (with its side) grown by PL, merged into one rounded cloud (blur + cut at half)
@@ -221,10 +231,31 @@
       if (!pals[i]) return;                              // (a space)
       const [fTop, fMid, fLow, bevel, side, sideDk, glow] = pals[i];
       const top = base - ms[i].actualBoundingBoxAscent - B / 2, bot = base + ms[i].actualBoundingBoxDescent + B / 2, gh = bot - top;
-      // gold line round the letter and its side, then the side
-      o.fillStyle = o.strokeStyle = '#f5c45c'; for (let dy = E; dy >= 0; dy -= 1) glyph(o, i, dy, B + 2 * G);
-      for (let dy = E; dy >= 0.5; dy -= 0.5) { o.fillStyle = o.strokeStyle = mix(side, sideDk, Math.min(1, dy / E)); glyph(o, i, dy, B); }
-      { const gr = o.createLinearGradient(0, top, 0, bot); gr.addColorStop(0, mix(bevel, '#ffffff', 0.18)); gr.addColorStop(1, bevel); o.fillStyle = o.strokeStyle = gr; glyph(o, i, 0, B); }
+      // the gold line round the letter and its side, the side, and the bevel on top — ONE shape each: the gold and the
+      // side are the letter swept down E (sweepDown: stacked anti-aliased copies piled their edges up into hard, dark,
+      // stair-stepped rims — user: "상단에 음가 스펠링도 테두리 어두운색이 깨져보이는 현상"), the bevel laid over the side
+      // coverage-correct (overMax: a plain "over" mixed the dark side into the bevel's edge). Only the letter's own
+      // columns are worked on (rx .. rx + rw).
+      const gx = pad + xs[i], ext = B / 2 + G + 3;
+      const rx = Math.max(0, Math.floor(gx - ms[i].actualBoundingBoxLeft - ext)), rw = Math.min(W, Math.ceil(gx + ms[i].actualBoundingBoxRight + ext)) - rx;
+      const sub = (c) => c.getContext('2d').getImageData(rx, 0, rw, H);
+      const shapeA = (lw) => { const [c, g] = mk(); g.fillStyle = g.strokeStyle = '#fff'; glyph(g, i, 0, lw);
+        const d = sub(c).data, a = new Float32Array(rw * H); for (let k = 0; k < a.length; k++) a[k] = d[k * 4 + 3] / 255; return a; };
+      const gold = sweepDown(shapeA(B + 2 * G), rw, H, 0, Math.round(E)).cov, sd = sweepDown(shapeA(B), rw, H, 1, Math.round(E));
+      {
+        const [bc, bg] = mk();
+        const gr = bg.createLinearGradient(0, top, 0, bot); gr.addColorStop(0, mix(bevel, '#ffffff', 0.18)); gr.addColorStop(1, bevel);
+        bg.fillStyle = bg.strokeStyle = gr; glyph(bg, i, 0, B);
+        const body = bg.createImageData(rw, H), BD = body.data, S0 = hex(side), S1 = hex(sideDk), GL = hex('#f5c45c');
+        overMax(sub(bc).data, sd.cov, (j, k) => S0[k] + (S1[k] - S0[k]) * Math.min(1, sd.dist[j] / E), BD);
+        for (let j = 0, n = rw * H; j < n; j++) {        // and the gold under it all
+          const af = BD[j * 4 + 3] / 255, ag = gold[j] * (1 - af), a = af + ag;
+          if (a <= 0.002) { BD[j * 4 + 3] = 0; continue; }
+          for (let k = 0; k < 3; k++) BD[j * 4 + k] = (BD[j * 4 + k] * af + GL[k] * ag) / a;
+          BD[j * 4 + 3] = a * 255;
+        }
+        bg.clearRect(0, 0, W, H); bg.putImageData(body, rx, 0); o.drawImage(bc, 0, 0);
+      }
       // the face: the letter shrunk by R, with the jelly lights on it
       const [fc, fg] = mk();
       { const gr = fg.createLinearGradient(0, top, 0, bot); gr.addColorStop(0, fTop); gr.addColorStop(0.5, fMid); gr.addColorStop(0.56, fLow); gr.addColorStop(1, fLow);
@@ -236,22 +267,34 @@
         gr.addColorStop(0, 'rgba(255,255,255,.5)'); gr.addColorStop(0.85, 'rgba(255,255,255,.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
         fg.fillStyle = gr; fg.beginPath(); const x0 = pad + xs[i] - F * 0.2, x1 = x0 + ms[i].actualBoundingBoxRight + ms[i].actualBoundingBoxLeft + F * 0.4;
         fg.moveTo(x0, top - F); fg.lineTo(x1, top - F); fg.lineTo(x1, yS - gh * 0.03); fg.quadraticCurveTo((x0 + x1) / 2, yS + gh * 0.09, x0, yS - gh * 0.03); fg.closePath(); fg.fill(); }
-      fg.shadowColor = rgba(bevel, 0.6); fg.shadowBlur = F * 0.025; fg.shadowOffsetY = 0; fg.drawImage(ic, 0, 0);                  // soft bevel into the face
-      fg.shadowColor = rgba(glow, 0.95); fg.shadowBlur = F * 0.05; fg.shadowOffsetY = -F * 0.05; fg.drawImage(ic, 0, 0);           // glow inside the bottom
-      fg.shadowColor = 'rgba(255,255,255,.8)'; fg.shadowBlur = F * 0.01; fg.shadowOffsetX = F * 0.008; fg.shadowOffsetY = F * 0.013; fg.drawImage(ic, 0, 0);   // shine on the top-left edges
+      // the inner lights: the SHADOW of the outside (ic), never ic itself — drawn source-atop, its black edge darkened the
+      // face's anti-aliased rim into a thin dark broken line. So ic goes off the canvas and its shadow is offset back.
+      const OFF = W + 64;
+      const inner = (col, blur, dx, dy) => { fg.shadowColor = col; fg.shadowBlur = blur; fg.shadowOffsetX = OFF + dx; fg.shadowOffsetY = dy; fg.drawImage(ic, -OFF, 0); };
+      inner(rgba(bevel, 0.6), F * 0.025, 0, 0);                         // soft bevel into the face
+      inner(rgba(glow, 0.95), F * 0.05, 0, -F * 0.05);                  // glow inside the bottom
+      inner('rgba(255,255,255,.8)', F * 0.01, F * 0.008, F * 0.013);   // shine on the top-left edges
       o.drawImage(fc, 0, 0);
       // the white spot: just inside the face's top-left, where the face starts
-      { const d = fg.getImageData(0, 0, W, H).data; let best = null;
-        for (let y = Math.floor(top); y < top + gh * 0.45 && !best; y += 2) for (let xx = 0; xx < W; xx += 2) if (d[(y * W + xx) * 4 + 3] > 200) {
-          let run = 0; while (xx + run < W && d[(y * W + xx + run) * 4 + 3] > 200) run += 2;
-          if (run > F * 0.12) { best = [xx + F * 0.07, y + F * 0.06]; } break; }
+      { const d = sub(fc).data; let best = null;
+        for (let y = Math.floor(top); y < top + gh * 0.45 && !best; y += 2) for (let xx = 0; xx < rw; xx += 2) if (d[(y * rw + xx) * 4 + 3] > 200) {
+          let run = 0; while (xx + run < rw && d[(y * rw + xx + run) * 4 + 3] > 200) run += 2;
+          if (run > F * 0.12) { best = [rx + xx + F * 0.07, y + F * 0.06]; } break; }
         if (best) { o.save(); o.translate(best[0], best[1]); o.rotate(-0.5); o.fillStyle = 'rgba(255,255,255,.92)'; o.beginPath(); o.ellipse(0, 0, F * 0.034, F * 0.02, 0, 0, Math.PI * 2); o.fill(); o.restore(); } }
       free();
     });
     out.className = 'jelly';
     return out;
   }
-  const jellyCache = {};
+  /* the HUD's target letters, drawn at the size they show (css .tg-letter .jelly: TG_U · u tall) × 1.25 for this
+     screen's pixel ratio — drawn at 220 px and shrunk ~2x by the browser, their thin gold line and bevel broke into dark
+     dashes (user: "상단에 음가 스펠링도 테두리 어두운색이 깨져보이는 현상이 있어"); layout swaps them when that size changes */
+  const TG_U = 10.6, jellyCache = {};
+  function targetJelly(L) {
+    const u = Math.min(innerHeight / 100, innerWidth / 177.78), h = Math.round(TG_U * u * (window.devicePixelRatio || 1) * 1.25);
+    const key = L + ':' + Math.round(h / 6);
+    return jellyCache[key] || (jellyCache[key] = jellyWord(L.toUpperCase() + L, JELLY[LETTER_JELLY[L] || 'pink'], { plate: false, H: h }));
+  }
   /* the result's title: the logo's jelly letters, one gold-yellow jelly (the logo's Y — with the stars and the card's
      gold rim, fewer colours than the rainbow), straight on a blue ribbon (the plate is off: user "퍼펙트 같은건 리본형태가
      나았던거 같은데.." — css .ribbon); ?title=rainbow (the logo's / START's colours letter by letter) or ?title=<JELLY
@@ -268,7 +311,7 @@
   const TITLE_PAL = TITLE_Q === 'rainbow' ? RAINBOW.map(k => JELLY[k]) : JELLY[Object.prototype.hasOwnProperty.call(JELLY, TITLE_Q) ? TITLE_Q : 'yellow'];
   function resultTitle(text) {
     const u = Math.min(innerHeight / 100, innerWidth / 177.78);
-    const F = Math.max(160, Math.min(440, Math.round(TITLE_U * u * (window.devicePixelRatio || 1) / 20) * 20));
+    const F = Math.max(80, Math.min(480, Math.round(TITLE_U * u * (window.devicePixelRatio || 1) * 1.25 / 10) * 10));
     let t = titleCache[text];
     if (!t || t.F !== F) {
       t = titleCache[text] = { F, cv: jellyWord(text, TITLE_PAL, { F, plate: false }) };
@@ -544,7 +587,7 @@
       });
     };
     requestAnimationFrame(wave);
-    G.startWave = { ready: () => waveOn, frames: () => cur.slice(), K, WS };   // (QA)
+    G.startWave = { ready: () => waveOn, frames: () => cur.slice(), K, WS, gen };   // (QA)
   }
 
   /* the prize's sun-burst: turning rays behind the friend — in 3D, so the friend stays in front of it */
@@ -632,7 +675,10 @@
     const mw = R.x - L.x, mu = mw / 125.07;
     const st = app.style;
     st.setProperty('--mx', C.x + 'px'); st.setProperty('--mt', C.y + 'px'); st.setProperty('--mu', mu + 'px');
-    fitStart(mu);                                       // (the START canvases at the size they show)
+    // the START canvases at the size they show — on the title only: the camera's push-in into the game changes mu, and
+    // a rebuild of the (hidden) START mid-move was a hitch
+    if (G.screen === 'title') fitStart(mu);
+    if (G.target && G.screen === 'game') { const cv = targetJelly(G.target); if ($('#tgLetter').firstChild !== cv) $('#tgLetter').replaceChildren(cv); }
     const d = S.project(M.dropPoint()), j = S.project(M.joyPoint());
     st.setProperty('--dropX', d.x + 'px'); st.setProperty('--dropY', Math.min(h - 10 * mu, d.y) + 'px');
     st.setProperty('--joyX', j.x + 'px'); st.setProperty('--joyY', j.y + 'px');
@@ -859,7 +905,7 @@
     // a pale plate inside the pill looked pasted on) and the button in the same jelly, the letters' colour (user:
     // "전체적인 박스와 글자와 버튼이 이질감이 없게")
     const pal = JELLY[LETTER_JELLY[L] || 'pink'];
-    const cv = jellyCache[L] || (jellyCache[L] = jellyWord(up + L, pal, { plate: false }));
+    const cv = targetJelly(L);
     $('#tgLetter').replaceChildren(cv); $('#tgLetter').setAttribute('aria-label', up + L);
     ['--jt', '--jm', '--jl', '--jb', '--js', '--jd', '--jg'].forEach((k, i) => $('#target').style.setProperty(k, pal[i]));
     const tg = $('#target'); tg.classList.remove('swap'); void tg.offsetWidth; tg.classList.add('swap');
