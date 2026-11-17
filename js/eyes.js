@@ -51,7 +51,7 @@
   const RINGS = [0, 0.16, 0.31, 0.45, 0.58, 0.7, 0.8, 0.88, 0.93, 0.96, 0.985, 1];
   const SEG = 40;
   /* the drawing (unit eye, +x toward the nose, y down): iris centre / radius, pupil radius */
-  const IRIS = { x: 0.1, y: -0.075, r: 0.74 }, PUPIL = 0.4;
+  const IRIS = { x: 0.13, y: -0.06, r: 0.8 }, PUPIL = 0.5;
   /* the lights the catchlights come from, in view space (x right, y up, z toward the viewer): upper-left like the
      pictures' own; a small second one lower-right. Angular radii (rad) of the round highlights */
   const L1 = [-0.22, 0.3, 1], L2 = [0.3, -0.26, 1], R1 = 0.068, R2 = 0.03;
@@ -453,7 +453,7 @@ void main() {`;
     e *= mix(0.74, 1.0, smoothstep(0.04, 0.7, nv)) * (1.0 + 0.06 * uLit);
     vec3 h1 = normalize(normalize(${g3(L1)}) + v), h2 = normalize(normalize(${g3(L2)}) + v);
     float d1 = dot(n, h1), d2 = dot(n, h2);
-    e += vec3(0.1) * pow(max(d1, 0.0), 28.0);
+    e += vec3(0.05) * pow(max(d1, 0.0), 60.0);
     float s1 = smoothstep(${Math.cos(R1 * 1.22).toFixed(6)}, ${Math.cos(R1).toFixed(6)}, d1);
     float s2 = smoothstep(${Math.cos(R2 * 1.35).toFixed(6)}, ${Math.cos(R2).toFixed(6)}, d2) * 0.8;
     outgoingLight = mix(e, vec3(1.0), max(s1, s2));
