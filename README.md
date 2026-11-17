@@ -28,6 +28,9 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 
 ## 친구들 (seats 6)
 - 정답 친구 `m: monkey, mouse · a: ant · s: seal · t: turkey, turtle`, 오답 친구 `c: cat, cow · d: dog, duck · f: fish`(목표 글자로는 안 나옴).
+- 동전(점수): 시작 100, 집게를 한 번 내릴 때마다 −10(DOWN 옆 동전 투입구로 동전이 쏙 들어감), 목표 친구를 못 뽑으면
+  (빈손·놓침·다른 친구) −20 더, 맞히면 지금처럼 +100(그 라운드 첫 시도면 +150). 0 아래로는 안 내려가고 0이어도 계속 할 수
+  있다. 값은 `game.js`의 `COINS`.
 - 오리(duck)는 따로 그린 게임 그림이 없어서 오리 캐릭터 시트의 정면을 잘라 쓴다: `tools/sheet_front.py duck`(시트 정면 →
   로컬 Real-ESRGAN ×4 업스케일 → 흰 배경 제거 → `design/art/duck_front.png`, git 밖) → `tools/import_art.py --friends --only duck`
   → `make_3d.py --only duck`. 단어 음성은 FPR K `w_duck`(Phonics Match).

@@ -25,6 +25,12 @@
      ≤ hold: a sure catch · ≤ weak: a loose grip that may slip out on the way up · ≤ reach: a prong knocks the friend,
      nothing caught · further: nothing under the claw. Two misses in a row in a round and a loose grip holds. */
   const AIM = { hold: 0.2, weak: 0.4, reach: 0.62 };
+  /* coins (user: "못 잡으면 동전 점수가 깍이고 한번 게임을 할때마다 점수가 차감되게해줘. 물론 맞추면 … 지금처럼 늘어나는거"):
+     the score is your coins. You start with COINS.start; every go of the claw costs COINS.play (a coin drops into the
+     machine's slot); a go that doesn't bring up the target friend (nothing caught, it slipped out, the
+     wrong friend) costs COINS.miss more; the right friend pays 100 (+50 at the first try), as before. Never below 0 —
+     with no coins left the claw still plays (it's a learning game). */
+  const COINS = { start: 100, play: 10, miss: 20 };
   const G = {
     screen: 'title', all: {}, inMachine: [], targets: [], round: -1, target: null, score: 0, caught: [], tries: 0,
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
@@ -666,6 +672,7 @@
     setScreen('game');
     G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
     $('#score').textContent = '0';
+    setTimeout(() => { if (tok === G.tok) addScore(COINS.start); }, 500);   // this game's coins come in as the HUD shows
     buildTray();
     const order = (qs.get('order') || '').split(',').filter(x => LETTERS.includes(x));
     G.targets = order.length ? order : LETTERS.slice().sort(() => Math.random() - 0.5);
@@ -717,6 +724,7 @@
     $('#timeBox').classList.add('paused');
     const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150); machine.pressDown();
     A.sfxPlay('tap');
+    payCoin(tok);                                        // a go costs a coin
     const cand = candidate();
     const zone = cand ? aimZone(cand) : 'none';
     const off = cand ? claw.x - cand.x : 0;              // the claw's offset from the head's middle
@@ -787,6 +795,7 @@
     if (tok !== G.tok) return;
     if (!held || slips) {
       G.miss++;
+      loseCoins(tok, 250);                              // nothing brought up: coins off
       if (!cand) { A.sfxPlay('whiff'); await A.say('t:miss'); }
       else if (zone === 'knock') { A.sfxPlay('whiff'); await A.say('t:center'); }
       else await A.say('t:slip');
@@ -838,7 +847,7 @@
     for (const o of G.inMachine) o.cheer(2.6);
     p.cheer(3);
     const gain = 100 + (G.tries === 0 ? 50 : 0);
-    countScore(G.score, G.score + gain); G.score += gain;
+    addScore(gain);
     const fw = () => { const r = S.project(V(lerp(-3, 3, Math.random()), lerp(2.4, 3.8, Math.random()), 0)); FX.firework(r.x, r.y); A.sfxPlay('pop'); };
     fw(); setTimeout(fw, 350); setTimeout(fw, 700);
     await A.say('t:great3');
@@ -926,6 +935,7 @@
 
   async function wrong(p, tok) {
     A.sfxPlay('uhoh'); p.nope(1.4);
+    loseCoins(tok, 450);                                // the wrong friend: coins off
     const x0 = claw.x;
     S.tween(600, k => claw.set(x0 + Math.sin(k * Math.PI * 6) * 0.06 * (1 - k), claw.y, claw.z), 'linear');
     await A.say('t:uhoh');
@@ -1006,6 +1016,45 @@
     S.frame.push = 0; S.resize();
   }
 
+  /* the score (coins) goes up or down: it counts to the new value — up: the coin flips and the pill bumps; down: the pill
+     shakes — and a little "+150" / "−20" tag drops out under it. Returns the change (0 when there was nothing to take). */
+  function addScore(n) {
+    const a = G.score, b = Math.max(0, a + n);
+    if (b === a) return 0;
+    G.score = b;
+    const el = $('#score'), box = el.parentElement, up = b > a;
+    box.classList.remove('bump', 'minus'); void box.offsetWidth; box.classList.add(up ? 'bump' : 'minus');
+    S.tween(700, k => (el.textContent = Math.round(lerp(a, b, k))), 'out');
+    box.querySelectorAll('.score-delta').forEach(t => t.remove());
+    const tag = document.createElement('i');
+    tag.className = 'score-delta' + (up ? '' : ' minus'); tag.textContent = (up ? '+' : '\u2212') + Math.abs(b - a);
+    tag.setAttribute('aria-hidden', 'true');
+    box.appendChild(tag); setTimeout(() => tag.remove(), 1500);
+    return b - a;
+  }
+  /* a go of the claw costs a coin: the score shows −10 and a coin drops into the machine's slot by the DOWN button (the
+     START coin, shorter) — right where the child is looking (a coin flying over from the score cut across the glass and
+     the claw on its way down) */
+  function payCoin(tok) {
+    if (!addScore(-COINS.play)) return;                 // no coins left: the go is free
+    A.sfxPlay('coin');                                  // (its clink, half a second in, is the coin going in)
+    const coin = machine.coin, local = machine.group.worldToLocal(machine.slotPoint());
+    coin.visible = true;
+    S.tween(420, k => {
+      coin.position.set(local.x, local.y + 0.12 + 0.8 * (1 - k), local.z + 0.22 * (1 - k));
+      coin.rotation.set(Math.PI / 2, 0, k * Math.PI * 3); coin.scale.setScalar(1.35 - 0.35 * k);
+    }, 'in', tok)
+      .then(() => S.tween(170, k => { coin.position.y = local.y + 0.12 - 0.2 * k; coin.scale.setScalar(1 - 0.4 * k); }, 'in', tok))
+      .then(() => {
+        coin.visible = false;
+        if (tok !== G.tok) return;
+        const q = S.project(machine.slotPoint()); FX.sparkle(q.x, q.y, 8, 3);
+      });
+  }
+  /* a go that didn't bring up the target friend: coins off (after a beat, so it lands with the "oh no") */
+  function loseCoins(tok, delay = 0) {
+    setTimeout(() => { if (tok === G.tok && addScore(-COINS.miss)) A.sfxPlay('lose'); }, delay);
+  }
   function countScore(a, b) {
     const el = $('#score'), box = el.parentElement;
     box.classList.remove('bump'); void box.offsetWidth; box.classList.add('bump');
