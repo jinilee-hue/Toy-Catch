@@ -283,13 +283,70 @@
      perspective tilt (CSS .tilt) narrows both toward the top (user: "start 텍스트도 각도는 맞춰야지"). Coordinates are
      the mockup's pixels in that crop (1 mu = 15.36 px). One still white outline round the whole word, and the letters'
      weight waving inside it, one letter after another (below). */
-  function buildStart() {
+  /* The whole word (its white outline and the outline's side included) sits INSIDE the slab's top face, centred, with a
+     margin (user: "start 글씨가 밑에 파란색 판 보다 작게 넣어줘. 영역 벗어나지 않게"): it's drawn in its own units as
+     before (so it looks the same) and placed scaled by WS round the face's middle.
+     Clean edges (user: "start 글씨 테두리에 어두운색 라인이 깨져보이는거 같은데..좀더 부드럽게 안돼?") — the dark line had three
+     causes: the face's inner shadows painted their black mask (the outside of the letter) onto the face's anti-aliased
+     rim (the mask is in the face's own colours now); the side was 57 stacked anti-aliased
+     copies, a bit wider than the face, whose edges piled up into a hard rim of the dark side colour (now one sweep of
+     the shape downward: a running max per column, sweepDown), laid under the face coverage-correct (overMax: no dark
+     seam where face and side share an edge); and the canvases were drawn at 2.2 px per mockup px and shrunk ~3x
+     through the CSS tilt, which samples without mipmaps, so thin edges broke into dashes (fitStart draws them at the
+     size they show, ~1.3 canvas px per screen px, and again when that size changes). */
+  let startGen = 0, startK = 0;
+  function fitStart(mu) {
+    if (!(mu > 0)) return;
+    const K = Math.min(3, Math.max(1, 1.3 * (39.7 * mu / 610) * (window.devicePixelRatio || 1)));
+    if (startK && Math.abs(K - startK) / startK < 0.2) return;
+    buildStart(K);
+  }
+  /* a shape (alpha 0..1, w × h) pushed down by d0..d1 px, as ONE shape: per column, the max over that window (a deque)
+     — stacked copies would add up their anti-aliased edges into a hard rim. dist: how far below the nearest solid
+     pixel of the shape each pixel is (the side's shading) */
+  function sweepDown(al, w, h, d0, d1) {
+    const cov = new Float32Array(w * h), dist = new Float32Array(w * h), q = new Int32Array(h);
+    for (let x = 0; x < w; x++) {
+      let qh = 0, qt = 0, last = -1e9, any = -1e9;
+      for (let y = 0; y < h; y++) {
+        const r = y - d0;
+        if (r >= 0) {
+          const v = al[r * w + x];
+          while (qt > qh && al[q[qt - 1] * w + x] <= v) qt--;
+          q[qt++] = r;
+          if (v >= 0.5) last = r;
+          if (v > 0.02) any = r;
+        }
+        while (qt > qh && q[qh] < y - d1) qh++;
+        const i = y * w + x;
+        cov[i] = qt > qh ? al[q[qh] * w + x] : 0;
+        dist[i] = y - (last >= y - d1 ? last : any >= y - d1 ? any : y);
+      }
+    }
+    return { cov, dist };
+  }
+  const alphaOf = (c) => {
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, a = new Float32Array(c.width * c.height);
+    for (let i = 0; i < a.length; i++) a[i] = d[i * 4 + 3] / 255;
+    return a;
+  };
+  /* a front layer (RGBA bytes, straight alpha) over a back one given as coverage + colour per pixel, coverage-correct:
+     alpha = max of the two, the front's colour where it covers — plain "over" mixed the back colour into the front's
+     anti-aliased edge where both share it (a dark seam) */
+  function overMax(front, backA, backRGB, out) {
+    for (let i = 0, n = backA.length; i < n; i++) {
+      const af = front[i * 4 + 3] / 255, ab = backA[i], a = Math.max(af, ab);
+      if (a <= 0.002) { out[i * 4 + 3] = 0; continue; }
+      const wb = Math.max(0, ab - af);
+      for (let k = 0; k < 3; k++) out[i * 4 + k] = (front[i * 4 + k] * af + backRGB(i, k) * wb) / a;
+      out[i * 4 + 3] = a * 255;
+    }
+  }
+  function buildStart(K = 2.2) {
+    const gen = ++startGen; startK = K;
     const btn = $('#start');
     const BOX = [20, 6, 610, 216];                       // the button's box in crop px: x, y, w, h
-    const K = 2.2;                                       // canvas pixels per crop px (sharp on big Retina screens)
     const FS = 161, SX = 1.2, TRACK = -1, BASE = 118;    // font size, widening (the mockup font is wider), baseline
-    // (FS 161: the word nearly as wide as the slab, standing well above its back edge like the mockup's — user:
-    //  "start 텍스트가 파란색 판보다 크잖아")
     const B = 7;                                         // extra weight: every layer gets a B-wide stroke (heavier than Baloo 800)
     const E = 28, O = 8, OS = 7;                         // letter side depth, white outline, the outline's own side
     const LET = [                                        // letter, face top, face bottom, side top, side bottom
@@ -300,15 +357,16 @@
       ['T', '#68cfe5', '#52c1df', '#57b9e1', '#2378b4'],
     ];
     const font = `800 ${FS}px 'Baloo 2', 'Arial Rounded MT Bold', sans-serif`;
-    const g0 = document.createElement('canvas').getContext('2d'); g0.font = font;
-    const adv = LET.map(([ch]) => g0.measureText(ch).width * SX);
+    const g0 = document.createElement('canvas').getContext('2d'); g0.font = font; g0.textAlign = 'center';
+    const ms = LET.map(([ch]) => g0.measureText(ch));
+    const adv = ms.map(m => m.width * SX);
     let x = 327 - (adv.reduce((a, b) => a + b, 0) + TRACK * (LET.length - 1)) / 2;
     const hex = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
     const mix = (a, b, k) => 'rgb(' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * k)).join(',') + ')';
     const place = (cv, x0, y0, w, h) => Object.assign(cv.style, {
       left: (x0 - BOX[0]) / BOX[2] * 100 + '%', top: (y0 - BOX[1]) / BOX[3] * 100 + '%',
       width: w / BOX[2] * 100 + '%', height: h / BOX[3] * 100 + '%' });
-    const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = Math.ceil(w * K); c.height = Math.ceil(h * K); const g = c.getContext('2d'); g.scale(K, K); return [c, g]; };
+    const canvas = (w, h, k = K) => { const c = document.createElement('canvas'); c.width = Math.ceil(w * k); c.height = Math.ceil(h * k); const g = c.getContext('2d'); g.scale(k, k); return [c, g]; };
     const rr = (g, x0, y0, w, h, r) => { g.beginPath(); g.roundRect(x0, y0, w, h, r); };
     btn.innerHTML = '';
     // the slab. Its front edge is an upright face: drawn flat, outside the tilt. Its top face and the letters lie on the
@@ -325,6 +383,7 @@
       g.fillStyle = gr; rr(g, 27, 130, 599, 82, 28); g.fill(); g.restore();
       c.className = 'plate'; place(c, BOX[0], BOX[1], BOX[2], BOX[3]); btn.appendChild(c);
     }
+    const FACE = [27, 32.5, 626, 165];                   // the slab's top face (before the tilt)
     {
       const [c, g] = canvas(BOX[2], BOX[3]);
       g.translate(-BOX[0], -BOX[1]);
@@ -336,11 +395,23 @@
     btn.appendChild(tilt);
     const DMAX = 7;                                      // the wave: up to DMAX px bolder than the resting weight
     const pos = []; { let xx = x; LET.forEach((_, i) => { pos.push(xx + adv[i] / 2); xx += adv[i] + TRACK; }); }
+    // the word's box in its own units — the letters' ink, the outline round it (R) and the sides under it — fitted
+    // into the top face with a margin
+    const R = O + (B + DMAX) / 2;
+    const wx0 = Math.min(...pos.map((p, i) => p - ms[i].actualBoundingBoxLeft * SX)) - R;
+    const wx1 = Math.max(...pos.map((p, i) => p + ms[i].actualBoundingBoxRight * SX)) + R;
+    const wy0 = BASE - Math.max(...ms.map(m => m.actualBoundingBoxAscent)) - R;
+    const wy1 = BASE + Math.max(0, ...ms.map(m => m.actualBoundingBoxDescent)) + R + E + OS;
+    const MX = 22, MY = 12;
+    const WS = Math.min((FACE[2] - FACE[0] - 2 * MX) / (wx1 - wx0), (FACE[3] - FACE[1] - 2 * MY) / (wy1 - wy0));
+    const acx = (FACE[0] + FACE[2]) / 2, acy = (FACE[1] + FACE[3]) / 2, wcx = (wx0 + wx1) / 2, wcy = (wy0 + wy1) / 2;
+    const KW = K * WS;                                   // canvas px per word unit
+    const placeW = (cv, x0, y0, w, h) => place(cv, acx + (x0 - wcx) * WS, acy + (y0 - wcy) * WS, w * WS, h * WS);
     /* the white outline: ONE shape round the whole word (user: "흰색 라인은 같이 하나로 묶여있고"; per-letter outlines met
        in V-notches and looked "조각조각") — every letter stroked thick into one mask, blurred and cut at half (a gooey
-       merge: the notches between letters fill with round fillets, like a sticker's outline); then its lavender side
-       and the white extruded under it like the letters. Drawn once: it stays still while the letters' weight waves. */
-    const OB = [BOX[0], -40, BOX[2], 262];               // the outline's box (the letters stand above the button's)
+       merge: the notches between letters fill with round fillets, like a sticker's outline); then the white swept down
+       E under it and its lavender side below that, like the letters. Drawn once: it stays still while the letters'
+       weight waves. */
     const gooey = (c, r, slope) => {
       const g = c.getContext('2d'), w = c.width, h = c.height, img = g.getImageData(0, 0, w, h), d = img.data;
       const a = new Float32Array(w * h), b = new Float32Array(w * h), n = 2 * r + 1;
@@ -356,19 +427,56 @@
       g.putImageData(img, 0, 0);
     };
     {
-      const [mc, mg] = canvas(OB[2], OB[3]);
+      const OB = [wx0 - 8, wy0 - 8, wx1 - wx0 + 16, wy1 - wy0 + 16];   // the outline's box (word units)
+      const [mc, mg] = canvas(OB[2], OB[3], KW);
       mg.translate(-OB[0], -OB[1]);
       mg.font = font; mg.textAlign = 'center'; mg.textBaseline = 'alphabetic'; mg.lineJoin = 'round';
       mg.fillStyle = mg.strokeStyle = '#fff'; mg.lineWidth = O * 2 + B + DMAX;
       LET.forEach(([ch], i) => { mg.save(); mg.translate(pos[i], 0); mg.scale(SX, 1); mg.fillText(ch, 0, BASE); mg.strokeText(ch, 0, BASE); mg.restore(); });
-      gooey(mc, Math.round(4.5 * K), 8);
-      const tint = (col) => { const [c, g] = canvas(OB[2], OB[3]); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(mc, 0, 0);
-        g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height); return c; };
-      const wh = tint('#fbf4f6'), lv = tint('#a9a1c2');
-      const [oc, og] = canvas(OB[2], OB[3]); og.setTransform(1, 0, 0, 1, 0, 0);
-      for (let dy = E + OS; dy >= E; dy -= 0.5) og.drawImage(lv, 0, dy * K);
-      for (let dy = E; dy >= 0; dy -= 0.5) og.drawImage(wh, 0, dy * K);
-      oc.className = 'outline'; place(oc, OB[0], OB[1], OB[2], OB[3]); tilt.appendChild(oc);
+      gooey(mc, Math.max(1, Math.round(4.5 * KW)), 8);
+      const W = mc.width, H = mc.height;
+      // slits and pockets between letters (under a T's arm, R–T) are closed: specks and a thin crack of the blue showed
+      // through there — a closing (max then min over a small square: only gaps narrower than it fill) and then a flood
+      // from the edges through everything not solid (whatever it can't reach is inside)
+      const morph = (src, r, dil) => {
+        const t = new Float32Array(W * H), o = new Float32Array(W * H);
+        for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+          let v = src[y * W + xx];
+          for (let k = Math.max(0, xx - r); k <= Math.min(W - 1, xx + r); k++) { const u = src[y * W + k]; if (dil ? u > v : u < v) v = u; }
+          t[y * W + xx] = v;
+        }
+        for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+          let v = t[y * W + xx];
+          for (let k = Math.max(0, y - r); k <= Math.min(H - 1, y + r); k++) { const u = t[k * W + xx]; if (dil ? u > v : u < v) v = u; }
+          o[y * W + xx] = v;
+        }
+        return o;
+      };
+      const rc = Math.max(1, Math.round(3 * KW));
+      const al = morph(morph(alphaOf(mc), rc, true), rc, false);
+      {
+        const seen = new Uint8Array(W * H), st = [];
+        for (let xx = 0; xx < W; xx++) st.push(xx, (H - 1) * W + xx);
+        for (let yy = 0; yy < H; yy++) st.push(yy * W, yy * W + W - 1);
+        while (st.length) {
+          const k = st.pop();
+          if (seen[k] || al[k] >= 0.98) continue;
+          seen[k] = 1;
+          const xx = k % W;
+          if (xx > 0) st.push(k - 1); if (xx < W - 1) st.push(k + 1); if (k >= W) st.push(k - W); if (k < W * (H - 1)) st.push(k + W);
+        }
+        for (let k = 0; k < W * H; k++) if (!seen[k]) al[k] = 1;
+      }
+      const white = sweepDown(al, W, H, 0, Math.round(E * KW)).cov;
+      const lav = sweepDown(al, W, H, Math.round(E * KW), Math.round((E + OS) * KW)).cov;
+      const WH = hex('#fbf4f6'), LV = hex('#a9a1c2');
+      const [oc, og] = canvas(OB[2], OB[3], KW);
+      const img = og.createImageData(W, H), wd = new Uint8ClampedArray(W * H * 4);
+      for (let i = 0; i < W * H; i++) { wd[i * 4] = WH[0]; wd[i * 4 + 1] = WH[1]; wd[i * 4 + 2] = WH[2]; wd[i * 4 + 3] = white[i] * 255; }
+      overMax(wd, lav, (i, k) => LV[k], img.data);
+      og.putImageData(img, 0, 0);
+      mc.width = 0;
+      oc.className = 'outline'; placeW(oc, OB[0], OB[1], OB[2], OB[3]); tilt.appendChild(oc);
     }
     /* the letters, each in its own canvas. The wave (user: "글자의 두께가 물결처럼 작아졌다 커졌다 순차적으로 계속
        롤링"): each letter gets bolder and back, one after another, round and round, inside the still outline. Every
@@ -378,32 +486,37 @@
     const hw = (i) => adv[i] / 2 + O + B + DMAX + 10, top = BASE - FS * 0.86, lh = FS * 0.86 + E + B + DMAX + 12;
     const drawLetter = (i, extra) => {
       const [ch, f0, f1, s0, s1] = LET[i], half = hw(i), BW = B + extra;
-      const [c, g] = canvas(half * 2, lh);
-      g.translate(half, -top); g.scale(SX, 1);
-      g.font = font; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round';
-      const layer = (col, dy, lw) => { g.fillStyle = col; g.fillText(ch, 0, BASE + dy); g.strokeStyle = col; g.lineWidth = lw + BW; g.strokeText(ch, 0, BASE + dy); };
-      for (let dy = E; dy >= 0.5; dy -= 0.5) layer(mix(s0, s1, Math.min(1, dy / (E * 0.35))), dy, 1.2);   // the letter's side
-      // the face, puffed: its own canvas, then a soft dark rim along the bottom edge and a light one along the top-left
-      // (inner shadows: the shadow of everything OUTSIDE the letter, drawn only onto the letter)
-      const [fc, fg] = canvas(half * 2, lh), [ic, ig] = canvas(half * 2, lh);
-      for (const q of [fg, ig]) { q.setTransform(g.getTransform()); q.font = font; q.textAlign = 'center'; q.textBaseline = 'alphabetic'; q.lineJoin = 'round'; q.lineWidth = BW; }
-      const gr = fg.createLinearGradient(0, BASE - FS * 0.64, 0, BASE);
-      gr.addColorStop(0, mix(f0, '#ffffff', 0.08)); gr.addColorStop(0.35, f0); gr.addColorStop(1, f1);
-      fg.fillStyle = gr; fg.strokeStyle = gr; fg.fillText(ch, 0, BASE); fg.strokeText(ch, 0, BASE);
-      ig.save(); ig.setTransform(1, 0, 0, 1, 0, 0); ig.fillStyle = '#000'; ig.fillRect(0, 0, ic.width, ic.height); ig.restore();
+      const [c, g] = canvas(half * 2, lh, KW), [fc, fg] = canvas(half * 2, lh, KW), [ic, ig] = canvas(half * 2, lh, KW);
+      const W = c.width, H = c.height;
+      for (const q of [g, fg, ig]) { q.translate(half, -top); q.scale(SX, 1); q.font = font; q.textAlign = 'center'; q.textBaseline = 'alphabetic'; q.lineJoin = 'round'; q.lineWidth = BW; }
+      // the side: the letter's shape swept down E, shaded from the side's top colour to its bottom colour by depth
+      g.fillStyle = g.strokeStyle = '#fff'; g.fillText(ch, 0, BASE); g.strokeText(ch, 0, BASE);
+      const sw = sweepDown(alphaOf(c), W, H, Math.max(1, Math.round(0.5 * KW)), Math.round(E * KW));
+      const S0 = hex(s0), S1 = hex(s1), kd = 1 / (E * 0.35 * KW);
+      const sideRGB = (j, k) => { const t = Math.min(1, sw.dist[j] * kd); return S0[k] + (S1[k] - S0[k]) * t; };
+      // the face, puffed: its gradient, then a soft dark rim along the bottom edge and a light one along the top-left
+      // (inner shadows: the shadow of everything OUTSIDE the letter, drawn only onto the letter). That outside is painted
+      // in the face's own colours: its edge is drawn over the face's anti-aliased rim too, and in black it darkened the
+      // rim into a thin dark broken line
+      const STOPS = [[0, mix(f0, '#ffffff', 0.08)], [0.35, f0], [1, f1]];
+      const grad = (q, y0, y1) => { const gr = q.createLinearGradient(0, y0, 0, y1); STOPS.forEach(([o, col]) => gr.addColorStop(o, col)); return gr; };
+      fg.fillStyle = fg.strokeStyle = grad(fg, BASE - FS * 0.64, BASE); fg.fillText(ch, 0, BASE); fg.strokeText(ch, 0, BASE);
+      ig.save(); ig.setTransform(1, 0, 0, 1, 0, 0); ig.fillStyle = grad(ig, KW * (BASE - FS * 0.64 - top), KW * (BASE - top)); ig.fillRect(0, 0, W, H); ig.restore();
       ig.globalCompositeOperation = 'destination-out'; ig.fillText(ch, 0, BASE); ig.strokeText(ch, 0, BASE);
       fg.setTransform(1, 0, 0, 1, 0, 0); fg.globalCompositeOperation = 'source-atop';
-      // (soft and wide: a tight dark rim read as a seam between the face and the side)
-      fg.shadowColor = mix(s1, '#000000', 0.1).replace('rgb', 'rgba').replace(')', ',.26)'); fg.shadowBlur = 9 * K; fg.shadowOffsetY = -5 * K;
+      fg.shadowColor = mix(s1, '#000000', 0.1).replace('rgb', 'rgba').replace(')', ',.26)'); fg.shadowBlur = 9 * KW; fg.shadowOffsetY = -5 * KW;
       fg.drawImage(ic, 0, 0);
-      fg.shadowColor = 'rgba(255,255,255,.42)'; fg.shadowBlur = 2.5 * K; fg.shadowOffsetX = 1.2 * K; fg.shadowOffsetY = 2.6 * K;
+      fg.shadowColor = 'rgba(255,255,255,.42)'; fg.shadowBlur = 2.5 * KW; fg.shadowOffsetX = 1.2 * KW; fg.shadowOffsetY = 2.6 * KW;
       fg.drawImage(ic, 0, 0);
-      g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(fc, 0, 0); g.restore();
+      const img = g.createImageData(W, H);
+      overMax(fg.getImageData(0, 0, W, H).data, sw.cov, sideRGB, img.data);
+      g.putImageData(img, 0, 0);
+      fc.width = ic.width = 0;
       return c;
     };
     const vis = LET.map((_, i) => {
-      const [c] = canvas(hw(i) * 2, lh); c.className = 'L';
-      place(c, pos[i] - hw(i), top, hw(i) * 2, lh); tilt.appendChild(c);
+      const [c] = canvas(hw(i) * 2, lh, KW); c.className = 'L';
+      placeW(c, pos[i] - hw(i), top, hw(i) * 2, lh); tilt.appendChild(c);
       return c;
     });
     const show = (i, k) => { const c = vis[i], g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.drawImage(FR[i][k], 0, 0); };
@@ -412,12 +525,14 @@
     let waveOn = false;
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches, cur = LET.map(() => 0);
     const more = () => {
+      if (gen !== startGen) return;                      // (rebuilt at another size meanwhile)
       const t0 = performance.now();
       while (todo.length && performance.now() - t0 < 8) { const [i, k] = todo.shift(); FR[i][k] = drawLetter(i, DMAX * k / (NW - 1)); }
       if (todo.length) setTimeout(more, 16); else waveOn = true;
     };
     setTimeout(more, 300);
     const wave = (now) => {
+      if (gen !== startGen) return;
       requestAnimationFrame(wave);
       if (!waveOn || still || app.dataset.screen !== 'title') return;
       const t = now / 1000;
@@ -429,7 +544,7 @@
       });
     };
     requestAnimationFrame(wave);
-    G.startWave = { ready: () => waveOn, frames: () => cur.slice() };   // (QA)
+    G.startWave = { ready: () => waveOn, frames: () => cur.slice(), K, WS };   // (QA)
   }
 
   /* the prize's sun-burst: turning rays behind the friend — in 3D, so the friend stays in front of it */
@@ -517,6 +632,7 @@
     const mw = R.x - L.x, mu = mw / 125.07;
     const st = app.style;
     st.setProperty('--mx', C.x + 'px'); st.setProperty('--mt', C.y + 'px'); st.setProperty('--mu', mu + 'px');
+    fitStart(mu);                                       // (the START canvases at the size they show)
     const d = S.project(M.dropPoint()), j = S.project(M.joyPoint());
     st.setProperty('--dropX', d.x + 'px'); st.setProperty('--dropY', Math.min(h - 10 * mu, d.y) + 'px');
     st.setProperty('--joyX', j.x + 'px'); st.setProperty('--joyY', j.y + 'px');
