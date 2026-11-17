@@ -92,7 +92,10 @@
       c.geo.setAttribute('rsk', new T.BufferAttribute(sk, 2));
     }
     const B = d.bones.slice(0, NB).map((b, i) => {
-      const t = TYPES[b.t] || TYPES.arm;
+      let t = TYPES[b.t] || TYPES.arm;
+      // an arm / wing / fin lying on the body (not cut loose: a paw on the chest, a fin on the flank) moves less — it
+      // bends the fabric round it instead of swinging free
+      if (b.c === 0 && (b.t === 'arm' || b.t === 'wing' || b.t === 'fin')) t = Object.assign({}, t, { f: t.f * 1.3, gain: t.gain * 0.5, droop: t.droop * 0.3, max: t.max * 0.6 });
       const o = new T.Vector3(b.o[0], b.o[1], b.o[2]), dir = new T.Vector3(b.d[0], b.d[1], b.d[2]).normalize();
       const L = Math.max(0.04, b.l || 0.1);
       // (longer limbs swing slower; big ears flop more slowly)
