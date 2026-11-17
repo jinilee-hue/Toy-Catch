@@ -53,6 +53,7 @@
     fan: { f: 3, z: 0.3, max: 0.3, droop: 0.05, lin: 0.4, rot: 1.5, gain: 0.5 },
     lips: { f: 5, z: 0.4, max: 0.2, droop: 0, lin: 0.2, rot: 0.5, gain: 0.3 },
   };
+  const IDLE = { ear: 0.05, tail: 0.09, arm: 0.035, wing: 0.04, antenna: 0.06, fan: 0.02, fin: 0.05, hat: 0.012 };   // rad
   const H_GAIN = 0.5;                                    // sideways / fore-aft pushes count half (carrying it about);
                                                          // up-down ones (hops, landings, the lift) in full
 
@@ -116,7 +117,8 @@
         side: Math.abs(b.o[0]) > 0.02 ? Math.sign(b.o[0]) : 0,
         a: new T.Vector3(), av: new T.Vector3(), rot: new T.Vector3(), move: new T.Vector3(), scale: 1,
         q: new T.Quaternion(), ql: new T.Quaternion(), tp: new T.Vector3(), mv: new T.Vector3(), sw: 1,
-        tq: new T.Vector3(), pav: new T.Vector3(), aw: new T.Vector3() };
+        tq: new T.Vector3(), pav: new T.Vector3(), aw: new T.Vector3(), tg: new T.Vector3(),
+        ph: i * 1.7 + (b.o[0] > 0 ? 0.6 : 0) };
     });
     const n = B.length;
     const uq = new Float32Array(NB * 4), uo = new Float32Array(NB * 4), ut = new Float32Array(NB * 4), um = new Float32Array(NB * 4);
@@ -183,6 +185,10 @@
         q0.copy(wq); om0.copy(om);
         gM.set(0, -G, 0).applyQuaternion(wqi);
         const hk = P.st ? P.st.hk : 0, sit = 1 - hk;
+        // sitting still, the limbs keep moving a little behind the body's slow sway (a soft toy's floppy bits): a slow
+        // wobble in the picture's plane, a bit out of step per limb — gone while it's selected, held or posing
+        st.t = (st.t || 0) + dt;
+        const idle = sit * (1 - (P.st ? Math.min(1, P.st.ek + P.st.ck) : 0)) * (P.poser && P.poser.busy ? 0.3 : 1);
         const nsub = Math.max(1, Math.ceil(dt * 120)), h = dt / nsub;
         for (const b of B) {
           if (!b.i) continue;
@@ -205,6 +211,8 @@
           if (par.i) b.tq.applyQuaternion(qpi.copy(par.q).invert());
           // a parent's swing jolts its children (ears on the head, antennae on the hat)
           if (par.i) b.tq.addScaledVector(par.aw, -0.7);
+          const ia = (IDLE[b.type] || 0) * (t === TYPES[b.type] ? 1 : 0.5);
+          b.tg.set(0, 0, idle * ia * Math.sin(st.t * 1.05 + P.phase + b.ph));
         }
         const k2 = (b) => b.w0 * b.w0, c2 = (b) => 2 * b.t.z * b.w0;
         for (let s = 0; s < nsub; s++) {
@@ -213,9 +221,9 @@
             const k = k2(b), cc = c2(b);
             const m = b.a.length(), lim = 0.7 * b.t.max;
             const kk = m > lim ? k * (1 + 6 * (m - lim) / (b.t.max - lim)) : k;     // (stuffing: stiffer near the end)
-            b.av.x += h * (b.tq.x - kk * b.a.x - cc * b.av.x);
-            b.av.y += h * (b.tq.y - kk * b.a.y - cc * b.av.y);
-            b.av.z += h * (b.tq.z - kk * b.a.z - cc * b.av.z);
+            b.av.x += h * (b.tq.x - kk * (b.a.x - b.tg.x) - cc * b.av.x);
+            b.av.y += h * (b.tq.y - kk * (b.a.y - b.tg.y) - cc * b.av.y);
+            b.av.z += h * (b.tq.z - kk * (b.a.z - b.tg.z) - cc * b.av.z);
             b.a.addScaledVector(b.av, h);
           }
         }
