@@ -104,6 +104,11 @@
         osc('sine', 1976, 0, t + 0.09, 0.4, 0.08); noise(t + 0.5, 0.06, 0.25, 5200, 2); osc('triangle', 2400, 1800, t + 0.52, 0.08, 0.12);
         break;
       case 'insert': [523, 659, 784, 1047, 1319].forEach((f, i) => osc('square', f, 0, t + i * 0.07, 0.12, 0.07)); break;
+      case 'chink': {                                // a coin landing in the score: a short bright blip, a little higher or lower each time
+        const r = 0.93 + Math.random() * 0.16;
+        osc('sine', 2349 * r, 0, t, 0.12, 0.09); osc('square', 3520 * r, 0, t, 0.025, 0.02);
+        break;
+      }
       case 'grab':                                   // the prongs snap shut: clack + thunk
         noise(t, 0.05, 0.6, 3400, 1.4); osc('square', 180, 90, t, 0.1, 0.22); osc('triangle', 520, 260, t + 0.01, 0.12, 0.2); break;
       case 'open': noise(t, 0.04, 0.4, 2800, 1.4); osc('triangle', 300, 600, t, 0.1, 0.14); break;
