@@ -690,7 +690,7 @@
     }, 'in', tok);
     if (tok !== G.tok) return;
     A.sfxPlay('coin');
-    const p = S.project(slot); FX.sparkle(p.x, p.y, 14, 4); FX.stars(p.x, p.y, 8);
+    const p = S.project(slot); FX.sparkle(p.x, p.y, 14, 4); FX.stars(p.x, p.y, 8, 0.55);   // (a coin-sized pop)
     await S.tween(220, k => { coin.position.y = local.y + 0.12 - 0.2 * k; coin.scale.setScalar(1 - 0.4 * k); }, 'in', tok);
     coin.visible = false;
     machine.setScreen(['INSERTED!', 'READY TO PLAY!'], '#ffd23f');
@@ -935,7 +935,7 @@
     wordEl.innerHTML = `<b>${p.word[0]}</b>${p.word.slice(1)}`;
     box.classList.add('show');
     const sp = S.project(p.root.position.clone().add(V(0, 1, 0)));
-    FX.stars(sp.x, sp.y, 12);
+    FX.stars(sp.x, sp.y, 12, 1, 0.16); FX.rain(70);    // stars from round the friend (not on its face), candy dots raining
     const b = wordEl.querySelector('b');
     const bump = () => { b.classList.remove('say'); void b.offsetWidth; b.classList.add('say'); };
     bump(); await A.say(`s:${p.sound}`); await A.sleep(120);
