@@ -20,6 +20,7 @@ MODEL = pathlib.Path.home() / 'dev' / 'tools' / 'realesrgan' / 'RealESRGAN_x4plu
 # the front view's box (x0, y0, x1, y1) on the 1024 x 765 sheet
 BOX = {'duck': (70, 46, 288, 370)}
 MARGIN = 10
+GAP_MIN = 300                                    # (px, upscaled: a white gap inside the figure bigger than an eye shine)
 
 
 def upscale(im):
@@ -43,6 +44,19 @@ def cut(a):
     lab2, n2 = ndi.label(fg)
     fg = lab2 == 1 + int(np.argmax(ndi.sum(fg, lab2, range(1, n2 + 1))))   # the figure, not stray bits
     fg = ndi.binary_opening(fg, iterations=2)
+    # white gaps the figure closes round (between a wing tip, the body and a foot): the sheet's background seen through
+    # them, kept white by the hole fill, showed as white specks by the feet — painted with the colours round them, a
+    # little darker (a crevice). Small white bits (the eyes' shine) stay.
+    lab3, n3 = ndi.label(white & fg)
+    if n3:
+        sizes = ndi.sum(white & fg, lab3, range(1, n3 + 1))
+        gap = ndi.binary_dilation(np.isin(lab3, 1 + np.nonzero(sizes >= GAP_MIN)[0]), iterations=4) & fg
+        if gap.any():
+            good = fg & ~gap & (mn < 225)
+            _, (iy, ix) = ndi.distance_transform_edt(~good, return_indices=True)
+            a[gap] = a[iy[gap], ix[gap]] * 0.8
+            soft = ndi.gaussian_filter(a, sigma=(2.5, 2.5, 0))
+            a[gap] = soft[gap]
     sd = ndi.distance_transform_edt(fg) - ndi.distance_transform_edt(~fg)
     alpha = np.clip((sd + 1.25) / 2.5, 0, 1)
     inner = sd >= 2.5

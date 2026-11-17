@@ -94,8 +94,11 @@ SHEET_DROP = {'turkey': [('back', (0.0, 0.0, 1.0, 0.36), 'brown', False),
                         ('side', (0.10, 0.62, 0.21, 0.78), 'light', False)],
               # the shirt's letter seen edge-on from the side: a white stripe that the warp laid along the arm
               'monkey': [('side', (0.18, 0.58, 0.36, 0.84), 'white', False)],
-              # the ant's antenna in front of its hat's crown (side view): it landed on the crown as brown smears
-              'ant': [('side', (0.22, 0.0, 0.62, 0.145), 'antenna', False)]}
+              # the ant's antenna in front of its hat's crown (side view): it landed on the crown as brown smears; the
+              # back view's thin white gaps between the arms and the abdomen: a white streak on top of the abdomen
+              'ant': [('side', (0.22, 0.0, 0.62, 0.145), 'antenna', False),
+                      ('back', (0.17, 0.67, 0.30, 0.81), 'light', False),
+                      ('back', (0.72, 0.67, 0.87, 0.85), 'light', False)]}
 
 
 def load_art():

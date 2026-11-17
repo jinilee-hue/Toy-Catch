@@ -36,6 +36,11 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
   tools/make_3d.py --only dog --sheets design/sheets`(venv에 xatlas·opencv 필요). 시트와 그림이 다른 부분은 make_3d.py의
   SHEET_SKIP/SHEET_DROP으로 뺀다(거북이 머리 크기, 칠면조 꼬리 부채, 쥐 꼬리). 확인: `dev/friends3d.html?ortho`(정면을 그림과
   비교) · `?still` · `?row&weights`(포즈 부위).
+- 1x 모니터에서도 3D 화면을 2배 해상도로 그려(최대 약 950만 픽셀) 친구들·공 외곽선의 계단과 떨림을 없앤다. 시작 3초 뒤 한 번
+  GPU를 재서 한 프레임이 14 ms를 넘으면 원래 배율로 돌아간다(`js/stage.js`, `?pr=1`로 배율 강제). 정면 가까이에서는 그림이
+  외곽선 끝까지 칠해져 외곽을 따라 보이던 1px 시트색 선이 없다(`js/friends.js`).
+- 오리 그림의 발·날개 사이 흰 틈은 주변 색을 조금 어둡게 칠한 틈으로 바꿨고(`tools/sheet_front.py` GAP_MIN), 개미 뒷모습
+  시트의 팔·배 사이 흰 틈은 SHEET_DROP으로 뺐다(배 위 흰 줄 제거).
 - 시그니처 포즈: `js/poses.js` — 친구마다 귀·꼬리·팔·더듬이·지느러미 등 최대 4부위를 그림 비율 좌표로 정의해 셰이더에서
   움직임(그림자도 같이). 집게가 바로 위에 있으면 잔잔한 반복(내려가기 시작하면 멈춤), 상품으로 나올 때 크게 1번, 탭하면 1번,
   대기 중 5~8초마다 랜덤 1명. 확인: `dev/friends3d.html?pose` · `?pose=loop` · `&weights`(부위 색 표시) · `&ang=0,40&zoom=1.6`.
