@@ -1,6 +1,7 @@
 <!doctype html>
 <!-- Toy Catch — dev viewer for the friends' 3D shapes: every friend from the front, 3/4, side and back
-     (?kinds=monkey,ant  ?spin[=speed] to turn them  ?row: one view each, 5 to a row  ?puff / ?flat for the earlier versions) -->
+     (?kinds=monkey,ant  ?spin[=speed] to turn them  ?row: one view each, 5 to a row  ?ortho: straight on, no
+     perspective  ?still: no idle motion  ?puff / ?flat for the earlier versions) -->
 <html><head><meta charset="utf-8"><title>friends 3D</title><link rel="icon" href="data:,">
 <style>html,body{margin:0;height:100%;background:#cfe3f5;overflow:hidden}canvas{display:block}#l{position:fixed;left:8px;top:6px;font:600 13px system-ui;color:#234}</style>
 </head><body><div id="l"></div>
@@ -29,11 +30,15 @@
   const cam = new T.PerspectiveCamera(22, innerWidth / innerHeight, 0.1, 200);
   const span = Math.max(cols * cw / cam.aspect, rows * ch);
   cam.position.set(0, 0.6, span / (2 * Math.tan(11 * Math.PI / 180)) + 1); cam.lookAt(0, 0, 0);
-  window.Stage = { camera: cam };
+  if (qs.has('ortho')) {                    // ?ortho: straight from the front, no perspective (compare with the pictures)
+    const oc = new T.OrthographicCamera(-span * cam.aspect / 2, span * cam.aspect / 2, span / 2, -span / 2, 0.1, 200);
+    oc.position.set(0, 0, 20); oc.lookAt(0, 0, 0); window.Stage = { camera: oc };
+  } else window.Stage = { camera: cam };
+  const view = window.Stage.camera;
   document.getElementById('l').textContent = ROW ? '' : kinds.join(' · ') + ' — front · 3/4 · side · back' + (Object.keys(window.CLAW_FRIENDS_3D || {}).length ? '' : ' (no 3D data)');
   let t = 0, last = performance.now();
-  const spin = qs.has('spin') ? (parseFloat(qs.get('spin')) || 0.8) : 0;
-  const advance = (dt) => { t += dt; for (const [P, a] of all) { P.update(dt, t); if (spin) P.root.rotation.y = a * Math.PI / 180 + t * spin; } r.render(sc, cam); };
+  const spin = qs.has('spin') ? (parseFloat(qs.get('spin')) || 0.8) : 0, still = qs.has('still');   // ?still: no idle motion
+  const advance = (dt) => { t += dt; for (const [P, a] of all) { if (!still) P.update(dt, t); if (spin) P.root.rotation.y = a * Math.PI / 180 + t * spin; } r.render(sc, view); };
   window.__step = advance;                  // (QA: set window.__frozen = true, then step frame by frame)
   (function loop(now) {
     requestAnimationFrame(loop);

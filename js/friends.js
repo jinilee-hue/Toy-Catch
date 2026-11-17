@@ -28,7 +28,7 @@
   const PX = 1.3 / 600;
   const BACK = 0.07;                                    // picture plane behind the root (claw) axis
   const KINDS = Object.keys(ART);
-  const imgs = {}, alpha = {};
+  const imgs = {}, alpha = {}, atlasImgs = {};
   const AW = 64;                                         // alpha grid for taps: 64 px wide
   const tmp = new T.Vector3(), tmpQ = new T.Quaternion(), tmpE = new T.Euler(0, 0, 0, 'YXZ');
   const ease = (cur, to, k) => cur + (to - cur) * k;
@@ -43,25 +43,40 @@
 
   /* the 3D shape of one friend, in the same frame as the picture: x across (head middle at 0), y up from the bottom,
      z toward the camera (the claw's axis at z 0). uv = the picture straight from the front; fw = how much of the
-     picture shows (1 seen from the front, 0 round the back); color = the guessed colours (linear) */
+     picture shows (1 seen from the front, 0 round the back); then either color = the guessed colours (linear) or
+     auv = where the vertex sits in the friend's texture atlas (baked from its character sheet) */
   function geo3d(kind, w, h, u) {
     if (geoCache['3d' + kind]) return geoCache['3d' + kind];
     const d = D3[kind];
     const bin = (b64) => { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; };
-    const q = new Uint16Array(bin(d.pos).buffer), c8 = bin(d.col), fw = bin(d.fw), idx = new Uint16Array(bin(d.idx).buffer);
-    const pos = new Float32Array(d.n * 3), uv = new Float32Array(d.n * 2), col = new Float32Array(d.n * 3);
+    const q = new Uint16Array(bin(d.pos).buffer), fw = bin(d.fw), idx = new Uint16Array(bin(d.idx).buffer);
+    const c8 = d.col ? bin(d.col) : null, t16 = d.uv ? new Uint16Array(bin(d.uv).buffer) : null;
+    const pos = new Float32Array(d.n * 3), uv = new Float32Array(d.n * 2), col = c8 ? new Float32Array(d.n * 3) : null;
     for (let i = 0; i < d.n; i++) {
       for (let k = 0; k < 3; k++) pos[i * 3 + k] = d.lo[k] + q[i * 3 + k] / 65535 * (d.hi[k] - d.lo[k]);
       uv[i * 2] = pos[i * 3] / w + u; uv[i * 2 + 1] = pos[i * 3 + 1] / h;
-      for (let k = 0; k < 3; k++) col[i * 3 + k] = srgb(c8[i * 3 + k] / 255);
+      if (c8) for (let k = 0; k < 3; k++) col[i * 3 + k] = srgb(c8[i * 3 + k] / 255);
     }
     const geo = new T.BufferGeometry();
     geo.setAttribute('position', new T.BufferAttribute(pos, 3));
     geo.setAttribute('uv', new T.BufferAttribute(uv, 2));
-    geo.setAttribute('color', new T.BufferAttribute(col, 3));
+    if (col) geo.setAttribute('color', new T.BufferAttribute(col, 3));
+    if (t16) geo.setAttribute('auv', new T.BufferAttribute(t16, 2, true));
     geo.setAttribute('fw', new T.BufferAttribute(fw, 1, true));
     geo.setIndex(new T.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
+    if (t16) {
+      // the atlas splits vertices along its seams: copies at one spot share one normal, else the shade shows the seams
+      const nr = geo.attributes.normal.array, sum = new Map();
+      for (let i = 0; i < d.n; i++) {
+        const key = q[i * 3] + ',' + q[i * 3 + 1] + ',' + q[i * 3 + 2], s = sum.get(key);
+        if (s) { s[0] += nr[i * 3]; s[1] += nr[i * 3 + 1]; s[2] += nr[i * 3 + 2]; } else sum.set(key, [nr[i * 3], nr[i * 3 + 1], nr[i * 3 + 2]]);
+      }
+      for (let i = 0; i < d.n; i++) {
+        const s = sum.get(q[i * 3] + ',' + q[i * 3 + 1] + ',' + q[i * 3 + 2]), l = Math.hypot(s[0], s[1], s[2]) || 1;
+        nr[i * 3] = s[0] / l; nr[i * 3 + 1] = s[1] / l; nr[i * 3 + 2] = s[2] / l;
+      }
+    }
     geo.computeBoundingSphere();
     return (geoCache['3d' + kind] = geo);
   }
@@ -91,19 +106,48 @@
     return vs.replace('void main() {', DEFORM + '\nvoid main() {')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed = plushDeform(transformed);');
   }
-  /* the 3D friend's colour: the picture where it's seen from the front, the guessed colours behind; then the same soft
-     shade as the puffed pictures (darker only where it turns away from the camera and underneath — the art's painted
-     light stays the light) and the claw's spotlight */
+  /* the 3D friend's colour: the picture where it's seen from the front, the guessed colours (or the atlas baked from its
+     character sheet: CLAW_ATLAS) behind; then the same soft shade as the puffed pictures (darker only where it turns
+     away from the camera and underneath — the art's painted light stays the light) and the claw's spotlight.
+     With an atlas, fw only says "seen from the front"; how much of the picture shows also depends on the view: seen
+     (nearly) straight on, every surface the picture covers shows it — so from the front the friend is exactly its
+     picture, steep sides and outline too; turned further (the prize spin), only the surfaces facing the front keep it
+     (it would smear on the steep sides) and the atlas — the sheet's sides and back — shows round them */
   function plush3dShader(sh) {
     Object.assign(sh.uniforms, this.userData.u);
     sh.uniforms.uLit = this.userData.uLit;
+    if (this.userData.uAtlas) sh.uniforms.uAtlas = this.userData.uAtlas;
     sh.vertexShader = deformVS(sh.vertexShader)
-      .replace('void main() {', 'attribute float fw;\nvarying float vFw;\nvarying vec3 vPuffN;\nvoid main() {\n  vFw = fw;\n  vPuffN = normalize(normalMatrix * normal);');
+      .replace('void main() {', `attribute float fw;
+varying float vFw;
+varying vec3 vPuffN;
+#ifdef CLAW_ATLAS
+attribute vec2 auv;
+varying vec2 vAuv;
+varying float vNz, vTurn;
+#endif
+void main() {
+  vFw = fw;
+  vPuffN = normalize(normalMatrix * normal);
+#ifdef CLAW_ATLAS
+  vAuv = auv;
+  vNz = normal.z;
+  vec3 vo = normalize(transpose(mat3(modelMatrix)) * (cameraPosition - (modelMatrix * vec4(position, 1.0)).xyz));
+  vTurn = smoothstep(0.95, 0.8, vo.z);                       // 0 seen straight on, 1 turned by ~37 deg or more
+#endif`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('void main() {', 'varying float vFw;\nvarying vec3 vPuffN;\nuniform float uLit;\nvoid main() {')
+      .replace('void main() {', 'varying float vFw;\nvarying vec3 vPuffN;\nuniform float uLit;\n#ifdef CLAW_ATLAS\nuniform sampler2D uAtlas;\nvarying vec2 vAuv;\nvarying float vNz, vTurn;\n#endif\nvoid main() {')
       .replace('#include <map_fragment>', `
       vec4 texel = texture2D(map, vMapUv);
-      diffuseColor.rgb = mix(vColor.rgb, texel.rgb, vFw * smoothstep(0.3, 0.7, texel.a));   // (vColor is a vec4 in this three)`)
+      #ifdef CLAW_ATLAS
+        vec3 behind = texture2D(uAtlas, vAuv).rgb;
+        vec2 th = mix(vec2(-0.08, 0.1), vec2(0.42, 0.62), vTurn);
+        float pw = vFw * smoothstep(th.x, th.y, vNz);
+      #else
+        vec3 behind = vColor.rgb;                                       // (vColor is a vec4 in this three)
+        float pw = vFw;
+      #endif
+      diffuseColor.rgb = mix(behind, texel.rgb, pw * smoothstep(0.3, 0.7, texel.a));`)
       .replace('#include <color_fragment>', `
       {
         vec3 n = normalize(vPuffN);
@@ -189,7 +233,14 @@
   }
 
   function load() {
-    return Promise.all(KINDS.map(k => new Promise((res) => {
+    // the atlases baked from the character sheets (webp data URLs, like the pictures)
+    const atl = KINDS.filter(k => D3[k] && D3[k].tex && !FLAT && !PUFFED).map(k => new Promise((res) => {
+      const im = new Image();
+      im.onload = () => { atlasImgs[k] = im; res(); };
+      im.onerror = () => { console.warn('friend atlas failed:', k); res(); };
+      im.src = D3[k].tex;
+    }));
+    return Promise.all(atl.concat(KINDS.map(k => new Promise((res) => {
       const im = new Image();
       im.onload = () => {
         imgs[k] = im;
@@ -203,7 +254,7 @@
       };
       im.onerror = () => { console.warn('friend picture failed:', k); res(); };
       im.src = ART[k].src;
-    })));
+    }))));
   }
 
   let blobTex = null;
@@ -235,8 +286,14 @@
     const U = { uSq: { value: 1 }, uH: { value: h }, uPiv: { value: h * 0.22 }, uGy: { value: (1 - v) * h }, uGrip: { value: 0 }, uHang: { value: 0 }, uR: { value: 0 }, uBend: { value: new T.Vector2() } };
     if (is3d) {
       geo = geo3d(kind, w, h, u);
-      mat = new T.MeshBasicMaterial({ map: tex, vertexColors: true, toneMapped: false });
+      const atl = geo.attributes.auv && atlasImgs[kind];
+      mat = new T.MeshBasicMaterial({ map: tex, vertexColors: !atl, toneMapped: false });
       mat.userData.u = U; mat.onBeforeCompile = plush3dShader;
+      if (atl) {
+        const at = new T.Texture(atlasImgs[kind]);
+        at.colorSpace = T.SRGBColorSpace; at.anisotropy = 8; at.needsUpdate = true;
+        mat.userData.uAtlas = { value: at }; mat.defines = { CLAW_ATLAS: '' };
+      }
       depth = new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking });
       depth.onBeforeCompile = (sh) => { Object.assign(sh.uniforms, U); sh.vertexShader = deformVS(sh.vertexShader); };
     } else {
