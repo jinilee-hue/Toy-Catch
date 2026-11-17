@@ -344,6 +344,7 @@ void main() {
       /* where the claw holds it this time (height and the prongs' radius, scale 1): the soft squeeze and the hanging */
       P.setGrip3d = (y, r) => { U.uGy.value = y; U.uR.value = r; };
     }
+    if (window.Poses) Poses.attach(P, is3d ? { geo, mat, depth, U, w, h, u } : null);   // signature pose (js/poses.js)
     /* a squash (k > 0) or stretch (k < 0) kick — landing, being grabbed */
     P.bump = (k) => { P.st.sqv -= k * 3.5; };
     P.tilt = 0;
@@ -386,6 +387,7 @@ void main() {
         const sway = amp * (Math.sin(t * 0.8 + ph) * sit + Math.sin(t * 2.1 + ph) * 1.1 * s.hk);
         P.face.rotation.y = want - tmpE.y + sway;
       }
+      if (P.poser) P.poser.update(dt, t);
       if (is3d) softBody(dt, t, hop, sit);
     };
     /* the soft-toy feel: a squash & stretch spring kicked only by bump() (a landing, being grabbed — the hops keep their

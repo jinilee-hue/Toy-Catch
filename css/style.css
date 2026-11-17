@@ -316,33 +316,43 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .prize .word b.say { animation: bump .45s ease-out 2; display: inline-block; }
 @keyframes spin { to { rotate: 360deg; } }
 
-/* ── result ── */
+/* ── result: the same glossy candy and glass as the title and game screens (user: "전체적으로 디자인이 게임화면과 인트로
+   화면과 다른 느낌이고 컬러가 너무 많아") — the card is the logo's pale-cyan glass plate (gold rim, a white shine on top),
+   the title the logo's jelly letters (game.js resultTitle), the caught friends in a white glass tray like the HUD's, the
+   HUD's score pill, PLAY AGAIN the HUD's blue pill and Home a white glass button like sound / exit. Blue, white and gold
+   (+ the orange score pill and the letters' own colours); no outlines. ── */
 .result { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity .4s; background: radial-gradient(circle, rgba(255,255,255,.1), rgba(30,40,100,.35)); }
 #app[data-screen="result"] .result { opacity: 1; pointer-events: auto; }
 .result .card {
-  position: relative; width: calc(104 * var(--u)); padding: calc(13 * var(--u)) calc(6 * var(--u)) calc(6 * var(--u)); border-radius: calc(6 * var(--u));
-  background: linear-gradient(#fffdf5, #fff1d6); box-shadow: 0 0 0 calc(1 * var(--u)) #fff, 0 0 0 calc(2 * var(--u)) #ffc94d, 0 calc(2 * var(--u)) calc(5 * var(--u)) rgba(20,30,90,.35);
+  position: relative; isolation: isolate; width: calc(104 * var(--u)); padding: calc(12.6 * var(--u)) calc(6 * var(--u)) calc(5.6 * var(--u));
+  border: calc(.8 * var(--u)) solid transparent; border-radius: calc(6 * var(--u));
+  /* the glass (the logo plate's colours, a little paler) in the padding box; the gold rim in the border — light on top,
+     deeper at the bottom, so it reads as a rim in the light, not a line */
+  background: linear-gradient(#dcf7ff, #a9e4fd 55%, #88cff3) padding-box, linear-gradient(#ffe68f, #f6c453 45%, #e09f36) border-box;
+  box-shadow:
+    inset 0 calc(.9 * var(--u)) calc(.7 * var(--u)) rgba(255,255,255,.9),        /* the white shine inside the top edge */
+    inset 0 calc(-1.2 * var(--u)) calc(2.2 * var(--u)) rgba(40,120,190,.28),      /* a little shade inside the bottom */
+    0 calc(1.6 * var(--u)) calc(3.6 * var(--u)) rgba(12,50,130,.38);
   display: flex; flex-direction: column; align-items: center; gap: calc(2.6 * var(--u));
+  margin-top: calc(8 * var(--u));   /* (half of it moves the card down: the title over its top edge and the card sit in the middle together) */
   transform: scale(.6) translateY(20%); transition: transform .55s cubic-bezier(.3, 1.5, .5, 1);
 }
-#app[data-screen="result"] .result .card { transform: none; }
-/* the ribbon: the band (text) in front, and at each end a darker tail behind it, hanging a little lower, ending in a
-   swallowtail, joined by the dark fold under the band's corner (index.html SVG, #rbTail / #rbFold) — the band's ends
-   used to be notched straight into it and looked chopped off (user: "리본도 양끝이 어색하게 잘려서"). No outlines. */
-.ribbon { position: absolute; top: calc(-6 * var(--u)); left: 50%; translate: -50% 0; height: calc(14 * var(--u)); filter: drop-shadow(0 calc(.8 * var(--u)) calc(.9 * var(--u)) rgba(130,20,60,.28)); }
-.rb-tail { position: absolute; top: 0; width: calc(13.3 * var(--u)); height: calc(18.2 * var(--u)); }
-.rb-tail svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.rb-tail.l { left: calc(-10.5 * var(--u)); }
-.rb-tail.r { right: calc(-10.5 * var(--u)); transform: scaleX(-1); }
-.rb-band {
-  position: relative; display: grid; place-items: center; height: 100%; padding: 0 calc(8 * var(--u)); white-space: nowrap;
-  background: linear-gradient(#ff86b0, #ff5089 55%, #ec3a72); border-radius: calc(1.8 * var(--u)) calc(1.8 * var(--u)) calc(.5 * var(--u)) calc(.5 * var(--u));   /* (square-ish at the bottom: the fold starts there) */
-  box-shadow: inset 0 calc(1 * var(--u)) calc(1.2 * var(--u)) rgba(255,255,255,.4), inset 0 calc(-1.4 * var(--u)) calc(1.4 * var(--u)) rgba(176,22,76,.5);
-  font: 800 calc(8.6 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.8 * var(--u)) #b51a4c; paint-order: stroke fill;
+/* and a soft white sheen over the glass's top, fading out (no edge) */
+.result .card::before {
+  content: ''; position: absolute; z-index: -1; inset: 0 0 auto; height: 48%; border-radius: calc(5.2 * var(--u)) calc(5.2 * var(--u)) 0 0;
+  background: linear-gradient(rgba(255,255,255,.55), rgba(255,255,255,.2) 50%, rgba(255,255,255,0)); pointer-events: none;
 }
+#app[data-screen="result"] .result .card { transform: none; }
+/* the title: the logo's jelly letters on its glass plate, standing over the card's top edge like the logo over the
+   marquee (game.js sets the canvas height, in --u, so every title has the same letter size) */
+.res-title { position: absolute; left: 50%; top: calc(-8.4 * var(--u)); translate: -50% 0; line-height: 0; pointer-events: none; }
+.res-title .jelly { display: block; width: auto; }
+#app[data-screen="result"] .res-title { animation: titlePop .6s cubic-bezier(.3, 1.6, .5, 1) .1s backwards; }
+@keyframes titlePop { 0% { scale: .4; } 100% { scale: 1; } }
 .stars { display: flex; gap: calc(2 * var(--u)); margin-top: calc(-1 * var(--u)); }
 /* 3D stars (user: "별들 3d로 바꿔줘"), the score coin's family: index.html SVG (#st3*), no outlines. Each star is a slot
-   pressed into the card; an earned one is a puffy gold star (thickness band, soft shadow, shine) that pops into it. */
+   pressed into the glass (a deeper blue, shaded at the top, a light lip at the bottom); an earned one is a puffy gold
+   star (thickness band, soft shadow, shine) that pops into it. */
 .stars i { position: relative; display: block; width: calc(13.6 * var(--u)); height: calc(13.6 * var(--u)); }
 .stars i svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .stars i:nth-child(2) { translate: 0 calc(-2.4 * var(--u)); }
@@ -350,23 +360,39 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .stars i.on .gold { opacity: 1; animation: starPop .6s cubic-bezier(.3, 1.8, .5, 1) backwards; }
 .stars i.on:nth-child(2) .gold { animation-delay: .25s; } .stars i.on:nth-child(3) .gold { animation-delay: .5s; }
 @keyframes starPop { 0% { scale: 0; rotate: -90deg; } 100% { scale: 1; rotate: 0; } }
-.caught { display: flex; gap: calc(2.2 * var(--u)); }
-.caught .slot { width: calc(15 * var(--u)); height: calc(15 * var(--u)); border-radius: 50%; background: #f3ead6; box-shadow: inset 0 calc(.6 * var(--u)) calc(1.2 * var(--u)) rgba(120,90,40,.2); display: grid; place-items: center; font: 800 calc(6 * var(--u)) / 1 var(--font); color: #d9cbb0; position: relative; }
+/* the caught friends: a white glass tray like the HUD's — round slots sunk into it, an earned one light yellow with a
+   glow; the word under each in navy, its first letter in that letter's jelly colour (--lc, game.js) */
+.caught { display: flex; gap: calc(1.4 * var(--u)); padding: calc(1.2 * var(--u)); margin-bottom: calc(4.2 * var(--u)); border-radius: 999px;
+  background: linear-gradient(#ffffff, #eaf3ff);
+  box-shadow: inset 0 calc(-.9 * var(--u)) calc(1.3 * var(--u)) rgba(120,160,220,.3), 0 calc(.8 * var(--u)) calc(1.8 * var(--u)) rgba(30,60,120,.26); }
+.caught .slot { position: relative; width: calc(13.6 * var(--u)); height: calc(13.6 * var(--u)); border-radius: 50%;
+  background: #dde9f8; box-shadow: inset 0 calc(.55 * var(--u)) calc(.9 * var(--u)) rgba(30,60,120,.22);
+  display: grid; place-items: center; font: 800 calc(5.4 * var(--u)) / 1 var(--font); color: rgba(60,90,160,.42); }
+.caught .slot.got { background: radial-gradient(circle at 50% 42%, #fffbe8, #fff1b6 55%, #ffe28a);
+  box-shadow: inset 0 calc(.5 * var(--u)) calc(.9 * var(--u)) rgba(190,130,0,.2), 0 0 calc(1.8 * var(--u)) rgba(255,201,58,.9); }
 .caught .slot img { position: absolute; left: 6%; top: 1%; width: 88%; height: 88%; object-fit: contain; }   /* absolute: a % size in a grid cell has nothing to resolve against */
-.caught .slot.got { background: radial-gradient(circle, #fff7d1, #ffdf7a); }
-.caught .slot em { position: absolute; bottom: calc(-4.6 * var(--u)); font: 800 calc(3.8 * var(--u)) / 1 var(--font); font-style: normal; color: #6a5a8a; }
-.caught .slot em b { color: #ff4fa3; }
-.final { margin-top: calc(3 * var(--u)); font: 800 calc(6 * var(--u)) / 1 var(--font); color: #ff8a1f; display: flex; gap: calc(2 * var(--u)); align-items: baseline; }
-.final .lbl { color: #6a5a8a; font-size: calc(4.6 * var(--u)); }
-.btns { display: flex; gap: calc(3 * var(--u)); margin-top: calc(1 * var(--u)); }
-.pill-btn {
-  height: calc(12 * var(--u)); min-width: calc(12 * var(--u)); padding: 0 calc(4 * var(--u)); border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: calc(1.4 * var(--u));
-  font: 800 calc(5.4 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.5 * var(--u)) rgba(0,0,0,.18); paint-order: stroke fill;
-  box-shadow: inset 0 calc(-1.1 * var(--u)) 0 rgba(0,0,0,.18), 0 calc(.9 * var(--u)) calc(1.6 * var(--u)) rgba(20,30,90,.28);
+.caught .slot em { position: absolute; left: 50%; top: calc(100% + 2.2 * var(--u)); translate: -50% 0; white-space: nowrap;
+  font: 800 calc(3.8 * var(--u)) / 1 var(--font); font-style: normal; color: #163d8f; }
+.caught .slot em b { color: var(--lc, #163d8f); }
+/* the score: the HUD's score pill — orange, the same 3D coin, a white number (.score), a little bigger */
+.score.final { --hb: calc(9 * var(--u)); }
+.btns { display: flex; align-items: center; gap: calc(3 * var(--u)); margin-top: calc(.6 * var(--u)); }
+/* Home: a white glass button with a blue line icon, like sound / exit */
+.res-home {
+  position: relative; width: calc(12 * var(--u)); height: calc(12 * var(--u)); border-radius: 50%; display: grid; place-items: center; color: #2f5fb3;
+  background: linear-gradient(#ffffff, #e6f0fb);
+  box-shadow: inset 0 calc(-.8 * var(--u)) calc(1.2 * var(--u)) rgba(120,160,220,.28), 0 calc(.8 * var(--u)) calc(1.6 * var(--u)) rgba(30,60,120,.26);
 }
-.pill-btn svg { width: calc(6.4 * var(--u)); height: calc(6.4 * var(--u)); }
-.pill-btn.home { background: linear-gradient(#7ab8ff, #3d8ef0); padding: 0; width: calc(12 * var(--u)); }
-.pill-btn.again { background: linear-gradient(#7be08a, #2fb84a); animation: breathe 1.8s ease-in-out infinite; }
+.res-home svg { width: 56%; height: 56%; }
+/* PLAY AGAIN: the HUD's glossy blue pill, white letters with a navy edge (the icon too); it breathes */
+.res-again {
+  height: calc(12 * var(--u)); padding: 0 calc(4.6 * var(--u)) 0 calc(3.4 * var(--u)); border-radius: 999px; display: flex; align-items: center; gap: calc(1.2 * var(--u));
+  background: linear-gradient(#55b6ff, #2b8ff0 55%, #1d6fd8);
+  box-shadow: inset 0 calc(1 * var(--u)) calc(1.4 * var(--u)) rgba(255,255,255,.3), inset 0 calc(-1 * var(--u)) calc(1.4 * var(--u)) rgba(10,60,160,.5), 0 calc(.8 * var(--u)) calc(1.4 * var(--u)) rgba(10,50,130,.25);
+  font: 800 calc(5.4 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.55 * var(--u)) #163d8f; paint-order: stroke fill;
+  animation: breathe 1.8s ease-in-out infinite;
+}
+.res-again svg { width: calc(6.2 * var(--u)); height: calc(6.2 * var(--u)); overflow: visible; }
 
 /* ── the hint glove, loading ── */
 .hand { position: absolute; z-index: 35; width: calc(12 * var(--mu)); pointer-events: none; opacity: 0; transform-origin: 38% 2%; transition: opacity .3s; filter: drop-shadow(0 calc(.6 * var(--mu)) calc(1 * var(--mu)) rgba(0,0,0,.3)); }
