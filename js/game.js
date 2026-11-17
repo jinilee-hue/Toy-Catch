@@ -1034,7 +1034,7 @@
     await A.say(all ? 't:allcaught' : 't:result');
     if (tok !== G.tok) return;
     await A.say('t:playagain');
-    G.busy = false;
+    if (tok === G.tok) G.busy = false;                  // (PLAY AGAIN pressed during that line: the new game owns busy)
   }
 
   function goTitle() {
