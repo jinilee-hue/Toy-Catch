@@ -409,7 +409,8 @@
     const place = (cv, x0, y0, w, h) => Object.assign(cv.style, {
       left: (x0 - BOX[0]) / BOX[2] * 100 + '%', top: (y0 - BOX[1]) / BOX[3] * 100 + '%',
       width: w / BOX[2] * 100 + '%', height: h / BOX[3] * 100 + '%' });
-    const canvas = (w, h, k = K) => { const c = document.createElement('canvas'); c.width = Math.ceil(w * k); c.height = Math.ceil(h * k); const g = c.getContext('2d'); g.scale(k, k); return [c, g]; };
+    // (rf: a scratch canvas read back with getImageData — kept in memory, not on the GPU: a GPU readback is slow)
+    const canvas = (w, h, k = K, rf = false) => { const c = document.createElement('canvas'); c.width = Math.ceil(w * k); c.height = Math.ceil(h * k); const g = c.getContext('2d', rf ? { willReadFrequently: true } : undefined); g.scale(k, k); return [c, g]; };
     const rr = (g, x0, y0, w, h, r) => { g.beginPath(); g.roundRect(x0, y0, w, h, r); };
     btn.innerHTML = '';
     // the slab. Its front edge is an upright face: drawn flat, outside the tilt. Its top face and the letters lie on the
@@ -471,7 +472,7 @@
     };
     {
       const OB = [wx0 - 8, wy0 - 8, wx1 - wx0 + 16, wy1 - wy0 + 16];   // the outline's box (word units)
-      const [mc, mg] = canvas(OB[2], OB[3], KW);
+      const [mc, mg] = canvas(OB[2], OB[3], KW, true);
       mg.translate(-OB[0], -OB[1]);
       mg.font = font; mg.textAlign = 'center'; mg.textBaseline = 'alphabetic'; mg.lineJoin = 'round';
       mg.fillStyle = mg.strokeStyle = '#fff'; mg.lineWidth = O * 2 + B + DMAX;
@@ -529,7 +530,7 @@
     const hw = (i) => adv[i] / 2 + O + B + DMAX + 10, top = BASE - FS * 0.86, lh = FS * 0.86 + E + B + DMAX + 12;
     const drawLetter = (i, extra) => {
       const [ch, f0, f1, s0, s1] = LET[i], half = hw(i), BW = B + extra;
-      const [c, g] = canvas(half * 2, lh, KW), [fc, fg] = canvas(half * 2, lh, KW), [ic, ig] = canvas(half * 2, lh, KW);
+      const [c, g] = canvas(half * 2, lh, KW, true), [fc, fg] = canvas(half * 2, lh, KW, true), [ic, ig] = canvas(half * 2, lh, KW);
       const W = c.width, H = c.height;
       for (const q of [g, fg, ig]) { q.translate(half, -top); q.scale(SX, 1); q.font = font; q.textAlign = 'center'; q.textBaseline = 'alphabetic'; q.lineJoin = 'round'; q.lineWidth = BW; }
       // the side: the letter's shape swept down E, shaded from the side's top colour to its bottom colour by depth
