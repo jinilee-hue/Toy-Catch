@@ -41,13 +41,7 @@
 
   /* ── boot ───────────────────────────────────────────────────────────────────────────────────────── */
   async function boot() {
-    // the loading bar (css #loading): the jelly grows and the coin on its end rolls the distance it moves
-    const bar = $('#loading .bar i'), coin = bar.querySelector('.load-coin'), rolls = bar.querySelectorAll('.roll');
-    const setBar = pct => {
-      bar.style.width = pct + '%';
-      const run = bar.parentElement.clientWidth * pct / 100, d = coin ? coin.getBoundingClientRect().width : 0;
-      if (d) rolls.forEach(r => (r.style.transform = `rotate(${(run / (Math.PI * d) * 360).toFixed(1)}deg)`));
-    };
+    const bar = $('#loading .bar i'), setBar = pct => (bar.style.width = pct + '%');   // (css #loading)
     window.__loadBar = setBar;                          // (QA: the loading screen's bar at any point)
     try { await Promise.race([document.fonts.load('800 100px "Baloo 2"'), A.sleep(2500)]); } catch (e) { /* fallback font */ }
     setBar(30);
