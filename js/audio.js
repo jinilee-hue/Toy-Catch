@@ -116,6 +116,7 @@
       case 'prize': [784, 988, 1175, 1568].forEach((f, i) => osc('triangle', f, 0, t + i * 0.07, 0.3, 0.2)); noise(t, 0.4, 0.12, 7000, 0.6, 'highpass'); break;
       case 'buzz': osc('sawtooth', 160, 150, t, 0.5, 0.18); osc('sawtooth', 163, 150, t, 0.5, 0.14); break;
       case 'uhoh': osc('triangle', 440, 0, t, 0.18, 0.3); osc('triangle', 330, 0, t + 0.2, 0.32, 0.3); break;
+      case 'lose': [988, 784, 587].forEach((f, i) => osc('triangle', f, f * 0.94, t + i * 0.1, 0.15, 0.14)); break;   // coins going: three falling blips
       case 'fanfare':
         osc('sine', 120, 45, t, 0.3, 0.6); noise(t, 0.6, 0.14, 6500, 0.6, 'highpass');
         [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.32]].forEach(([f, d]) => { osc('square', f, 0, t + d, 0.16, 0.06); osc('triangle', f, 0, t + d, 0.3, 0.2); });
