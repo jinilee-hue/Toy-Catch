@@ -419,47 +419,47 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .hand.on { opacity: 1; }
 #loading { position: absolute; inset: 0; z-index: 100; display: grid; place-items: center; align-content: center; gap: 4vh; background: radial-gradient(circle, #bfe6ff, #7cc8f5); transition: opacity .5s; }
 #loading img { width: min(60vw, 90vh); }
-/* the loading bar = the logo's own parts (user: "게임 로딩바도 3d느낌나게 바꿔줘"): the logo plate's pale-cyan glass as
-   a slab (its thickness a deeper cyan underneath — an orange band read as a plank), a groove pressed into it, and a fill
-   in the logo letters' jelly: their vivid colours (T pink, O orange, Y yellow, A green, C blue, H purple), a crisp
-   white gloss streak along the top like the letters', deeper underneath. A soft shine sweeps along it while it loads.
-   (A pastel fill under a white haze, barber-pole stripes and a coin knob looked cheap and like a slider.) No lines. */
+/* the loading bar in the logo's own look (user: "게임 로딩바도 3d느낌나게 바꿔줘"): the logo plate's pale-cyan glass as
+   a raised slab on a gold side band (::before), a groove in it (::after), a glossy rainbow jelly in the logo letters'
+   colours filling the groove (white gloss on top, deeper underneath, candy stripes sliding — the rainbow stays put
+   while the jelly grows over it), and the HUD's gold star coin riding its end, rolling as it fills (game.js setBar).
+   No outlines: edges are light and shade only. */
 #loading .bar {
-  --bh: clamp(22px, 3.9vh, 52px); --bw: min(42vw, 62vh);
-  position: relative; width: var(--bw); height: var(--bh); padding: calc(.2 * var(--bh)); box-sizing: border-box; border-radius: 999px;
-  background: linear-gradient(#e6f8ff, #c4ecfd 50%, #a9dff8);
-  box-shadow:
-    inset 0 calc(.08 * var(--bh)) calc(.06 * var(--bh)) rgba(255,255,255,.95),
-    0 calc(.16 * var(--bh)) 0 #7cc5ec,
-    0 calc(.34 * var(--bh)) calc(.5 * var(--bh)) rgba(16,80,150,.28);
+  --bh: clamp(22px, 4vh, 54px); --bw: min(44vw, 64vh); --gw: calc(var(--bw) - .44 * var(--bh));
+  position: relative; width: var(--bw); height: var(--bh); padding: calc(.22 * var(--bh)); box-sizing: border-box; border-radius: 999px;
+  background: linear-gradient(#f2fcff, #d3f1ff 45%, #b9e6fb);
+  box-shadow: inset 0 calc(.07 * var(--bh)) calc(.05 * var(--bh)) rgba(255,255,255,.95), inset 0 calc(-.06 * var(--bh)) calc(.08 * var(--bh)) rgba(60,150,210,.35);
 }
-#loading .bar::after {                                    /* the groove */
-  content: ''; position: absolute; inset: calc(.2 * var(--bh)); border-radius: 999px;
-  background: linear-gradient(#8fcdee, #b8e5fa 55%, #d8f3ff);
-  box-shadow: inset 0 calc(.1 * var(--bh)) calc(.12 * var(--bh)) rgba(20,90,150,.35);
+#loading .bar::before {                                   /* the slab's side: gold, like the logo plate's edge */
+  content: ''; position: absolute; z-index: -1; left: 0; right: 0; top: calc(.24 * var(--bh)); bottom: calc(-.24 * var(--bh)); border-radius: 999px;
+  background: linear-gradient(#ffe27a, #f2b52a 55%, #c97c0a);
+  box-shadow: 0 calc(.3 * var(--bh)) calc(.55 * var(--bh)) rgba(14,70,140,.3);
+}
+#loading .bar::after {                                    /* the groove the jelly runs in */
+  content: ''; position: absolute; z-index: 0; inset: calc(.22 * var(--bh)); border-radius: 999px;
+  background: linear-gradient(#9fd2ee, #c7e9fb 60%, #e3f6ff);
+  box-shadow: inset 0 calc(.09 * var(--bh)) calc(.12 * var(--bh)) rgba(20,80,140,.38);
 }
 #loading .bar i {
-  position: relative; z-index: 1; display: block; height: 100%; width: 10%; min-width: var(--bh); border-radius: 999px; overflow: hidden;
+  position: relative; z-index: 1; display: block; height: 100%; width: 10%; min-width: calc(.56 * var(--bh)); border-radius: 999px;
   background:
-    linear-gradient(rgba(255,255,255,0) 52%, rgba(90,10,90,.22)),
-    linear-gradient(90deg, #ff3d70, #ff8a1c 20%, #ffd21c 38%, #62d33c 57%, #3cb2ff 77%, #a957f6) 0 0 / calc(var(--bw) - .4 * var(--bh)) 100% no-repeat;
-  box-shadow: inset 0 calc(-.07 * var(--bh)) calc(.08 * var(--bh)) rgba(90,10,90,.25);
-  transition: width .5s cubic-bezier(.3, .8, .4, 1);
+    linear-gradient(rgba(255,255,255,.85), rgba(255,255,255,.3) 36%, rgba(255,255,255,0) 50%) 0 0 / 100% 100% no-repeat,
+    linear-gradient(rgba(0,0,0,0) 55%, rgba(70,20,110,.24)) 0 0 / 100% 100% no-repeat,
+    repeating-linear-gradient(45deg, rgba(255,255,255,.26) 0 calc(.4 * var(--bh)), rgba(255,255,255,0) 0 calc(.8 * var(--bh))) 0 0 / calc(1.1314 * var(--bh)) 100%,
+    linear-gradient(90deg, #ff5f8f, #ff9a2e 21%, #ffd23f 40%, #5fd36a 60%, #3fa8ff 80%, #a66bff) 0 0 / var(--gw) 100% no-repeat;
+  box-shadow: inset 0 calc(-.08 * var(--bh)) calc(.1 * var(--bh)) rgba(70,20,110,.22), 0 calc(.04 * var(--bh)) calc(.08 * var(--bh)) rgba(20,60,120,.25);
+  animation: loadStripes .9s linear infinite; transition: width .5s cubic-bezier(.3, .8, .4, 1);
 }
-#loading .bar i::before {                                 /* the gloss streak, like the letters' */
-  content: ''; position: absolute; left: calc(.3 * var(--bh)); right: calc(.3 * var(--bh)); top: 12%; height: 34%; border-radius: 999px;
-  background: linear-gradient(rgba(255,255,255,.95), rgba(255,255,255,.42));
+@keyframes loadStripes { to { background-position: 0 0, 0 0, calc(1.1314 * var(--bh)) 0, 0 0; } }
+#loading .load-coin {                                     /* the HUD coin (index.html reuses its sc* gradients) */
+  position: absolute; right: 0; top: 50%; width: calc(1.5 * var(--bh)); height: calc(1.5 * var(--bh)); transform: translate(50%, -50%);
+  filter: drop-shadow(0 calc(.07 * var(--bh)) calc(.08 * var(--bh)) rgba(150,60,0,.4)); overflow: visible;
 }
-#loading .bar i::after {                                  /* a soft shine sweeping along while it loads */
-  content: ''; position: absolute; inset: 0; border-radius: 999px;
-  background: linear-gradient(100deg, rgba(255,255,255,0) 40%, rgba(255,255,255,.45) 50%, rgba(255,255,255,0) 60%) 0 0 / 260% 100% no-repeat;
-  animation: loadShine 1.8s ease-in-out infinite;
-}
-@keyframes loadShine { 0% { background-position: 130% 0; } 70%, 100% { background-position: -40% 0; } }
+#loading .load-coin .roll { transform-box: view-box; transform-origin: 50% 50%; transition: transform .5s cubic-bezier(.3, .8, .4, 1); }
 #app:not(.booting) #loading { opacity: 0; pointer-events: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .coin, .note, .spark, .logo, .start, .start .L, .score .score-coin, .score .score-coin::after, #loading .bar i::after { animation: none !important; }
+  .coin, .note, .spark, .logo, .start, .start .L, .score .score-coin, .score .score-coin::after, #loading .bar i { animation: none !important; }
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.
