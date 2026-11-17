@@ -493,7 +493,7 @@
   function tick(dt, t) {
     machine.tick(dt, t);
     for (const p of Object.values(G.all)) if (p.root.parent) p.update(dt, t);
-    if (window.Poses && (G.screen === 'title' || G.screen === 'game')) Poses.idle(dt, G.inMachine);   // now and then a friend poses
+    if (window.Poses && !G.busy && (G.screen === 'title' || G.screen === 'game')) Poses.idle(dt, G.inMachine);   // now and then a friend poses
     // 'wiggle' hint: the 3D stick tilts with the glove's drag (left at 20 %, right at 40 %, back at 50 % of its run)
     if (JOY_HINT === 'wiggle' && hintAnim && hintAnim.playState === 'running' && !G.joy) {
       const q = Math.min(1, (hintAnim.currentTime || 0) / 3600), e = q * q * (3 - 2 * q);

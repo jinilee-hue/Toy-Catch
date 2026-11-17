@@ -12,8 +12,9 @@
  * squash, bend and the claw's pinch still work on top), the normals turn with it, the shadow follows (the depth
  * material gets the same code). The front picture sticks to the vertices (its uv is from the rest positions).
  * When: P.pose(k) plays it once (k = strength: the prize 1, a tap .85, now and then .7); while the claw is right over
- * a friend (excite 1) it loops gently on top of the selection hops, fading out as the claw goes down and staying off
- * while the friend is held; Poses.idle(dt, friends) has one random friend pose every 5-8 s.
+ * a friend (excite 1) it loops gently on top of the selection hops, fading out as the claw goes down (game.js drop()
+ * calls P.poseStop()) and staying off while the friend is held; Poses.idle(dt, friends) has one random friend pose every
+ * 5-8 s (game.js: on the title and in the game, while not busy).
  * Friends without 3D (?puff / ?flat) get no-op P.pose / P.poseLoop.
  * Dev: dev/friends3d.html?pose (each friend's pose on a loop) · &weights (the parts' weights in colour).
  */
