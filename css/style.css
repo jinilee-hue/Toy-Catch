@@ -297,10 +297,14 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   font: 800 calc(8.6 * var(--u)) / 1 var(--font); color: #fff; -webkit-text-stroke: calc(.8 * var(--u)) #b51a4c; paint-order: stroke fill;
 }
 .stars { display: flex; gap: calc(2 * var(--u)); margin-top: calc(-1 * var(--u)); }
-.stars i { width: calc(13 * var(--u)); height: calc(13 * var(--u)); background: #e3dccd; clip-path: polygon(50% 0, 63% 33%, 98% 36%, 71% 59%, 80% 95%, 50% 75%, 20% 95%, 29% 59%, 2% 36%, 37% 33%); }
+/* 3D stars (user: "별들 3d로 바꿔줘"), the score coin's family: index.html SVG (#st3*), no outlines. Each star is a slot
+   pressed into the card; an earned one is a puffy gold star (thickness band, soft shadow, shine) that pops into it. */
+.stars i { position: relative; display: block; width: calc(13.6 * var(--u)); height: calc(13.6 * var(--u)); }
+.stars i svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .stars i:nth-child(2) { translate: 0 calc(-2.4 * var(--u)); }
-.stars i.on { background: radial-gradient(circle at 40% 35%, #fff6b0, #ffd23f 45%, #f5a300); animation: starPop .6s cubic-bezier(.3, 1.8, .5, 1) backwards; }
-.stars i.on:nth-child(2) { animation-delay: .25s; } .stars i.on:nth-child(3) { animation-delay: .5s; }
+.stars i .gold { opacity: 0; transform-origin: 50% 55%; transform-box: view-box; }
+.stars i.on .gold { opacity: 1; animation: starPop .6s cubic-bezier(.3, 1.8, .5, 1) backwards; }
+.stars i.on:nth-child(2) .gold { animation-delay: .25s; } .stars i.on:nth-child(3) .gold { animation-delay: .5s; }
 @keyframes starPop { 0% { scale: 0; rotate: -90deg; } 100% { scale: 1; rotate: 0; } }
 .caught { display: flex; gap: calc(2.2 * var(--u)); }
 .caught .slot { width: calc(15 * var(--u)); height: calc(15 * var(--u)); border-radius: 50%; background: #f3ead6; box-shadow: inset 0 calc(.6 * var(--u)) calc(1.2 * var(--u)) rgba(120,90,40,.2); display: grid; place-items: center; font: 800 calc(6 * var(--u)) / 1 var(--font); color: #d9cbb0; position: relative; }

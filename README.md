@@ -18,6 +18,8 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
    - **오답**: 흔들리다 미끄러져 제자리로, "Uh-oh! cat. It starts with /k/" → "Try again! Listen." + 목표 음가.
    - 빈 데 내리면 "Oops, nothing! Try again." 시간이 다 되면 "Time's up!" 후 다음 라운드.
 4. **결과**: 별(4개 모두 → 3, 2개 이상 → 2, 1개 → 1), 뽑은 친구들, 점수, 홈 / PLAY AGAIN.
+   별은 점수 동전·시계와 같은 입체(`index.html` SVG `#st3*`, 선 없음): 받은 별은 두께 띠·그림자·반사가 있는 통통한 금색 별이 하나씩
+   돌며 들어가고, 못 받은 자리는 카드에 눌려 들어간 별 모양 홈(안쪽 위 그늘, 아래 밝은 턱).
 
 첫 라운드에 아무것도 안 만지면 장갑 손이 조이스틱 → DOWN 순서로 시범("Move the claw, then press the button!").
 오른쪽 위 EN/한 토글: 안내 음성만 한국어로 바뀐다(음가·단어는 영어 그대로). `localStorage` `claw-lang`, 음소거 `claw-muted`.
