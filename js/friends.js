@@ -122,6 +122,18 @@
      (nearly) straight on, every surface the picture covers shows it — so from the front the friend is exactly its
      picture, steep sides and outline too; turned further (the prize spin), only the surfaces facing the front keep it
      (it would smear on the steep sides) and the atlas — the sheet's sides and back — shows round them */
+  /* a little more colour on the friends (user: "전체적으로 캐릭터들 조금 뿌옇게 보이니까 채도를 좀 올려주는것도
+     좋겠어"): the glass in front of them lays a thin white veil over the machine, and the claw's spotlight brightens
+     them toward white — so saturation up and a touch of contrast, in display space (after the colour-space conversion),
+     and they read as vivid as their pictures. ?sat=1.35 to compare; ?sat=1 = as before */
+  const SAT = +(new URLSearchParams(location.search).get('sat') ?? 1.22), CON = SAT === 1 ? 1 : 1.04;
+  const SAT_GLSL = `#include <colorspace_fragment>
+      {
+        vec3 c = gl_FragColor.rgb;
+        float l = dot(c, vec3(0.299, 0.587, 0.114));
+        c = (mix(vec3(l), c, ${SAT.toFixed(3)}) - 0.5) * ${CON.toFixed(3)} + 0.5;
+        gl_FragColor.rgb = clamp(c, 0.0, 1.0);
+      }`;
   function plush3dShader(sh) {
     Object.assign(sh.uniforms, this.userData.u);
     sh.uniforms.uLit = this.userData.uLit;
@@ -170,7 +182,8 @@ void main() {
         diffuseColor.rgb *= clamp(shade, 0.72, 1.0);
         diffuseColor.rgb *= 1.0 + uLit * (0.07 + 0.24 * smoothstep(-0.25, 0.85, n.y));
         diffuseColor.rgb *= mix(vec3(1.0), vec3(1.03, 1.0, 0.95), uLit);
-      }`);
+      }`)
+      .replace('#include <colorspace_fragment>', SAT_GLSL);
   }
 
   /* the puffed relief of one picture, in the same frame as the old plane: x across (head middle at 0), y up from the
@@ -242,7 +255,8 @@ void main() {
         // shoulders, slightly warm (game.js makeSpot)
         diffuseColor.rgb *= 1.0 + uLit * (0.07 + 0.24 * smoothstep(-0.25, 0.85, n.y));
         diffuseColor.rgb *= mix(vec3(1.0), vec3(1.03, 1.0, 0.95), uLit);
-      }`);
+      }`)
+      .replace('#include <colorspace_fragment>', SAT_GLSL);
   }
 
   function load() {

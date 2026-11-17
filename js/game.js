@@ -932,7 +932,7 @@
     app.classList.remove('inserting');
     setScreen('game');
     G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
-    $('#score').textContent = '0';
+    resetScore();
     setTimeout(() => { if (tok === G.tok) addScore(COINS.start); }, 500);   // this game's coins come in as the HUD shows
     buildTray();
     const order = (qs.get('order') || '').split(',').filter(x => LETTERS.includes(x));
@@ -1116,7 +1116,7 @@
     for (const o of G.inMachine) o.cheer(2.6);
     p.cheer(3);
     const gain = 100 + (G.tries === 0 ? 50 : 0);
-    addScore(gain);
+    addScore(gain, sp);                                  // the coins pop out of the friend and fly into the HUD coin
     const fw = () => { const r = S.project(V(lerp(-3, 3, Math.random()), lerp(2.4, 3.8, Math.random()), 0)); FX.firework(r.x, r.y); A.sfxPlay('pop'); };
     fw(); setTimeout(fw, 350); setTimeout(fw, 700);
     await A.say('t:great3');
@@ -1299,30 +1299,130 @@
     claw.set(claw.x, claw.HOME_Y, 0.15); claw.setGrip(claw.OPEN * 0.55);
     machine.setScreen(['LEVEL 1', 'M A S T']);
     machine.coin.visible = false;
+    resetScore();
     app.classList.remove('inserting');
     setScreen('title');
     S.frame.push = 0; S.resize();
   }
 
-  /* the score (coins) goes up or down: it counts to the new value — up: the coin flips and the pill bumps; down: the pill
-     shakes — and a little "+150" / "−20" tag drops out under it. Returns the change (0 when there was nothing to take). */
-  function addScore(n) {
+  /* the score (coins) goes up or down, with coins you can see move (user: "코인 차감되거나 코인 추가되는거 모션 구현은?"):
+     points coming in = gold coins (the HUD coin's own picture) pop out of where they come from — the caught friend; at
+     the start they pour in from the top — and fly into the HUD coin, the number going up as each one lands (a chink, the
+     coin gulps; the pill bumps when the last is in); coins going (a go, a miss) = coins pop out of the HUD coin and fall
+     away down the left edge (clear of the glass and the claw) while the number counts down and the pill shakes. The
+     "+150" / "−20" tag still drops out under the pill. G.score changes at once (the game logic never waits for the
+     show). from: a screen point, or nothing (= from the top). Returns the change (0 when there was nothing to take). */
+  const shown = { v: 0, pend: 0, run: 0 };              // the HUD number = G.score less the coins still on their way in
+  function showScore(v) { shown.v = v; $('#score').textContent = Math.round(v); }
+  function countTo(ms) {
+    const run = ++shown.run, a = shown.v;
+    let t0 = -1;
+    const step = now => {                                // (a frame's timestamp can be earlier than the event that started
+      if (run !== shown.run) return;                     // the count: the clock starts at the first frame)
+      if (t0 < 0) t0 = now;
+      const k = Math.max(0, Math.min(1, (now - t0) / ms));
+      showScore(lerp(a, G.score - shown.pend, 1 - (1 - k) * (1 - k)));
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  function resetScore() {
+    document.querySelectorAll('.fly-coin').forEach(e => e.remove());
+    shown.pend = 0; shown.run++; showScore(G.score);
+  }
+  function scoreTag(d) {
+    const box = $('#score').parentElement;
+    box.querySelectorAll('.score-delta').forEach(t => t.remove());
+    const tag = document.createElement('i');
+    tag.className = 'score-delta' + (d > 0 ? '' : ' minus'); tag.textContent = (d > 0 ? '+' : '\u2212') + Math.abs(d);
+    tag.setAttribute('aria-hidden', 'true');
+    box.appendChild(tag); setTimeout(() => tag.remove(), 1500);
+  }
+  function scoreBox(cls) { const box = $('#score').parentElement; box.classList.remove('bump', 'minus'); void box.offsetWidth; box.classList.add(cls); }
+  function addScore(n, from) {
     const a = G.score, b = Math.max(0, a + n);
     if (b === a) return 0;
     G.score = b;
-    const el = $('#score'), box = el.parentElement, up = b > a;
-    box.classList.remove('bump', 'minus'); void box.offsetWidth; box.classList.add(up ? 'bump' : 'minus');
-    S.tween(700, k => (el.textContent = Math.round(lerp(a, b, k))), 'out');
-    box.querySelectorAll('.score-delta').forEach(t => t.remove());
-    const tag = document.createElement('i');
-    tag.className = 'score-delta' + (up ? '' : ' minus'); tag.textContent = (up ? '+' : '\u2212') + Math.abs(b - a);
-    tag.setAttribute('aria-hidden', 'true');
-    box.appendChild(tag); setTimeout(() => tag.remove(), 1500);
-    return b - a;
+    const d = b - a, still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (d > 0 && !still) { coinsIn(d, from); return d; }
+    if (d < 0 && !still) coinsOut(-d);
+    scoreBox(d > 0 ? 'bump' : 'minus'); scoreTag(d); countTo(d > 0 ? 700 : 450);
+    return d;
   }
-  /* a go of the claw costs a coin: the score shows −10 and a coin drops into the machine's slot by the DOWN button (the
-     START coin, shorter) — right where the child is looking (a coin flying over from the score cut across the glass and
-     the claw on its way down) */
+  /* the flying coin = the HUD coin's SVG as a picture (made once) */
+  let coinSrc = '';
+  function flyCoin(sz) {
+    if (!coinSrc) coinSrc = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString($('.score .score-coin svg')));
+    const el = document.createElement('img');
+    el.className = 'fly-coin'; el.src = coinSrc; el.alt = ''; el.setAttribute('aria-hidden', 'true');
+    el.style.width = el.style.height = sz + 'px';
+    app.appendChild(el);
+    return el;
+  }
+  function hudCoin() { const r = $('.score .score-coin').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, s: r.width }; }
+  /* keyframes along fn(k) -> [x, y, scale, spin (0..1 = edge-on..face-on), opacity] for a coin of size sz */
+  function coinKeys(fn, sz, N = 32) {
+    const keys = [];
+    for (let j = 0; j <= N; j++) {
+      const k = j / N, [x, y, s, w = 1, o = 1] = fn(k);
+      keys.push({ offset: k, opacity: o, transform: `translate(${(x - sz / 2).toFixed(1)}px, ${(y - sz / 2).toFixed(1)}px) scale(${(s * w).toFixed(3)}, ${s.toFixed(3)})` });
+    }
+    return keys;
+  }
+  const spin = (k, turns, ph = 0) => 0.18 + 0.82 * Math.abs(Math.cos((1 - k) * Math.PI * turns + ph));   // face-on at k = 1
+  function coinsIn(d, from) {
+    const tok = G.tok, H = hudCoin(), sz = H.s, n = Math.max(1, Math.min(12, Math.round(d / 12.5)));
+    shown.pend += d;
+    let left = d, landed = 0;
+    for (let i = 0; i < n; i++) {
+      const share = i === n - 1 ? left : Math.round(d / n), turns = 2 + (i % 2);
+      left -= share;
+      const el = flyCoin(sz);
+      let keys, T, delay;
+      if (!from) {                                       // pouring in from the top, straight down into the HUD coin
+        const sx = H.x + (Math.random() - 0.5) * sz * 1.8, sy = -sz * (0.7 + Math.random() * 0.5);
+        T = 460 + Math.random() * 120; delay = i * 80;
+        keys = coinKeys(k => { const e = k * k; return [lerp(sx, H.x, k * (2 - k)), lerp(sy, H.y, e), lerp(0.9, 0.85, k), spin(k, turns)]; }, sz);
+      } else {                                           // a pop up out of the friend, then a swoop over into the HUD coin
+        const sx = from.x + (Math.random() - 0.5) * sz * 0.9, sy = from.y + (Math.random() - 0.5) * sz * 0.5;
+        const ax = sx + (Math.random() - 0.5) * sz * 3.4, ay = sy - sz * (1.1 + Math.random() * 1.3);
+        const cx = lerp(ax, H.x, 0.45), cy = Math.min(ay, H.y) - sz * (0.8 + Math.random() * 0.9);
+        T = 950 + Math.random() * 260; delay = 180 + i * 65;   // (a beat after the confetti: they'd drown in it)
+        keys = coinKeys(k => {
+          if (k < 0.26) { const e = 1 - (1 - k / 0.26) ** 2; return [lerp(sx, ax, e), lerp(sy, ay, e), lerp(0.5, 1.3, e), spin(k, turns)]; }
+          const u = (k - 0.26) / 0.74, e = Math.pow(u, 1.7), m = 1 - e;
+          return [m * m * ax + 2 * m * e * cx + e * e * H.x, m * m * ay + 2 * m * e * cy + e * e * H.y, lerp(1.3, 0.85, u), spin(k, turns)];
+        }, sz);
+      }
+      el.animate(keys, { duration: T, delay, easing: 'linear', fill: 'forwards' }).onfinish = () => {
+        el.remove();
+        if (tok !== G.tok) return;                       // (a new game: resetScore() has squared the number)
+        shown.pend -= share; landed++;
+        if (landed === 1) scoreTag(d);
+        if (landed === n) scoreBox('bump');
+        countTo(220);
+        const c = $('.score .score-coin');
+        c.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.24)', offset: 0.35 }, { transform: 'scale(1)' }], { duration: 200, easing: 'ease-out' });
+        A.sfxPlay('chink'); FX.sparkle(H.x, H.y, 3, 2);
+      };
+    }
+  }
+  function coinsOut(d) {
+    const H = hudCoin(), sz = H.s, n = Math.max(1, Math.min(4, Math.round(d / 10)));
+    for (let i = 0; i < n; i++) {
+      const el = flyCoin(sz);
+      // up out of the HUD coin, then down the left edge (sizes in coin widths per second), fading as it goes
+      const vx = (Math.random() * 1.9 - 0.5 + i * 0.35) * sz, vy = -(5.4 + Math.random() * 1.8) * sz, g = 25 * sz, T = 1000;
+      const keys = coinKeys(k => {
+        const t = k * T / 1000;
+        return [H.x + vx * t, H.y + vy * t + g * t * t / 2, lerp(1, 0.8, k), spin(k, 3, i), k < 0.55 ? 1 : 1 - (k - 0.55) / 0.45];
+      }, sz);
+      el.animate(keys, { duration: T, delay: i * 120, easing: 'linear', fill: 'forwards' }).onfinish = () => el.remove();
+    }
+  }
+  /* a go of the claw costs a coin: a coin pops out of the HUD coin (−10) and a coin drops into the machine's slot by the
+     DOWN button (the START coin, shorter) — no coin flying across from the score: it cut across the glass and the claw on
+     its way down */
   function payCoin(tok) {
     if (!addScore(-COINS.play)) return;                 // no coins left: the go is free
     A.sfxPlay('coin');                                  // (its clink, half a second in, is the coin going in)
