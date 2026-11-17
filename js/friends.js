@@ -16,7 +16,9 @@
  * 3D (js/friends-3d.js, made on this Mac by tools/make_3d.py): each friend is a full 3D plush — TripoSR's shape from
  * the picture — with the picture itself on the front (the 'front weight' of every vertex) and TripoSR's guessed colours
  * round the back, so the face is exactly the user's art and the body has a real back and sides. It moves like a soft
- * toy (plushDeform): squash & stretch on its hops and landings, the top lagging behind when it's pushed or carried (the
+ * toy (plushDeform): a springy squash when it lands or is grabbed (NOT on every hop while selected or cheering — that
+ * pumping up and down looked wrong, user: "선택됐을때 인형이 위아래로 줄었다 늘렸다 하는 모션이 이상해"), the top lagging
+ * behind when it's pushed or carried (the
  * legs dangling while it hangs), the claw pinching its head a little. Friends without 3D data fall back to the puffed
  * picture. ?puff / ?flat show the earlier versions (for comparison).
  */
@@ -329,20 +331,16 @@
       }
       if (is3d) softBody(dt, t, hop, sit);
     };
-    /* the soft-toy feel: squash & stretch (a spring, kicked by bump(), plus the hops: squashed as it lands, a little
-       stretched in the air), the bend (the top lags behind the friend's own acceleration; while it hangs, the legs),
-       the claw's pinch */
+    /* the soft-toy feel: a squash & stretch spring kicked only by bump() (a landing, being grabbed — the hops keep their
+       shape: squashing on every hop looked rubbery), the bend (the top lags behind the friend's own acceleration; while
+       it hangs, the legs), the claw's pinch */
     const acc = new T.Vector3(), qi = new T.Quaternion();
     function softBody(dt, t, hop, sit) {
-      const s = P.st, ph = P.phase;
+      const s = P.st;
       if (dt <= 0) return;
       const h1 = Math.min(dt, 1 / 30);
       s.sqv += (-(s.sq - 1) * 260 - s.sqv * 11) * h1; s.sq += s.sqv * h1;
       s.sq = Math.max(0.7, Math.min(1.3, s.sq));
-      const he = Math.abs(Math.sin(t * 8.5 + ph)), hc = Math.abs(Math.sin(t * 7 + ph * 0.3));
-      const ce = Math.exp(-Math.pow(he / 0.2, 2)), cc = Math.exp(-Math.pow(hc / 0.2, 2));
-      const hopSq = 1 + sit * (s.ek * (-0.13 * ce + 0.06 * (1 - ce) * Math.abs(Math.cos(t * 8.5 + ph)))
-                              + s.ck * (-0.16 * cc + 0.07 * (1 - cc) * Math.abs(Math.cos(t * 7 + ph * 0.3))));
       P.root.getWorldPosition(tmp);
       if (!s.wp) s.wp = tmp.clone();
       const vel = tmp.clone().sub(s.wp).divideScalar(dt);
@@ -354,7 +352,7 @@
       s.bv.x += (-s.b.x * 120 - s.bv.x * 8 - acc.x * G) * h1; s.bv.y += (-s.b.y * 120 - s.bv.y * 8 - acc.z * G) * h1;
       s.b.x = Math.max(-0.13, Math.min(0.13, s.b.x + s.bv.x * h1)); s.b.y = Math.max(-0.1, Math.min(0.1, s.b.y + s.bv.y * h1));
       const up = Math.max(-0.05, Math.min(0.05, vel.y * 0.02)) * s.hk;     // pulled up fast: a little longer
-      U.uSq.value = s.sq * hopSq * (1 + up);
+      U.uSq.value = s.sq * (1 + up);
       U.uBend.value.copy(s.b);
       U.uHang.value = s.hk; U.uGrip.value = s.hk;
     }
