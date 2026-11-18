@@ -198,7 +198,7 @@ def tsg_mesh(kind):
     return z['v'].astype(np.float32), z['f'].astype(np.int32)
 
 
-def solidify(v, f, res=int(os.environ.get("TC_VRES", 400)), sigma=float(os.environ.get("TC_VSIG", 3.2)), its=int(os.environ.get("TC_VITS", 60))):
+def solidify(v, f, res=int(os.environ.get("TC_VRES", 600)), sigma=float(os.environ.get("TC_VSIG", 1.6)), its=int(os.environ.get("TC_VITS", 20))):
     """the raw TripoSG mesh rebuilt as one clean, closed, smooth surface: its triangles sampled into a voxel grid
     (res cells along the longest side), the shell closed and filled, the solid blurred a little and its surface taken
     again (marching cubes at the half level). TripoSG's own surface had cracks and pits (dark slits on the duck's head
@@ -1633,8 +1633,7 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
     # and a light pass across the seams (a few edges), so they are clean lines, not stair-steps of triangles
     A1 = sp.coo_matrix((np.ones(len(ii)), (ii, jj)), shape=(len(v0),) * 2).tocsr()
     d1 = np.maximum(np.asarray(A1.sum(1)).ravel(), 1)[:, None]
-    for _ in range(4):
-        fill = 0.5 * fill + 0.5 * (A1 @ fill) / d1
+    # (no averaging across the seams: user "색이 뭉개지게 넣지말고 영역별 명확한 색" — each fabric one exact colour)
     if os.environ.get('TC_DBG'):
         np.savez(os.path.expanduser('~/.cache/agent-scratch/tc/clean_dbg.npz'), v0=v0, f0=f0, n0=n0, fill=fill, reg=reg,
                  seeds=seeds, sc=sc, seed_c=seed_c, seed_l=seed_l, lab_img=lab_img, okL=okL, dist=dist, repL=repL)
@@ -1656,7 +1655,7 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
     t0 = cKDTree(v0)
     D, I = t0.query(p, k=8)
     wq = np.exp(-((D - D[:, :1]) / (0.5 * D[:, :1] + 0.002)) ** 2) * np.clip((nrm[:, None, :] * n0[I]).sum(-1), 0, 1) ** 2 + 1e-6
-    fb = (fill[I] * wq[:, :, None]).sum(1) / wq.sum(1, keepdims=True)
+    fb = fill[I[np.arange(len(I)), np.argmax(wq, 1)]]           # (one fabric per texel: crisp seams)
     # volume round the sides and back: the flat fabric colours lit softly — ambient occlusion (creases under the arms,
     # the neck under the head, the seat) and a little more light from above; the picture has its own painted light
     rng = np.random.default_rng(2)
@@ -1676,7 +1675,8 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
         ao = 0.5 * ao + 0.5 * (A1f @ ao) / dgf
     light_v = (0.62 + 0.38 * ao) * (0.93 + 0.07 * nF[:, 1])
     light_t = (b * light_v[vmap][tri]).sum(1)
-    fb = fb * light_t[:, None]
+    if os.environ.get('TC_AO'):
+        fb = fb * light_t[:, None]
     # the picture where it faces squarely: full from ~55 deg in, none past ~70 deg
     acc = np.zeros((len(p), 3), np.float32); ws = np.zeros(len(p), np.float32)
     for bv in pv:
@@ -1700,6 +1700,9 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
 
 
 MV_DIR = os.path.expanduser('~/dev/tools/MV-Adapter')
+# MV-Adapter's guesses vary run to run: per friend the run whose fabric layout was cleanest (picked by eye; the
+# meshes they were made for share the frame with today's to well under a cell)
+MV_PICK = {'cow': 'cow_ee6526abcb', 'dog': 'dog_2304a9db7e', 'duck': 'duck_5199191656'}
 
 
 def mv_views(kind, v, f):
@@ -1710,6 +1713,8 @@ def mv_views(kind, v, f):
     out_dir = os.path.join(MV_DIR, 'out'); os.makedirs(out_dir, exist_ok=True)
     key = hashlib.md5(np.ascontiguousarray(v.astype(np.float32)).tobytes() + np.ascontiguousarray(f.astype(np.int32)).tobytes()).hexdigest()[:10]
     out = os.path.join(out_dir, f'{kind}_{key}.npz')
+    if kind in MV_PICK and os.path.exists(os.path.join(out_dir, MV_PICK[kind] + '.npz')):
+        out = os.path.join(out_dir, MV_PICK[kind] + '.npz')   # (a run whose fabrics came out cleaner; same frame)
     if not os.path.exists(out):
         mesh = os.path.join(out_dir, f'{kind}_{key}_mesh.npz')
         np.savez(mesh, v=v, f=f)

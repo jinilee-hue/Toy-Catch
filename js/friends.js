@@ -135,6 +135,8 @@
         c = (mix(vec3(l), c, ${SAT.toFixed(3)}) - 0.5) * ${CON.toFixed(3)} + 0.5;
         gl_FragColor.rgb = clamp(c, 0.0, 1.0);
       }`;
+  const LITQ = (new URLSearchParams(location.search).get('lit') || '').split(',').map(Number);   // (QA: ?lit=base,gain)
+  const LIT_GLSL = `#define LIT_BASE ${(LITQ[0] || 0.55).toFixed(3)}\n#define LIT_GAIN ${(LITQ[1] || 0.6).toFixed(3)}\n`;
   function plush3dShader(sh) {
     Object.assign(sh.uniforms, this.userData.u);
     sh.uniforms.uLit = this.userData.uLit;
@@ -158,7 +160,7 @@ void main() {
   vTurn = smoothstep(0.95, 0.8, vo.z);                       // 0 seen straight on, 1 turned by ~37 deg or more
 #endif`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('void main() {', 'varying float vFw;\nvarying vec3 vPuffN;\nuniform float uLit;\n#ifdef CLAW_ATLAS\nuniform sampler2D uAtlas;\nvarying vec2 vAuv;\nvarying float vNz, vTurn;\n#endif\nvoid main() {')
+      .replace('void main() {', LIT_GLSL + 'varying float vFw;\nvarying vec3 vPuffN;\nuniform float uLit;\n#ifdef CLAW_ATLAS\nuniform sampler2D uAtlas;\nvarying vec2 vAuv;\nvarying float vNz, vTurn;\n#endif\nvoid main() {')
       .replace('#include <map_fragment>', `
       vec4 texel = texture2D(map, vMapUv);
       #ifdef CLAW_ATLAS
@@ -189,6 +191,18 @@ void main() {
         float away = pow(1.0 - clamp(n.z, 0.0, 1.0), 1.5);
         float shade = 1.0 - 0.16 * away - 0.1 * clamp(-n.y, 0.0, 1.0) * away;
         diffuseColor.rgb *= clamp(shade, 0.72, 1.0);
+        #ifdef CLAW_ATLAS
+        // the sides and back are flat fabric colours (one exact colour per part, user: "영역별 명확한 색"); lit only by
+        // the shape — a soft key light from the upper left front (where the pictures' painted light comes from, fixed
+        // to the camera) wrapped round — so the volume reads instead of a cut-out silhouette. The picture keeps its own
+        // painted light (a second light on it gave bright/dark halves); facing the camera the two meet at 1.0
+        {
+          vec3 L = normalize(vec3(-0.45, 0.65, 0.6));
+          float wrap = clamp((dot(n, L) + 0.35) / 1.35, 0.0, 1.0);
+          float lit = (LIT_BASE + LIT_GAIN * wrap * wrap * (3.0 - 2.0 * wrap)) / (LIT_BASE + LIT_GAIN * 0.784);
+          diffuseColor.rgb *= mix(lit, 1.0, pw);
+        }
+        #endif
         diffuseColor.rgb *= 1.0 + uLit * (0.07 + 0.24 * smoothstep(-0.25, 0.85, n.y));
         diffuseColor.rgb *= mix(vec3(1.0), vec3(1.03, 1.0, 0.95), uLit);
       }`)
