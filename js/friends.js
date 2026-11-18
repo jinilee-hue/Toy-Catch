@@ -387,6 +387,7 @@ void main() {
          hanging — the body swings from there (the hang pivot) */
       P.setGrip3d = (y, r) => { U.uGy.value = y; U.uR.value = r; P.pivotY = y; };
     }
+    if (window.Rig && is3d) Rig.attach(P, { geo, mat, depth, U, d: D3[kind] });   // its limbs on joints (js/rig.js)
     if (window.Poses) Poses.attach(P, is3d ? { geo, mat, depth, U, w, h, u } : null);   // signature pose (js/poses.js)
     if (is3d && geo.userData.one && geo.attributes.pw && !geo.userData.pwOne) {
       // the pose weights were smoothed over the triangles: copies along the atlas seams take their average, else a
@@ -398,7 +399,7 @@ void main() {
       geo.attributes.pw.needsUpdate = true; geo.userData.pwOne = true;
     }
     /* a squash (k > 0) or stretch (k < 0) kick — landing, being grabbed */
-    P.bump = (k) => { P.st.sqv -= k * 3.5; };
+    P.bump = (k) => { P.st.sqv -= k * 3.5; if (P.rig) P.rig.bump(k); };
     P.tilt = 0;
     P.excite = (val) => { P.st.excite = val; };
     P.cheer = (sec = 1.6) => { P.st.cheer = sec; };
@@ -447,6 +448,7 @@ void main() {
       }
       if (P.poser) P.poser.update(dt, t);
       if (is3d) softBody(dt, t, hop, sit);
+      if (P.rig) P.rig.update(dt, t);
     };
     /* the soft-toy feel: a squash & stretch spring kicked only by bump() (a landing, being grabbed — the hops keep their
        shape: squashing on every hop looked rubbery), the bend (the top lags behind the friend's own acceleration; while

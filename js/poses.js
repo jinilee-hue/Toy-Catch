@@ -16,7 +16,12 @@
  * calls P.poseStop()) and staying off while the friend is held; Poses.idle(dt, friends) has one random friend pose every
  * 5-8 s (game.js: on the title and in the game, while not busy).
  * Friends without 3D (?puff / ?flat) get no-op P.pose / P.poseLoop.
- * Dev: dev/friends3d.html?pose (each friend's pose on a loop) · &weights (the parts' weights in colour).
+ * RIGGED friends (js/rig.js: limbs on joints, made by tools/rig.py from design/parts/) play the same moves as JOINT
+ * motions (BONES below): the poses turn bones round their joints — the monkey's arm from the shoulder, the turkey's
+ * wings from their roots, a tail from its base — so nothing drags the body along, and the bones' springs add the
+ * follow-through (an antenna's boing, ears flopping after a nod). The soft-region version (DATA) stays for a friend
+ * whose mesh has no rig data. Same four triggers, same timing.
+ * Dev: dev/friends3d.html?pose (each friend's pose on a loop) · &weights (the parts' weights in colour) · &parts (bones).
  */
 (function () {
   'use strict';
@@ -331,7 +336,7 @@
   const LOOP_K = 0.5, LOOP_GAP = 0.35, XFADE = 0.2;
 
   /* P gets pose(k), poseLoop(on), poser.update(dt, t) (friends.js calls it every frame) and poser.busy */
-  function attach(P, c) {
+  function attachRegions(P, c) {
     const D = c && DATA[P.kind];
     if (!D || !c.geo || !c.geo.attributes.position) { P.pose = noop; P.poseLoop = noop; P.poseStop = noop; return; }
     const { parts, W } = prep(P.kind, c);
@@ -385,6 +390,212 @@
     };
   }
 
+  /* ── the same moves as JOINT motions, for rigged friends (js/rig.js) ──────────────────────────────────────────────
+     act(t, o): o.r(bone, x, y, z) turns a bone round its joint (rad; z = in the picture's plane, + counter-clockwise
+     from the front; x tips it toward (+) / away from the camera; y about the vertical) · o.m(bone, x, y, z) moves it ·
+     o.s(bone, k) scales it (1 = as it is) · o.kick(t0, bone, x, y, z) pushes its spring once at t0 (a boing) ·
+     o.hop / lean / turn / nod: the whole body, as before. Bones: tools/rig.py names (l / r = the picture's left / right);
+     a bone the friend doesn't have is skipped. Every move starts and ends at rest. */
+  const BONES = {
+    monkey: {
+      dur: 1.6,
+      act(t, o) {
+        const e = env(t, 1.6, 0.3, 0.4), w = wave(t - 0.3, 2.4) * sm(0.2, 0.45, t);
+        o.r('arm_r', 0, 0, e * (1.2 + 0.32 * w));                                  // up from the shoulder, then waves
+        o.r('arm_l', 0, 0, -0.1 * e);
+        o.r('ear_r', 0, 0, 0.22 * e * wave(t, 2.4, 0.25));
+        o.r('head', 0, 0, -0.07 * e);                                              // (a little lean into the wave)
+        o.r('tail', 0, 0, 0.35 * e * wave(t, 1.2));
+        o.kick(0.3, 'cap', 0, 0, -2.5);
+        o.hop = 0.045 * bell(t, 0.2, 0.2);
+        o.lean = -0.05 * e;
+      },
+    },
+    mouse: {
+      dur: 1.5,
+      act(t, o) {
+        const e = env(t, 1.5, 0.2, 0.35), w = wave(t, 3.2);
+        o.r('ear_l', 0, 0, -e * (0.12 + 0.22 * w));                                // ears wiggle
+        o.r('ear_r', 0, 0, e * (0.12 + 0.22 * w));
+        o.r('tail', 0, 0, e * 0.5 * wave(t, 1.9));                                  // tail swish from its base
+        o.r('arm_l', 0.18 * e * wave(t, 3.2, 0.25), 0, 0);                         // paws rub
+        o.r('arm_r', 0.18 * e * wave(t, 3.2, 0.75), 0, 0);
+        o.lean = 0.04 * e * wave(t, 0.7);
+      },
+    },
+    ant: {
+      dur: 1.4,
+      act(t, o) {
+        const up = bell(t, 0.22, 0.2), e = env(t, 1.4, 0.15, 0.3);
+        o.m('hat', 0, 0.04 * up - 0.006 * bell(t, 0.48, 0.1), 0);                 // the hat pops up and lands …
+        o.r('antenna_l', 0, 0, -0.14 * up);
+        o.r('antenna_r', 0, 0, 0.14 * up);
+        o.kick(0.42, 'antenna_l', 0, 0, -7);                                        // … and the antennae boing
+        o.kick(0.42, 'antenna_r', 0, 0, 7);
+        o.r('arm_l', 0, 0, -0.35 * e * bell(t, 0.3, 0.3));                         // (arms up: ta-da)
+        o.r('arm_r', 0, 0, 0.35 * e * bell(t, 0.3, 0.3));
+        o.hop = 0.02 * bell(t, 0.18, 0.15);
+      },
+    },
+    seal: {
+      dur: 1.5,
+      act(t, o) {
+        // applause: the flippers swing out and slap back against the tummy, three times, chin up (arf arf)
+        const e = env(t, 1.5, 0.15, 0.3), c = Math.abs(Math.sin((t - 0.1) * Math.PI * 2.4)) * sm(0.05, 0.2, t);
+        o.r('arm_l', 0, 0, -0.65 * c * e);
+        o.r('arm_r', 0, 0, 0.65 * c * e);
+        o.r('head', -(0.1 + 0.08 * (1 - c)) * e, 0, 0);
+        o.r('leg_l', 0, 0, -0.12 * c * e);
+        o.r('leg_r', 0, 0, 0.12 * c * e);
+        o.hop = 0.025 * e * (1 - c);
+      },
+    },
+    turkey: {
+      dur: 1.6,
+      act(t, o) {
+        const e = env(t, 1.6, 0.3, 0.45), r = 0.035 * e * wave(t, 7.5);
+        o.r('fan_l', 0, 0, 0.12 * e + r); o.r('fan_r', 0, 0, -0.12 * e - r);    // the fan opens out and rattles
+        o.s('fan_l', 1 + 0.08 * e); o.s('fan_r', 1 + 0.08 * e);
+        const f = e * (0.25 + 0.3 * (0.5 - 0.5 * Math.cos((t - 0.3) * 3 * PI2)) * sm(0.25, 0.4, t));
+        o.r('wing_l', 0, 0, -f); o.r('wing_r', 0, 0, f);                          // wings flap from their roots
+        o.r('head', 0, 0, 0.05 * e * wave(t, 1.5));
+        o.kick(0.35, 'crest', 0, 0, 4);
+        o.nod = 0.06 * e * wave(t, 1.5);
+      },
+    },
+    turtle: {
+      dur: 1.5,
+      act(t, o) {
+        const inn = sm(0.05, 0.3, t) * (1 - sm(0.62, 0.78, t));                    // ducks in …
+        const out = ring(t, 0.72, 1.6, 4.5) * sm(0.64, 0.74, t);                    // … pops out with a wobble
+        o.m('head', 0.15 * inn - 0.04 * out, 0, -0.12 * inn);
+        o.s('head', 1 - 0.24 * inn);
+        o.r('head', 0, 0, -0.12 * out);
+        const e = env(t, 1.5, 0.2, 0.3), pd = 0.22 * e * sm(0.7, 0.85, t);         // (then paddles its feet)
+        o.r('leg_l', 0, 0, pd * wave(t, 2.2)); o.r('leg_b', 0, 0, -pd * wave(t, 2.2)); o.r('leg_r', 0, 0, -pd * wave(t, 2.2, 0.5));
+        o.r('tail', 0, 0, 0.4 * e * wave(t, 3));
+        o.hop = 0.03 * bell(t, 0.84, 0.14);
+      },
+    },
+    cat: {
+      dur: 1.6,
+      act(t, o) {
+        const e = env(t, 1.6, 0.35, 0.4);
+        o.r('arm_r', 0, 0, e * (0.95 + 0.32 * wave(t - 0.35, 2.0) * sm(0.3, 0.5, t)));   // paw up, beckoning: come here!
+        o.r('ear_l', 0, 0, 0.22 * bell(t, 0.75, 0.1) + 0.22 * bell(t, 1.05, 0.1));      // ear twitches
+        o.r('ear_r', 0, 0, -0.22 * bell(t, 0.6, 0.1) - 0.22 * bell(t, 0.9, 0.1));
+        o.r('tail', 0, 0, 0.45 * e * wave(t, 1.25));
+        o.lean = 0.04 * e;
+      },
+    },
+    cow: {
+      dur: 1.5,
+      act(t, o) {
+        const e = env(t, 1.5, 0.25, 0.35);
+        o.r('ear_l', 0, 0, e * (0.2 + 0.35 * wave(t, 3.2)));                        // the ears flap (in turn)
+        o.r('ear_r', 0, 0, -e * (0.2 + 0.35 * wave(t, 3.2, 0.5)));
+        o.r('head', 0, 0, 0.1 * e * wave(t, 1.2));                                   // and the head sways: moo
+        o.r('arm_l', 0, 0, -0.12 * e * wave(t, 1.2)); o.r('arm_r', 0, 0, -0.12 * e * wave(t, 1.2));
+      },
+    },
+    dog: {
+      dur: 1.6,
+      act(t, o) {
+        const e = env(t, 1.6, 0.3, 0.45);
+        o.r('head', 0, 0, 0.2 * e);                                                  // head tilt: hm?
+        const fl = 0.3 * ring(t, 0.1, 2.6, 2.4) + 0.12 * e;
+        o.r('ear_l', 0, 0, -fl); o.r('ear_r', 0, 0, fl);
+        o.r('tail', 0, 0, 0.5 * e * wave(t, 3.5));                                   // and a wag
+      },
+    },
+    fish: {
+      dur: 1.5,
+      act(t, o) {
+        const e = env(t, 1.5, 0.2, 0.35), a = 0.42 * e * wave(t, 2.4);
+        o.r('tail', 0, 0.55 * a, 0.83 * a);                                          // swish swish
+        o.r('fin_top', 0, 0, 0.16 * e * wave(t, 2.4, 0.3));
+        o.r('fin_side', 0.25 * e * wave(t, 2.4, 0.6), 0, 0.08 * e * wave(t, 2.4, 0.6));
+        o.r('fin_bottom', 0, 0, 0.15 * e * wave(t, 2.4, 0.45));
+        o.s('lips', 1 + 0.3 * (bell(t, 0.95, 0.15) + bell(t, 1.25, 0.15)));        // blub blub
+        o.turn = 0.14 * e * wave(t, 1.2);
+        o.hop = 0.03 * e * (0.5 - 0.5 * Math.cos(t * 1.2 * PI2));                   // (it swims up a little)
+      },
+    },
+    duck: {
+      dur: 1.5,
+      act(t, o) {
+        const e = env(t, 1.5, 0.2, 0.35);
+        const f = e * (0.15 + 0.42 * (0.5 - 0.5 * Math.cos(t * 4 * PI2)));
+        o.r('wing_l', 0, 0, -f); o.r('wing_r', 0, 0, f);                            // flap flap
+        o.r('tail', 0, 0, 0.35 * e * wave(t, 4));
+        o.r('leg_l', 0.18 * e * wave(t, 1), 0, 0); o.r('leg_r', -0.18 * e * wave(t, 1), 0, 0);   // (a waddle)
+        o.kick(0.25, 'cap', 0, 0, 3);
+        o.hop = 0.04 * e * Math.abs(wave(t, 2));
+        o.lean = 0.05 * e * wave(t, 1);
+      },
+    },
+  };
+
+  /* bone poses: the same player as attachRegions (one-shot with strength k, the gentle loop while the claw is right
+     over it, crossfades, off while held), writing each bone's turn / move / scale into P.rig (js/rig.js composes them
+     with its springs) and the whole-body acting into P.pic */
+  function attachBones(P) {
+    const D = BONES[P.kind], R = P.rig, B = R.bones, nb = B.length;
+    const idx = {};
+    for (const b of B) idx[b.name] = b.i;
+    const NO = nb * 7 + 4, BO = nb * 7;                  // per bone: turn xyz, move xyz, scale - 1; then hop lean turn nod
+    const tgt = new Float32Array(NO), cur = new Float32Array(NO), from = new Float32Array(NO);
+    const st = { one: false, t: 0, k: 1, loop: false, lt: 0, lk: 0, xf: XFADE, pt: -1, ct: 0, g: 0 };
+    const o = {
+      r(n, x, y, z) { const i = idx[n]; if (i == null) return; const j = i * 7; tgt[j] += x; tgt[j + 1] += y; tgt[j + 2] += z; },
+      m(n, x, y, z) { const i = idx[n]; if (i == null) return; const j = i * 7; tgt[j + 3] += x; tgt[j + 4] += y; tgt[j + 5] += z; },
+      s(n, k) { const i = idx[n]; if (i != null) tgt[i * 7 + 6] += k - 1; },
+      kick(t0, n, x, y, z) { const i = idx[n]; if (i != null && st.pt < t0 && st.ct >= t0) R.kick(i, x * st.g, y * st.g, z * st.g); },
+      hop: 0, lean: 0, turn: 0, nod: 0,
+    };
+    const restart = () => { from.set(cur); st.xf = 0; };
+    P.pose = (k = 1) => { if (P.st.hk > 0.5) return; restart(); st.one = true; st.t = 0; st.k = k; st.lt = 0; st.pt = -1; };
+    P.poseLoop = (on) => { st.loop = !!on; };
+    P.poseStop = () => { restart(); st.one = false; st.lk = 0; st.lt = 0; };   // (eases back to rest)
+    P.poser = {
+      get busy() { return st.one; },
+      update(dt) {
+        const s = P.st;
+        if (st.one && (st.t += dt) >= D.dur) { st.one = false; st.lt = 0; }
+        const loopOn = (st.loop || s.excite >= 0.99) && s.hk < 0.05;
+        st.lk += ((loopOn ? 1 : 0) - st.lk) * Math.min(1, dt * (loopOn ? 4 : 9));
+        tgt.fill(0); o.hop = o.lean = o.turn = o.nod = 0;
+        let k = 0, body = 1, at = -1;
+        if (st.one) { at = st.t; k = st.k; }
+        else if (st.lk > 0.002) {
+          const pl = st.lt;
+          st.lt += dt; if (st.lt >= D.dur + LOOP_GAP) st.lt = 0;
+          if (st.lt < D.dur) { at = st.lt; if (st.lt < pl) st.pt = -1; }
+          k = LOOP_K * st.lk; body = 0.3;                // (the selection already hops: only a hint of the body acting)
+        } else st.lt = 0;
+        st.g = k * Math.max(0, 1 - s.hk * 2);             // off while it's held
+        if (at >= 0) { st.ct = at; D.act(at, o); st.pt = at; }
+        tgt[BO] = o.hop * body; tgt[BO + 1] = o.lean * body; tgt[BO + 2] = o.turn * body; tgt[BO + 3] = o.nod * body;
+        for (let i = 0; i < NO; i++) tgt[i] *= st.g;
+        st.xf += dt;
+        const x = st.xf >= XFADE ? 1 : sm(0, XFADE, st.xf);
+        for (let i = 0; i < NO; i++) cur[i] = from[i] + (tgt[i] - from[i]) * x;
+        for (const b of B) {
+          const j = b.i * 7;
+          b.rot.set(cur[j], cur[j + 1], cur[j + 2]); b.move.set(cur[j + 3], cur[j + 4], cur[j + 5]); b.scale = 1 + cur[j + 6];
+        }
+        P.pic.position.y = cur[BO];
+        P.pic.rotation.set(cur[BO + 3], cur[BO + 2], cur[BO + 1]);
+      },
+    };
+  }
+
+  /* P gets pose(k), poseLoop(on), poseStop(), poser.update(dt, t) (friends.js calls it every frame) and poser.busy */
+  function attach(P, c) {
+    if (P.rig && BONES[P.kind]) return attachBones(P);
+    return attachRegions(P, c);
+  }
+
   /* now and then (every 5-8 s) one friend that isn't under the claw, held, cheering or busy does its pose */
   let idleT = 3 + Math.random() * 3, last = null;
   function idle(dt, list) {
@@ -398,5 +609,5 @@
     if (pick) { last = pick; pick.pose(0.7); }
   }
 
-  window.Poses = { GLSL, DATA, attach, idle, idleIn: (sec) => { idleT = sec; }, debug: false };   // (idleIn: QA)
+  window.Poses = { GLSL, DATA, BONES, attach, idle, idleIn: (sec) => { idleT = sec; }, debug: false };   // (idleIn: QA)
 })();
