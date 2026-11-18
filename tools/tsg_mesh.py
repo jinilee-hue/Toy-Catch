@@ -27,9 +27,12 @@ TSG_DIR = os.path.expanduser('~/dev/tools/TripoSG')
 OUT = os.path.join(TSG_DIR, 'out')
 
 
-def prep(kind, pad=0.1):
-    """the picture as TripoSG's prepare_image makes it: cropped to the alpha box, on white, padded square"""
-    im = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp')).convert('RGBA')).astype(np.float32) / 255
+def prep(kind, pad=0.1, view=''):
+    """the picture as TripoSG's prepare_image makes it: cropped to the alpha box, on white, padded square (view: one of
+    the user's turnaround views instead, design/turnaround/<kind>/<view>.png)"""
+    src = os.path.join(ROOT, 'design', 'turnaround', kind, f'{view}.png') if view else \
+        os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp')
+    im = np.asarray(Image.open(src).convert('RGBA')).astype(np.float32) / 255
     a = im[..., 3:4]
     rgb = im[..., :3] * a + (1 - a)
     ys, xs = np.nonzero(im[..., 3] > 0)
@@ -55,6 +58,7 @@ def main():
     ap.add_argument('--faces', type=int, default=400000, help='raw mesh pre-simplified to this many triangles')
     ap.add_argument('--out', default=OUT)
     ap.add_argument('--tag', default='', help='suffix for the cache name (spike variants)')
+    ap.add_argument('--view', default='', help="a turnaround view as the input (e.g. left): cached as <kind>_<view>.npz")
     o = ap.parse_args()
     import torch
     sys.path.insert(0, TSG_DIR)
@@ -65,8 +69,12 @@ def main():
     pipe = TripoSGPipeline.from_pretrained(os.path.join(TSG_DIR, 'pretrained_weights', 'TripoSG')).to(dev, dt)
     print(f'loaded in {time.time() - t0:.1f}s on {dev} {o.dtype}', flush=True)
     os.makedirs(o.out, exist_ok=True)
+    if o.view:
+        o.tag = o.tag or '_' + o.view
     for kind in o.kinds.split(','):
-        img = prep(kind)
+        if o.view and os.path.exists(os.path.join(o.out, f'{kind}{o.tag}.npz')):
+            continue
+        img = prep(kind, view=o.view)
         img.save(os.path.join(o.out, f'{kind}{o.tag}_in.png'))
         t0 = time.time()
         with torch.no_grad():

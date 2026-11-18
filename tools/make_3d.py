@@ -530,6 +530,14 @@ def turn_views(kind):
     pa = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp')).convert('RGBA')).astype(np.float32) / 255
     pm = pa[..., 3] > 0.5
     white_fabric = flat_white(pa[..., :3], pm).sum() > 0.03 * pm.sum()     # (the cow: white is its fabric)
+    eye_r = None
+    try:
+        js = open(os.path.join(ROOT, 'js', 'eyes.js'), encoding='utf-8').read()
+        tab = json.loads(js[js.index('/*@eyes*/') + 9:js.index('/*@end*/')]).get(kind)
+        if tab:
+            eye_r = (float(np.mean([e[2] for e in tab['eyes']])), float(np.mean([e[3] for e in tab['eyes']])))
+    except Exception:
+        pass
     out = {}
     for name, fname in mp.items():
         a = np.asarray(Image.open(os.path.join(d, f'{fname}.png')).convert('RGBA')).astype(np.float32) / 255
@@ -546,6 +554,26 @@ def turn_views(kind):
         # side-on friends (turtle, fish): the painted eyes in the turnaround sit beside the new eye domes, never on
         # them — a second eye. Near-black compact blobs (iris, pupil) and the white round them are left out
         eye_cut = np.zeros_like(m)
+        if kind not in SIDE_ON and name in ('side', 'side2') and eye_r is not None:
+            # the painted eye seen from the side lands beside the new eye dome (the drawing and the mesh never agree to
+            # the pixel): a second, smeared eye on the cheek. Near-black compact blobs of an eye's size in the head
+            # are left out (the dome and the fur round it take their place); a big nose is not eye-sized
+            rgb_ = a[..., :3]
+            dark = m & (rgb_.mean(-1) < 0.3) & (rgb_.max(-1) - rgb_.min(-1) < 0.25)
+            ys_m = np.nonzero(m)[0]; ytop, yh = ys_m.min(), ys_m.max() - ys_m.min()
+            sc_ = yh / pa.shape[0]                     # (turnaround px per picture px)
+            E = np.pi * (eye_r[0] * pa.shape[1] * sc_) * (eye_r[1] * pa.shape[0] * sc_)
+            lab_, n_ = ndi.label(dark)
+            for i, sl_ in enumerate(ndi.find_objects(lab_)):
+                if sl_ is None:
+                    continue
+                r_ = lab_[sl_] == i + 1
+                area = r_.sum(); hh, ww = r_.shape
+                cy_ = (sl_[0].start + sl_[0].stop) / 2
+                if 0.2 * E < area < 2.5 * E and area > 0.45 * hh * ww and 0.35 < hh / max(ww, 1) < 2.8 and cy_ < ytop + 0.55 * yh:
+                    blob = np.zeros_like(m); blob[sl_] = r_
+                    eye_cut |= ndi.binary_dilation(blob, iterations=int(0.5 * max(hh, ww)) + 5)
+            eye_cut &= m
         if kind in SIDE_ON:
             rgb_ = a[..., :3]
             dark = m & (rgb_.mean(-1) < 0.45) & (rgb_.max(-1) - rgb_.min(-1) < 0.35)
@@ -844,6 +872,10 @@ def pic_in_plane(pic, fp):
 def fit_front(v, f, A, fp, dbg=None):
     """warp the mesh across (x, y) until its outline from the front is the picture's alpha A (front-plane grid)"""
     M0 = fp.mask(v, f)
+    from scipy import ndimage as ndi
+    # thin bits of the picture the shape doesn't have (whiskers drawn past the cheeks) are not pulled out of the mesh:
+    # they came out as spikes; thin parts the shape has (antennae, a tail) stay targets
+    A = opened(A, 4) | (A & ndi.binary_dilation(M0, iterations=3))
     u = demons(M0, A, its=(80, 60, 50), sig=(3.0, 2.5, 1.8))
     d = sample(np.moveaxis(u, 0, -1), fp.pix(v))
     v = v + fp.move(d[:, 1], d[:, 0])
@@ -884,11 +916,13 @@ def opened(m, r):
     return ndi.binary_opening(m, structure=(x * x + y * y) <= r * r)
 
 
-def fit_depth(v, f, views, k, kind, h, dbg=None):
+def fit_depth(v, f, views, k, kind, h, dbg=None, which=None, lim_frac=0.1):
     """the sheet's side view (turtle, fish: the face-on view) laid over the mesh's side outline, the mesh warped in
     depth only until they match — the bodies' outlines only (thin bits opened away), smoothly and by a limited amount,
     so a part the sheet draws differently (the turkey's fan, a tail the mesh lacks) isn't dragged into a blade"""
-    if 'side' in views:
+    if which is not None:
+        rgb, m = views[which[0]][:2]; d, r = which[1], which[2]
+    elif 'side' in views:
         rgb, m = views['side'][:2]; d, r = (1, 0, 0), (0, 0, -1)
     else:
         rgb, m = views['head'][:2]; d, r = (-1, 0, 0), (0, 0, 1)
@@ -900,7 +934,7 @@ def fit_depth(v, f, views, k, kind, h, dbg=None):
     T = placed(m.astype(np.float32), S0.shape, ox, oy, sx, sy, cval=0) > 0.5
     ro = int(round(0.035 * h / PX))
     u = demons(opened(S0, ro), opened(T, ro), its=(70, 50, 20), sig=(6.0, 6.0, 6.0), lock=0)
-    lim = 0.1 * h / PX
+    lim = lim_frac * h / PX
     du = np.clip(sample(u[1], pl.pix(v)), -lim, lim)
     # the shift smoothed over the mesh's surface: a thin part's two faces (an ear, an antenna, a brim seen edge-on) are
     # close along the surface and move together, all of a piece, while the body's front and back stay far apart and
@@ -918,6 +952,140 @@ def fit_depth(v, f, views, k, kind, h, dbg=None):
     if dbg is not None:
         dbg['side'] = (T, S0, S1)
     return v
+
+
+FILL_MAX = float(os.environ.get('TC_FILL', 0))  # (how far, x height, a part grows out toward a drawing's outline)
+
+
+FACE_OPEN = int(os.environ.get('TC_FACE_OPEN', 4))   # (opening radius in cells on the front of the head)
+FUSE_W = float(os.environ.get('TC_FUSE', 0.5))     # (weight of the side-view TripoSG shape, when there is one)
+
+
+def voxelise(v, f, lo, cell, shape, pad):
+    """the closed mesh as a solid occupancy grid (its surface sampled into the cells, the inside filled)"""
+    import trimesh
+    from scipy import ndimage as ndi
+    m = trimesh.Trimesh(v, f, process=False)
+    n = int(min(10e6, max(3e6, m.area / cell ** 2 * 6)))
+    pts, _ = trimesh.sample.sample_surface(m, n, seed=0)
+    pts = np.vstack([pts, v])
+    ijk = np.clip(np.floor((pts - lo) / cell).astype(int) + pad, 0, np.array(shape) - 1)
+    shell = np.zeros(shape, bool)
+    shell[ijk[:, 0], ijk[:, 1], ijk[:, 2]] = True
+    for dd in (1, 2, 3):
+        sh = ndi.binary_dilation(shell, iterations=dd)
+        solid = ndi.binary_fill_holes(sh)
+        if solid.sum() > 2.5 * sh.sum():
+            break
+    return ndi.binary_erosion(solid, iterations=dd)
+
+
+def hull_carve(v, f, views, k, h, A, fp, kind, res=500, sigma=1.4, grow=2, dbg=None, head=None):
+    """the shape cut to the user's turnaround (user: "형태도 턴어라운드 4방향 외곽선에 맞춰"): a point stays only where
+    the front picture AND one of the two side views (left or right, mirrored) show the friend — the visual hull of the
+    four drawings, a little grown (registration) — so whatever TripoSG guessed beyond the drawings' outlines (the
+    cat's splayed knees, the seal's jutting face, the turkey's fan seen edge-on) is cut away; then the solid is blurred a
+    touch and surfaced again"""
+    import trimesh
+    from scipy import ndimage as ndi
+    from skimage.measure import marching_cubes
+    if kind in SIDE_ON:
+        sides = [('head', (-1, 0, 0), (0, 0, 1)), ('tail', (1, 0, 0), (0, 0, -1))]
+    else:
+        sides = [('side', (1, 0, 0), (0, 0, -1)), ('side2', (-1, 0, 0), (0, 0, 1))]
+    sides = [sv for sv in sides if sv[0] in views]
+    if not sides:
+        return v, f
+    lo0, hi0 = v.min(0), v.max(0)
+    span = hi0 - lo0
+    cell = span.max() / res
+    pad = 6
+    lo = lo0 - 0.02 * span.max()                       # (room for what the drawings have beyond the mesh)
+    shape = tuple((np.ceil((hi0 + 0.02 * span.max() - lo) / cell)).astype(int) + 2 * pad + 1)
+    O = voxelise(v, f, lo, cell, shape, pad)
+    cx = lo[0] + (np.arange(shape[0]) - pad + 0.5) * cell
+    cy = lo[1] + (np.arange(shape[1]) - pad + 0.5) * cell
+    cz = lo[2] + (np.arange(shape[2]) - pad + 0.5) * cell
+    # the front: the game picture itself
+    Ag = ndi.binary_dilation(A, iterations=grow)
+    X, Y = np.meshgrid(cx, cy, indexing='ij')
+    q = fp.pix(np.stack([X.ravel(), Y.ravel(), np.zeros(X.size)], 1))
+    XY = sample(Ag.astype(np.float32), q, order=0, cval=0).reshape(X.shape) > 0.5
+    # the sides: each turnaround view placed on the mesh's own outline in its direction (like the texture bake), the
+    # two mirrored halves of the hull united (an AI drawing is not exactly consistent from side to side)
+    ZY = np.zeros((shape[1], shape[2]), bool)
+    ZY0 = np.zeros((shape[1], shape[2]), bool)         # (not grown: what to fill toward)
+    Z, Y2 = np.meshgrid(cz, cy, indexing='xy')         # (shape: (ny, nz))
+    for name, d, r in sides:
+        m = views[name][1]
+        pl = Plane.around(v, d, r, margin=80)
+        S = pl.mask(v, f)
+        qq, ox, oy, sx, sy = place(m, k, S)
+        T = placed(m.astype(np.float32), S.shape, ox, oy, sx, sy, cval=0) > 0.5
+        q2 = pl.pix(np.stack([np.zeros(Z.size), Y2.ravel(), Z.ravel()], 1))
+        ZY0 |= sample(T.astype(np.float32), q2, order=0, cval=0).reshape(Z.shape) > 0.5
+        T = ndi.binary_dilation(T, iterations=grow)
+        ZY |= sample(T.astype(np.float32), q2, order=0, cval=0).reshape(Z.shape) > 0.5
+        print(f'  hull: {name} placed iou {qq:.3f}')
+    # a second shape made by TripoSG from the turnaround's SIDE view (tools/tsg_mesh.py --view left), turned into the
+    # friend's frame (its +z = our +x, its +x = our -z), scaled to the same height, centred on the same box; the two
+    # solids' signed distances averaged — the front run knows the width and the face, the side run the profile (a
+    # snout, feet pointing forward, a tail's curl)
+    sidefile = os.path.join(OUT_TSG, f'{kind}_left.npz')
+    if FUSE_W > 0 and os.path.exists(sidefile) and kind not in SIDE_ON:
+        z_ = np.load(sidefile)
+        vs_, fs_ = z_['v'].astype(np.float64), z_['f'].astype(np.int32)
+        vs_ = np.stack([vs_[:, 2], vs_[:, 1], -vs_[:, 0]], 1)
+        fs_ = fs_[:, ::-1]
+        sc = (hi0[1] - lo0[1]) / (vs_[:, 1].max() - vs_[:, 1].min())
+        vs_ = (vs_ - (vs_.min(0) + vs_.max(0)) / 2) * sc + (lo0 + hi0) / 2
+        Os = voxelise(vs_, fs_, lo, cell, shape, pad)
+        sdf_ = lambda X: ndi.distance_transform_edt(~X) - ndi.distance_transform_edt(X)
+        fused = (1 - FUSE_W) * sdf_(O) + FUSE_W * sdf_(Os)
+        print(f'  fuse: side-view shape x{FUSE_W:.2f} (scale {sc:.3f}): {O.sum()} -> {(fused < 0).sum()} cells')
+        O = fused < 0
+    # what the side drawings have and the shape lacks (feet reaching further forward, an ear's tip, a tail's curl):
+    # filled by carrying the shape's nearest cross-section out to the drawing's outline (each missing side pixel takes
+    # the across-occupancy of the nearest pixel the shape covers) — a limb grows on as itself, not as a slab
+    P = O.any(0)                                       # (ny, nz)
+    miss = ndi.binary_opening(ZY0 & ~P, iterations=1)
+    dist, (iy, iz) = ndi.distance_transform_edt(~P, return_indices=True)
+    miss &= dist * cell < FILL_MAX * h
+    O = O.copy()
+    ys, zs = np.nonzero(miss)
+    if len(ys) and FILL_MAX > 0:
+        O[:, ys, zs] = O[:, iy[ys, zs], iz[ys, zs]] & XY[:, ys]
+    print(f'  hull: filled {len(ys)} side pixels toward the drawings ({(ZY0 & ~P).sum()} missing)')
+    H = XY[:, :, None] & ZY[None, :, :]
+    cut = O & ~H
+    O2 = O & H
+    print(f'  hull: cut {cut.sum() / max(O.sum(), 1):.1%} of the volume')
+    if dbg is not None:
+        dbg['hull'] = (O.sum(), cut.sum())
+    if head is not None and FACE_OPEN > 0:
+        # whiskers modelled as thin ridges on the cheeks (TripoSG read the drawn whiskers as relief): with the drawn
+        # whiskers on them they broke into spikes and double lines turning. Thin bumps on the front of the head are
+        # opened away (the nose, the muzzle, the ears are much thicker)
+        hx, hy, hrx, hry = head
+        X3 = cx[:, None, None]; Y3 = cy[None, :, None]; Z3 = cz[None, None, :]
+        zc = 0.5 * (v[:, 2].min() + v[:, 2].max())
+        R = (((X3 - hx) / (2.0 * hrx)) ** 2 + ((Y3 - hy) / (0.9 * hry)) ** 2 < 1) & (Z3 > zc - 0.25 * (v[:, 2].max() - v[:, 2].min()))
+        rr = FACE_OPEN
+        g = np.mgrid[-rr:rr + 1, -rr:rr + 1, -rr:rr + 1]
+        ball = (g ** 2).sum(0) <= rr * rr
+        Op = ndi.binary_opening(O2, structure=ball)
+        O2 = np.where(R, Op, O2)
+        print(f'  face: {int((O2 != np.where(R, O2, O2)).sum())} / opened r={FACE_OPEN}: {int((R & (O & H) & ~Op).sum())} cells of thin bumps off')
+    occ = ndi.gaussian_filter(O2.astype(np.float32), sigma)
+    vv, ff, _, _ = marching_cubes(occ, 0.5)
+    vv = (vv - pad + 0.5) * cell + lo
+    mm = trimesh.Trimesh(vv, ff[:, ::-1], process=True)
+    parts = mm.split(only_watertight=False)
+    if len(parts) > 1:
+        big = max(len(p_.faces) for p_ in parts)
+        mm = trimesh.util.concatenate([p_ for p_ in parts if len(p_.faces) >= 0.02 * big])
+    trimesh.smoothing.filter_taubin(mm, lamb=0.5, nu=-0.53, iterations=10)
+    return np.asarray(mm.vertices, np.float64), np.asarray(mm.faces, np.int32)
 
 
 def add_tails(v, f, views, k, h, gy, dbg=None):
@@ -1914,6 +2082,152 @@ def bake_mv(kind, v, f, n, views, res=1024, pad=8, dbg=None):
     return vmap, idx, uv, img
 
 
+SEL_BLIND = 0.42                                 # (faces no view sees more squarely than this: filled)
+
+
+def bake_select(v, f, n, views, res=1024, pad=8, dbg=None, lam=0.6, its=12, island=40):
+    """the atlas with ONE view per face (user: "색 번짐 없이"): blending two drawings that never agree to the pixel gave
+    double whiskers, double ears and smudged patches where they met. Each face takes the view that faces it most
+    squarely and sees it (the game picture first where it faces the front), the choice smoothed over the mesh (a face
+    takes its neighbours' view unless its own is clearly better; small islands merged) so the seams are few and run
+    where the surface turns; then the seams are levelled — at each seam vertex the views on both sides are pulled to
+    their mean colour by an offset that fades out into each view's region — so no line shows where two views meet"""
+    import xatlas
+    import scipy.sparse as sp
+    from scipy import ndimage as ndi
+    from scipy.spatial import cKDTree
+    nv = len(views)
+    nsm = smooth_normals(v, f, its=10)
+    fc = v[f].mean(1)
+    fn_ = nsm[f].mean(1); fn_ /= np.maximum(np.linalg.norm(fn_, axis=1, keepdims=True), 1e-9)
+    Q = np.zeros((len(f), nv), np.float32)
+    for i, bv in enumerate(views):
+        w, _ = bv.weights_colours(fc, fn_)
+        nd = np.clip(fn_ @ bv.d, 0, 1)
+        q = (w > 0) * nd
+        if bv.name == 'front':
+            q = q * 1.6                                # (the user's own art: preferred where it faces the front)
+        Q[:, i] = q
+    lab = Q.argmax(1)
+    lab[Q.max(1) <= 0] = -1
+    raw = np.zeros(len(f), np.float32)
+    for i, bv in enumerate(views):
+        w, _ = bv.weights_colours(fc, fn_)
+        raw = np.maximum(raw, (w > 0) * np.clip(fn_ @ bv.d, 0, 1))
+    blind = raw < SEL_BLIND                            # (seen only at a graze: streaks — filled from round them)
+    # face adjacency
+    import trimesh
+    tm = trimesh.Trimesh(v, f, process=False)
+    fa = tm.face_adjacency
+    A = sp.coo_matrix((np.ones(len(fa) * 2), (np.r_[fa[:, 0], fa[:, 1]], np.r_[fa[:, 1], fa[:, 0]])), shape=(len(f),) * 2).tocsr()
+    cost = 1.0 - Q / np.maximum(Q.max(1, keepdims=True), 1e-6)
+    cost[Q <= 0] = 9.0
+    for _ in range(its):
+        onehot = np.zeros((len(f), nv), np.float32)
+        ok = lab >= 0
+        onehot[np.nonzero(ok)[0], lab[ok]] = 1
+        nb = A @ onehot
+        deg = np.maximum(nb.sum(1, keepdims=True), 1)
+        lab = np.argmin(cost + lam * (1 - nb / deg), 1)
+    # small islands into the surrounding view
+    for _ in range(3):
+        same = lab[fa[:, 0]] == lab[fa[:, 1]]
+        As = sp.coo_matrix((np.ones(same.sum() * 2), (np.r_[fa[same, 0], fa[same, 1]], np.r_[fa[same, 1], fa[same, 0]])), shape=(len(f),) * 2).tocsr()
+        from scipy.sparse import csgraph
+        ncomp, comp = csgraph.connected_components(As, directed=False)
+        size = np.bincount(comp, minlength=ncomp)
+        small = size[comp] < island
+        if not small.any():
+            break
+        onehot = np.zeros((len(f), nv), np.float32); onehot[np.arange(len(f)), lab] = 1
+        onehot[small] = 0
+        nb = A @ onehot
+        repl = nb.argmax(1)
+        has = nb.max(1) > 0
+        lab = np.where(small & has, repl, lab)
+    print('  view per face: ' + ', '.join(f'{bv.name} {np.mean(lab == i):.0%}' for i, bv in enumerate(views)))
+    # seam levelling: per (vertex, view) colour offsets
+    vc = np.zeros((nv, len(v), 3), np.float32)
+    for i, bv in enumerate(views):
+        _, c = bv.weights_colours(v, nsm)
+        vc[i] = c
+    VL = np.zeros((len(v), nv), bool)                  # (vertex touches a face of view i)
+    for i in range(nv):
+        VL[np.unique(f[lab == i].ravel()), i] = True
+    seam = VL.sum(1) > 1
+    mean = np.zeros((len(v), 3), np.float32)
+    cnt = VL.sum(1).astype(np.float32)
+    for i in range(nv):
+        mean += VL[:, i, None] * vc[i]
+    mean /= np.maximum(cnt, 1)[:, None]
+    E = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    off = np.zeros((nv, len(v), 3), np.float32)
+    for i in range(nv):
+        ins = VL[:, i]
+        if not ins.any():
+            continue
+        e = E[ins[E[:, 0]] & ins[E[:, 1]]]
+        Ai = sp.coo_matrix((np.ones(len(e) * 2), (np.r_[e[:, 0], e[:, 1]], np.r_[e[:, 1], e[:, 0]])), shape=(len(v),) * 2).tocsr()
+        dg = np.maximum(np.asarray(Ai.sum(1)).ravel(), 1)[:, None]
+        fix = seam & ins
+        o = np.zeros((len(v), 3), np.float32)
+        o[fix] = mean[fix] - vc[i][fix]
+        for _ in range(250):
+            o = np.where(fix[:, None], o, 0.985 * (Ai @ o) / dg)
+        off[i] = o * ins[:, None]
+    # atlas + texels, each from its face's view, plus the levelling offset
+    atlas = xatlas.Atlas()
+    atlas.add_mesh(v.astype(np.float32), f.astype(np.uint32))
+    co = xatlas.ChartOptions(); co.max_iterations = 4; co.max_cost = 6.0
+    po = xatlas.PackOptions(); po.resolution = res; po.padding = pad; po.bilinear = True; po.rotate_charts = True
+    atlas.generate(co, po)
+    vmap, idx, uv = atlas[0]
+    print(f'  atlas: {atlas.chart_count} charts, {len(vmap)} verts (was {len(v)}), utilisation {float(np.ravel(atlas.utilization)[0]):.2f}')
+    ft = idx.astype(np.int64)
+    P = np.stack([uv[:, 0] * res, (1 - uv[:, 1]) * res], 1)
+    fid, bary = raster(P, ft, res, res)
+    on = fid >= 0
+    tf = fid[on]                                       # (atlas faces = the mesh's faces, same order)
+    b = bary[on]
+    tri = ft[tf]
+    p = (b[:, :, None] * v[vmap][tri]).sum(1)
+    nrm = (b[:, :, None] * nsm[vmap][tri]).sum(1)
+    nrm /= np.maximum(np.linalg.norm(nrm, axis=1), 1e-9)[:, None]
+    L = lab[tf]
+    col = np.zeros((len(p), 3), np.float32)
+    unseen = np.zeros(len(p), bool)                    # (the chosen view doesn't show it: a cut-out painted eye)
+    for i, bv in enumerate(views):
+        sel = np.nonzero(L == i)[0]
+        if not len(sel):
+            continue
+        w_, c = bv.weights_colours(p[sel], nrm[sel])
+        o = (b[sel][:, :, None] * off[i][vmap][tri[sel]]).sum(1)
+        col[sel] = c + o
+        unseen[sel] = w_ <= 0
+    bt = blind[tf] | unseen
+    if unseen.any():
+        # (round a cut-out eye the bled colour was the drawing's shade in the eye socket: a dark blotch by the dome —
+        # those texels and a ring round them take the plain fabric from further out)
+        from scipy.spatial import cKDTree as _K
+        near = _K(p[unseen]).query(p, k=1)[0] < 0.035
+        bt = bt | near
+    if bt.any() and (~bt).sum() > 50:
+        good = np.nonzero(~bt)[0]
+        kt = cKDTree(p[good])
+        d_, I_ = kt.query(p[bt], k=48)
+        wq = np.exp(-((d_ - d_[:, :1]) / (0.6 * d_[:, :1] + 0.004)) ** 2) * np.clip((nrm[bt][:, None, :] * nrm[good][I_]).sum(-1) + 0.4, 0.02, 1)
+        col[bt] = wmedian(col[good][I_], wq)
+    print(f'  blind faces filled: {blind.mean():.0%}')
+    img = np.zeros((res, res, 3), np.float32)
+    img[on] = np.clip(col, 0, 1)
+    _, (iy, ix) = ndi.distance_transform_edt(~on, return_indices=True)
+    img = img[iy, ix]
+    if dbg is not None:
+        seen = np.zeros((res, res), np.float32); seen[on] = 1
+        dbg['atlas'] = (img, seen)
+    return vmap, idx, uv, img
+
+
 def bake_turn(v, f, n, views, res=1024, pad=8, dbg=None):
     """the atlas from the user's turnaround: every texel takes the views that face it squarely and see it (the picture on
     the front, the turnaround's sides and back round it, each laid on the mesh's own outline in its direction); the
@@ -2219,12 +2533,23 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
                 skip = tuple(skip) + ('tails',)
         elif shape == 'tsg':                         # (TripoSG's depth and parts are its own, from the picture: the
             skip = tuple(skip) + (('depth',) if os.environ.get('TC_TAILS', '1') == '1' else ('depth', 'tails'))   # sheet's side outline only dragged them about; tails: TripoSG has none behind)
-        if 'depth' not in skip:
+        if 'depth' not in skip and TURN_NOW and os.environ.get('TC_HULL', '1') == '1':
+            # the turnaround's two side views (mirrored), each warping the depth a good way, then the hull cut
+            sv = [('head', (-1, 0, 0), (0, 0, 1)), ('tail', (1, 0, 0), (0, 0, -1))] if kind in SIDE_ON else \
+                 [('side', (1, 0, 0), (0, 0, -1)), ('side2', (-1, 0, 0), (0, 0, 1))]
+            for w_ in sv:
+                if w_[0] in views:
+                    v = fit_depth(v, f, views, k, kind, h, dbg, which=w_, lim_frac=0.18)
+        elif 'depth' not in skip:
             v = fit_depth(v, f, views, k, kind, h, dbg)
         if kind in SIDE_ON:
             v = centre_flank(v, f, fp)
         if kind not in SIDE_ON and 'tails' not in skip:
             v, f = add_tails(v, f, views, k, h, gy, dbg)
+        if TURN_NOW and os.environ.get('TC_HULL', '1') == '1':
+            hd = None if kind in SIDE_ON else (0.0, gy, a['head'][2] * w, a['head'][3] * h)
+            v, f = hull_carve(v, f, views, k, h, A, fp, kind, dbg=dbg, head=hd)
+            v = fit_front(v, f, A, fp, dbg)            # (the outline exactly the picture's again)
         v = recentre(v, gy, h)
     else:
         print('  (no character sheet: guessed colours round the back)')
@@ -2255,7 +2580,9 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
         global TEX_MODE
         tex_mode0 = TEX_MODE
         TEX_MODE = TEX_KIND.get(kind, TEX_MODE) if TEX_MODE == 'mvlabel' else TEX_MODE
-        if TURN_NOW and not os.environ.get('TC_TURN_LABEL'):
+        if TURN_NOW and os.environ.get('TC_SELECT', '1') == '1':
+            vmap, idx, uv, tex = bake_select(v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
+        elif TURN_NOW and not os.environ.get('TC_TURN_LABEL'):
             vmap, idx, uv, tex = bake_turn(v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
         elif TEX_MODE == 'mv':
             vmap, idx, uv, tex = bake_mv(kind, v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
@@ -2335,7 +2662,7 @@ def main():
                 raise
             print('  (MV views to make first: listed in jobs.txt)')
             continue
-        eyes_stage.post_bake(k, r, art)             # (tools/eyes.py: no painted eyes left on the atlas by js/eyes.js's domes)
+        if not (os.environ.get('TC_NO_EYEFILL') or (k in SIDE_ON and os.path.isdir(os.path.join(TURN_DIR, k)))): eyes_stage.post_bake(k, r, art)             # (tools/eyes.py: no painted eyes left on the atlas by js/eyes.js's domes)
         from rig import rig_hook                    # its limbs on joints: tools/rig.py (design/parts/ masks)
         r = rig_hook(k, r, art)
         assert len(r['v']) < 65536
