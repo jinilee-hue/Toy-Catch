@@ -1869,6 +1869,7 @@ def pack(r, quality=86):
 
 
 def main():
+    import eyes as eyes_stage                       # tools/eyes.py (the friends' new eyes, build side)
     ap = argparse.ArgumentParser()
     ap.add_argument('--only', default='')
     ap.add_argument('--res', type=int, default=256)
@@ -1891,6 +1892,7 @@ def main():
         print(k)
         dbg = {} if o.debug else None
         r = build(k, art, o.res, o.target, o.sheets, dbg, o.shape, o.atlas)
+        eyes_stage.post_bake(k, r, art)             # (tools/eyes.py: no painted eyes left on the atlas by js/eyes.js's domes)
         from rig import rig_hook                    # its limbs on joints: tools/rig.py (design/parts/ masks)
         r = rig_hook(k, r, art)
         assert len(r['v']) < 65536
