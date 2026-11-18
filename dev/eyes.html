@@ -29,16 +29,15 @@
   const all = [];
   kinds.forEach((k, j) => views.forEach(([yaw, pitch], i) => {
     const P = Friends.build(k); P.faceCam = false;
-    // ?head: centred on the eyes (their middle in the mesh), else on the body
-    const E = P.pic.geometry.userData.eyes, near = E ? E.list.filter(e => !e.far) : [];
+    // ?head: centred on the painted eyes (js/eyes.js TABLE, in picture fractions), else on the body
+    const tab = window.Eyes && Eyes.TABLE && Eyes.TABLE[k], art = CLAW_FRIENDS[k];
     let cx = 0, cy = P.top / 2, size = Math.max(P.top, P.width) * 1.12;
-    if (HEAD) {
-      if (near.length) {
-        cx = near.reduce((s, e) => s + e.O[0], 0) / near.length; cy = near.reduce((s, e) => s + e.O[1], 0) / near.length - 0.04;
-        const xs = near.map(e => e.O[0]), R = Math.max(...near.map(e => Math.max(e.a, e.b)));
-        size = Math.max(0.62, Math.max(...xs) - Math.min(...xs) + R * 7);
-      } else { cy = P.gripY; size = Math.max(P.headR[0], P.headR[1]) * 3; }
-    }
+    if (HEAD && tab) {
+      const w = art.w * 1.3 / 600, h = art.h * 1.3 / 600, xs = tab.eyes.map(e => (e[0] - art.head[0]) * w), ys = tab.eyes.map(e => (1 - e[1]) * h);
+      const R = Math.max(...tab.eyes.map(e => Math.max(e[2] * w, e[3] * h))) * 1.25;
+      cx = xs.reduce((s, x) => s + x, 0) / xs.length; cy = ys.reduce((s, y) => s + y, 0) / ys.length - 0.04;
+      size = Math.max(0.62, Math.max(...xs) - Math.min(...xs) + R * 7);
+    } else if (HEAD) { cy = P.gripY; size = Math.max(P.headR[0], P.headR[1]) * 3; }
     size /= +(qs.get('zoom') || 1);
     const piv = new T.Group();
     P.root.position.set(-cx, -cy, 0); piv.add(P.root);
