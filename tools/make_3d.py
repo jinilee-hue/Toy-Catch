@@ -60,6 +60,7 @@ GRIP_Z = -0.02                                   # the head's middle (depth) at 
 # distrust of the sheet next to the picture (bake), which would flatten its feathers into one colour
 CONSIST_SKIP = ('turkey',)
 KIND_NOW = ''
+TURN_NOW = False                                 # (this friend is built from the user's turnaround)
 # two fabrics of one hue told apart by lightness: the turtle's light-green head and darker shell, the fish's pale
 # head and blue body (merged, the head took the shell's green all round)
 MERGE_LUM = {'turtle': 1.5, 'fish': 1.5}
@@ -503,6 +504,89 @@ def bleed(rgb, m, inset=2):
         inner = m
     _, (iy, ix) = ndi.distance_transform_edt(~inner, return_indices=True)
     return rgb[iy, ix]
+
+
+TURN_DIR = os.path.join(ROOT, 'design', 'turnaround')
+# which turnaround image is which view (the user's turnarounds, design/turnaround/<kind>/: front, left, back, right —
+# 'left' is the character's left side, seen from +x). Side-on friends (picture = a side view, head toward -x): their
+# 'left' is the picture's side, 'front' faces the head, 'back' the tail, 'right' the far flank
+TURN_MAP = {'front': 'front', 'side': 'left', 'back': 'back', 'side2': 'right'}
+TURN_NO_TAILS = ('mouse', 'duck')
+TURN_MAP_SIDE = {'front': 'left', 'head': 'front', 'tail': 'back', 'flank': 'right'}
+
+
+def turn_views(kind):
+    """{view: (rgb bled past the outline, mask, texture mask)} from the user's turnaround (user: same pose as the game
+    picture from every side, made to measure), or None"""
+    from scipy import ndimage as ndi
+    d = os.path.join(TURN_DIR, kind)
+    mp = TURN_MAP_SIDE if kind in SIDE_ON else TURN_MAP
+    if not all(os.path.exists(os.path.join(d, f'{f}.png')) for f in mp.values()):
+        return None
+    def flat_white(rgb, m):
+        lum = rgb.mean(-1)
+        sd = np.sqrt(np.maximum(ndi.uniform_filter(lum ** 2, 7) - ndi.uniform_filter(lum, 7) ** 2, 0))
+        return m & (rgb.min(-1) > 0.93) & (rgb.max(-1) - rgb.min(-1) < 0.04) & (sd < 0.012)
+    pa = np.asarray(Image.open(os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp')).convert('RGBA')).astype(np.float32) / 255
+    pm = pa[..., 3] > 0.5
+    white_fabric = flat_white(pa[..., :3], pm).sum() > 0.03 * pm.sum()     # (the cow: white is its fabric)
+    out = {}
+    for name, fname in mp.items():
+        a = np.asarray(Image.open(os.path.join(d, f'{fname}.png')).convert('RGBA')).astype(np.float32) / 255
+        al = a[..., 3]
+        m = al > 0.5
+        # the background left opaque in the gaps between an arm, the body and a leg (the cut-out kept them): flat pure
+        # white blobs, unless white is the friend's own fabric — as texture they were white patches under the arms
+        if not white_fabric:
+            fw_ = flat_white(a[..., :3], m)
+            lab_, n_ = ndi.label(fw_)
+            if n_:
+                sz = ndi.sum(fw_, lab_, range(1, n_ + 1))
+                m = m & ~ndi.binary_dilation(np.isin(lab_, 1 + np.nonzero(sz > 150)[0]), iterations=3)
+        # side-on friends (turtle, fish): the painted eyes in the turnaround sit beside the new eye domes, never on
+        # them — a second eye. Near-black compact blobs (iris, pupil) and the white round them are left out
+        eye_cut = np.zeros_like(m)
+        if kind in SIDE_ON:
+            rgb_ = a[..., :3]
+            dark = m & (rgb_.mean(-1) < 0.45) & (rgb_.max(-1) - rgb_.min(-1) < 0.35)
+            white = m & (rgb_.min(-1) > 0.80) & (rgb_.max(-1) - rgb_.min(-1) < 0.12)
+            wl, wn = ndi.label(white)
+            lab_, n_ = ndi.label(dark)
+            for i, sl_ in enumerate(ndi.find_objects(lab_)):
+                if sl_ is None:
+                    continue
+                pad = 8
+                sl2 = (slice(max(0, sl_[0].start - pad), sl_[0].stop + pad), slice(max(0, sl_[1].start - pad), sl_[1].stop + pad))
+                r_ = lab_[sl2] == i + 1
+                if r_.sum() < 100:
+                    continue
+                ring = ndi.binary_dilation(r_, iterations=6) & ~r_
+                wr = white[sl2] & ring
+                if wr.sum() < 0.15 * ring.sum():        # (an eye: dark iris with its white round it)
+                    continue
+                eye = np.zeros_like(m); eye[sl2] = r_
+                for L in np.unique(wl[sl2][wr]):
+                    if L:
+                        eye |= wl == L
+                hh = sl_[0].stop - sl_[0].start; ww = sl_[1].stop - sl_[1].start
+                eye_cut |= ndi.binary_dilation(eye, iterations=int(0.25 * max(hh, ww)) + 6)
+            eye_cut &= m
+        lab, n = ndi.label(m)
+        if n > 1:                                      # (the figure, not stray specks)
+            sizes = ndi.sum(m, lab, range(1, n + 1))
+            m = lab == 1 + int(np.argmax(sizes))
+        ys, xs = np.nonzero(m)
+        sl = (slice(max(0, ys.min() - 2), ys.max() + 3), slice(max(0, xs.min() - 2), xs.max() + 3))
+        m = m[sl]
+        rgb = a[sl][..., :3]
+        # (the anti-aliased rim and the white fringe round see-through gaps — between an arm and the body — are not for
+        # the texture: white specks at the monkey's hips)
+        holes = ndi.binary_fill_holes(m) & ~m
+        mt = ndi.binary_erosion(m, iterations=5) & ~ndi.binary_dilation(holes, iterations=6) & ~eye_cut[sl]
+        m = ndi.binary_fill_holes(m)                   # (the outline: whole, the gaps were the cut-out's)
+        out[name] = (bleed(rgb, mt), m, mt)
+    print(f'  turnaround: {", ".join(f"{k} {v[1].shape[1]}x{v[1].shape[0]}" for k, v in out.items())}')
+    return out
 
 
 def sheet_x4(path):
@@ -1077,11 +1161,17 @@ def make_views(kind, v, f, art, views, pic, fp, k, lut, dbg=None):
         return pl, img, mk, u, valid
 
     if kind in SIDE_ON:
-        if 'ends' not in SHEET_SKIP.get(kind, ()):
+        if TURN_NOW or 'ends' not in SHEET_SKIP.get(kind, ()):
             pl, img, mk, u, ok = sheet_view('head', (-1, 0, 0), (0, 0, 1))
             out.append(BakeView('head', (-1, 0, 0), pl, pl, img, mk, u, power=4.0, valid=ok))
             pl, img, mk, u, ok = sheet_view('tail', (1, 0, 0), (0, 0, -1))
             out.append(BakeView('tail', (1, 0, 0), pl, pl, img, mk, u, power=4.0, valid=ok))
+        if TURN_NOW and 'flank' in views:              # (the turnaround's own far flank)
+            pl, img, mk, u, ok = sheet_view('flank', (0, 0, -1), (-1, 0, 0))
+            out.append(BakeView('flank', (0, 0, -1), pl, pl, img, mk, u, power=4.0, valid=ok))
+            for bv in out:
+                bv.prepare(v, f)
+            return out
         # the other flank: the picture itself, seen from behind (mirrored); a letter there flipped back to read right
         rgbB = rgbP.copy()
         box = FLANK_LETTER.get(kind)
@@ -1118,8 +1208,12 @@ def make_views(kind, v, f, art, views, pic, fp, k, lut, dbg=None):
     else:
         pl, img, mk, u, ok = sheet_view('side', (1, 0, 0), (0, 0, -1))
         out.append(BakeView('side', (1, 0, 0), pl, pl, img, mk, u, power=4.0, valid=ok))
-        pl2 = Plane.around(v, (-1, 0, 0), (0, 0, 1), margin=24)
-        out.append(BakeView('side2', (-1, 0, 0), pl2, pl, img, mk, u, power=4.0, prio=0.8, valid=ok))
+        if TURN_NOW and 'side2' in views:              # (the turnaround's own other side, not the mirror)
+            pl2, img2, mk2, u2, ok2 = sheet_view('side2', (-1, 0, 0), (0, 0, 1))
+            out.append(BakeView('side2', (-1, 0, 0), pl2, pl2, img2, mk2, u2, power=4.0, valid=ok2))
+        else:
+            pl2 = Plane.around(v, (-1, 0, 0), (0, 0, 1), margin=24)
+            out.append(BakeView('side2', (-1, 0, 0), pl2, pl, img, mk, u, power=4.0, prio=0.8, valid=ok))
         pl, img, mk, u, ok = sheet_view('back', (0, 0, -1), (-1, 0, 0))
         out.append(BakeView('back', (0, 0, -1), pl, pl, img, mk, u, power=4.0, valid=ok))
     for bv in out:
@@ -1820,6 +1914,61 @@ def bake_mv(kind, v, f, n, views, res=1024, pad=8, dbg=None):
     return vmap, idx, uv, img
 
 
+def bake_turn(v, f, n, views, res=1024, pad=8, dbg=None):
+    """the atlas from the user's turnaround: every texel takes the views that face it squarely and see it (the picture on
+    the front, the turnaround's sides and back round it, each laid on the mesh's own outline in its direction); the
+    views are one consistent set, so they are blended as they are — no fabric guessing. What no view sees well (deep in
+    a crease, straight up or down) takes the nearest seen texels facing the same way"""
+    import xatlas
+    from scipy import ndimage as ndi
+    from scipy.spatial import cKDTree
+    atlas = xatlas.Atlas()
+    atlas.add_mesh(v.astype(np.float32), f.astype(np.uint32))
+    co = xatlas.ChartOptions(); co.max_iterations = 4; co.max_cost = 6.0
+    po = xatlas.PackOptions(); po.resolution = res; po.padding = pad; po.bilinear = True; po.rotate_charts = True
+    atlas.generate(co, po)
+    vmap, idx, uv = atlas[0]
+    print(f'  atlas: {atlas.chart_count} charts, {len(vmap)} verts (was {len(v)}), utilisation {float(np.ravel(atlas.utilization)[0]):.2f}')
+    ft = idx.astype(np.int64)
+    P = np.stack([uv[:, 0] * res, (1 - uv[:, 1]) * res], 1)
+    fid, bary = raster(P, ft, res, res)
+    on = fid >= 0
+    tri = ft[fid[on]]
+    b = bary[on]
+    nsm = smooth_normals(v, f, its=10)
+    p = (b[:, :, None] * v[vmap][tri]).sum(1)
+    nrm = (b[:, :, None] * nsm[vmap][tri]).sum(1)
+    nrm /= np.maximum(np.linalg.norm(nrm, axis=1), 1e-9)[:, None]
+    acc = np.zeros((len(p), 3), np.float32); ws = np.zeros(len(p), np.float32)
+    for bv in views:
+        w, c = bv.weights_colours(p, nrm)
+        if bv.name != 'front':
+            w = w ** 1.5                                # (a little sharper hand-over between two views)
+        acc += w[:, None] * c; ws += w
+    known = ws > 0.05
+    col = acc / np.maximum(ws, 1e-6)[:, None]
+    if os.environ.get('TC_DBG'):
+        wt = (col.min(1) > 0.85) & known & (nrm[:, 2] < -0.1)
+        print('   dbg white texels', wt.sum())
+        for bv in views:
+            w, c = bv.weights_colours(p[wt], nrm[wt])
+            print('   dbg', bv.name, 'w mean', float(w.mean()), 'white share', float(((c.min(1) > 0.85) * w).sum() / max(w.sum(), 1e-6)))
+    if (~known).any() and known.sum() > 50:
+        kt = cKDTree(p[known])
+        d_, I_ = kt.query(p[~known], k=12)
+        wq = np.exp(-((d_ - d_[:, :1]) / (0.5 * d_[:, :1] + 0.003)) ** 2) * np.clip((nrm[~known][:, None, :] * nrm[known][I_]).sum(-1) + 0.3, 0.02, 1)
+        col[~known] = wmedian(col[known][I_], wq)
+    img = np.zeros((res, res, 3), np.float32)
+    img[on] = col
+    _, (iy, ix) = ndi.distance_transform_edt(~on, return_indices=True)
+    img = img[iy, ix]
+    print(f'  turnaround bake: {known.mean():.0%} of the texels seen by a view')
+    if dbg is not None:
+        seen = np.zeros((res, res), np.float32); seen[on] = np.clip(ws, 0, 1)
+        dbg['atlas'] = (img, seen)
+    return vmap, idx, uv, img
+
+
 def bake(v, f, n, views, res=1024, pad=8, dbg=None, kind_consist=True):
     """UV atlas (xatlas) + the texture: every texel's colour from the views that see it squarely, what none sees filled
     from around it (over the mesh), the empty atlas around the charts filled with the nearest chart colour.
@@ -2033,7 +2182,11 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
     w, h, u = a['w'] * PX, a['h'] * PX, a['head'][0]
     gy = (1 - a['head'][1]) * h
     v, f, c, pic = base_mesh(kind, art, res, shape)
-    views = sheet_views(kind, sheets, up=not os.environ.get("TC_NO_X4"))
+    global TURN_NOW
+    views = turn_views(kind) if not os.environ.get('TC_NO_TURN') else None
+    TURN_NOW = views is not None
+    if views is None:
+        views = sheet_views(kind, sheets, up=not os.environ.get("TC_NO_X4"))
     pa = np.asarray(pic).astype(np.float32)
     W, H = pa.shape[1], pa.shape[0]
     if views:
@@ -2059,8 +2212,12 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
             g = ndi.gaussian_gradient_magnitude(rgbP.mean(-1), 1.5)
             both &= g < np.quantile(g[both], 0.7)
             lut = colour_lut(Sf[both], rgbP[both])
-        skip = SHEET_SKIP.get(kind, ())
-        if shape == 'tsg':                         # (TripoSG's depth and parts are its own, from the picture: the
+        skip = SHEET_SKIP.get(kind, ()) if not TURN_NOW else ()
+        if shape == 'tsg' and TURN_NOW:
+            skip = tuple(skip) + (() if os.environ.get('TC_TURN_DEPTH', '1') == '1' else ('depth',))
+            if kind in TURN_NO_TAILS:                  # (TripoSG made its tail already: a second one was added)
+                skip = tuple(skip) + ('tails',)
+        elif shape == 'tsg':                         # (TripoSG's depth and parts are its own, from the picture: the
             skip = tuple(skip) + (('depth',) if os.environ.get('TC_TAILS', '1') == '1' else ('depth', 'tails'))   # sheet's side outline only dragged them about; tails: TripoSG has none behind)
         if 'depth' not in skip:
             v = fit_depth(v, f, views, k, kind, h, dbg)
@@ -2098,7 +2255,9 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
         global TEX_MODE
         tex_mode0 = TEX_MODE
         TEX_MODE = TEX_KIND.get(kind, TEX_MODE) if TEX_MODE == 'mvlabel' else TEX_MODE
-        if TEX_MODE == 'mv':
+        if TURN_NOW and not os.environ.get('TC_TURN_LABEL'):
+            vmap, idx, uv, tex = bake_turn(v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
+        elif TEX_MODE == 'mv':
             vmap, idx, uv, tex = bake_mv(kind, v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
         elif TEX_MODE in ('clean', 'mvlabel'):
             global KIND_NOW, ART_NOW
