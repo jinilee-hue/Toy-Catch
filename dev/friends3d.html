@@ -22,6 +22,77 @@
   r.outputColorSpace = T.SRGBColorSpace; r.setClearColor('#cfe3f5'); document.body.appendChild(r.domElement);
   const sc = new T.Scene(); sc.add(new T.HemisphereLight('#fff', '#ccd', 1.2));
   await Friends.load();
+  if (qs.has('orbit')) return orbit();
+  function orbit() {
+    // ?orbit: one big friend in the middle to look over from every side — drag (mouse/touch) turns it freely (yaw and
+    // pitch, top and bottom included), wheel / pinch zooms, double-click resets, ← → keys or the buttons step through
+    const box = document.createElement('div');
+    box.innerHTML = '<button id="ob-prev" aria-label="previous">◀</button><span id="ob-name"></span><button id="ob-next" aria-label="next">▶</button>';
+    box.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:14px;align-items:center;font:700 18px system-ui;color:#234;user-select:none';
+    for (const b of box.querySelectorAll('button')) b.style.cssText = 'width:52px;height:52px;border-radius:26px;border:0;background:#fff;box-shadow:0 2px 8px #0003;font:700 20px system-ui;color:#2a5bd7;cursor:pointer';
+    document.body.appendChild(box);
+    document.getElementById('l').textContent = 'drag: turn · wheel/pinch: zoom · double-click: reset · ← →: friends';
+    const cam = new T.PerspectiveCamera(30, innerWidth / innerHeight, 0.05, 100);
+    window.Stage = { camera: cam };
+    const piv = new T.Group(); sc.add(piv);
+    let idx = Math.max(0, kinds.indexOf(qs.get('kind'))), P = null, yaw = 0, pitch = 0, dist = 3.2;
+    const reset = () => { yaw = (parseFloat(qs.get('yaw')) || 0) * Math.PI / 180; pitch = (parseFloat(qs.get('pitch')) || 0) * Math.PI / 180; dist = 3.2 / (parseFloat(qs.get('zoom')) || 1); };
+    const show = (i) => {
+      idx = (i + kinds.length) % kinds.length;
+      if (P) piv.remove(P.root);
+      P = Friends.build(kinds[idx]); P.faceCam = false;
+      if (qs.has('clay')) {                                       // ?clay: the bare shape (no picture/atlas), lit from the upper left
+        const clay = new T.MeshStandardMaterial({ color: '#e8e2d8', roughness: 0.55, metalness: 0 });
+        P.root.traverse((o) => { if (o.isMesh) o.material = clay; });
+        if (!sc.userData.clayLight) { const dl = new T.DirectionalLight('#fff', 2.2); dl.position.set(-2, 3, 4); cam.add(dl); sc.add(cam); sc.userData.clayLight = dl; }
+      }
+      const b = new T.Box3().setFromObject(P.root), c = b.getCenter(new T.Vector3());
+      P.root.position.sub(c);                                     // (turns about its own middle)
+      piv.add(P.root);
+      document.getElementById('ob-name').textContent = kinds[idx];
+      window.__orbit.kind = kinds[idx];
+    };
+    window.__orbit = { set: (y, p, z) => { yaw = y * Math.PI / 180; pitch = p * Math.PI / 180; if (z) dist = 3.2 / z; }, show: (k) => show(kinds.indexOf(k)) };
+    reset(); show(idx);
+    document.getElementById('ob-prev').onclick = () => show(idx - 1);
+    document.getElementById('ob-next').onclick = () => show(idx + 1);
+    addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft') show(idx - 1); if (e.key === 'ArrowRight') show(idx + 1); });
+    const cv = r.domElement, pts = new Map();
+    cv.style.touchAction = 'none';
+    let pinch = 0;
+    cv.addEventListener('pointerdown', (e) => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]); });
+    cv.addEventListener('pointermove', (e) => {
+      if (!pts.has(e.pointerId)) return;
+      const [x0, y0] = pts.get(e.pointerId); pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 1) {
+        yaw += (e.clientX - x0) * 0.01; pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + (e.clientY - y0) * 0.01));
+      } else if (pts.size === 2) {
+        const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        if (pinch) dist = Math.max(1.2, Math.min(8, dist * pinch / d));
+        pinch = d;
+      }
+    });
+    const up = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; };
+    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    cv.addEventListener('wheel', (e) => { e.preventDefault(); dist = Math.max(1.2, Math.min(8, dist * Math.exp(e.deltaY * 0.001))); }, { passive: false });
+    cv.addEventListener('dblclick', reset);
+    addEventListener('resize', () => { r.setSize(innerWidth, innerHeight); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); });
+    let t = 0, last = performance.now();
+    const advance = (dt) => {
+      t += dt;
+      piv.rotation.set(pitch, yaw, 0, 'XYZ');                     // (yaw about its own up, then tipped toward you)
+      cam.position.set(0, 0, dist); cam.lookAt(0, 0, 0);
+      if (P && qs.has('idle')) P.update(dt, t);
+      r.render(sc, cam);
+    };
+    window.__step = advance;
+    (function loop(now) {
+      requestAnimationFrame(loop);
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (!window.__frozen) advance(dt);
+    })(last);
+    window.__ready = true;
+  }
   const cols = ROW ? Math.min(5, kinds.length) : ANG.length, rows = ROW ? Math.ceil(kinds.length / cols) : kinds.length, cw = 1.9, ch = 1.75;
   const all = [];
   kinds.forEach((k, j) => ANG.forEach((a, i) => {

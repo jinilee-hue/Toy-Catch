@@ -48,9 +48,22 @@ from PIL import Image
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TSR_DIR = os.path.expanduser('~/dev/tools/TripoSR')
 OUT_RAW = os.path.join(TSR_DIR, 'out')
+TSG_DIR = os.path.expanduser('~/dev/tools/TripoSG')        # (TripoSG, MIT: its own venv; tools/tsg_mesh.py runs it)
+OUT_TSG = os.path.join(TSG_DIR, 'out')
+RESR_MODEL = os.path.expanduser('~/dev/tools/realesrgan/RealESRGAN_x4plus.pth')
+RESR_OUT = os.path.expanduser('~/dev/tools/realesrgan/out')
 PX = 1.3 / 600                                   # friends.js: a 600-px-tall picture is 1.3 units tall
 DEPTH_K = 0.92                                   # a touch slimmer than TripoSR's guess (plush, not a ball)
 GRIP_Z = -0.02                                   # the head's middle (depth) at the grip height: the claw's prongs' plane
+# TripoSG's frame -> ours (rows: our x, y, z in TripoSG's axes): found once by rendering its turkey from the 6 axes
+# friends whose sheet views agree with the picture's pose (the turkey's rainbow wing reads the same on both): no
+# distrust of the sheet next to the picture (bake), which would flatten its feathers into one colour
+CONSIST_SKIP = ('turkey',)
+KIND_NOW = ''
+SHEET_FIG = {}
+TEX_MODE = os.environ.get('TC_TEX', 'clean')       # clean: picture + geodesic fill (no sheet views); sheet: the old bake
+TRIS = 18000                                     # triangles per friend (with a sheet)
+TSG_R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], np.float32)
 
 # Which figure on each character sheet is which view: a point inside it (sheet pixels; the sheets are 1024 x 765).
 # The sheets' own labels are sometimes wrong (the dog's second side view says 후면, the cat's back 응용 포즈).
@@ -88,12 +101,21 @@ SHEET_SKIP = {'turtle': ('depth', 'ends'), 'turkey': ('depth', 'tails'), 'mouse'
 # warped onto the mesh it smeared feathers over the head and the body; the mouse's sheet lays the tail on the floor
 # (side and back views), which painted a pink stub on its bottom and dragged the side view's warp
 SHEET_DROP = {'turkey': [('back', (0.0, 0.0, 1.0, 0.36), 'brown', False),
-                         ('side', (0.64, 0.10, 1.0, 0.93), 'fan', True)],
+                         ('side', (0.64, 0.10, 1.0, 0.93), 'fan', True),
+                         ('back', (0.36, 0.0, 0.64, 0.62), 'green', False)],
               'mouse': [('back', (0.38, 0.82, 1.0, 1.0), 'pink', True),
                         ('side', (0.45, 0.78, 1.0, 1.0), 'pink', True),
-                        ('side', (0.10, 0.62, 0.21, 0.78), 'light', False)],
+                        ('side', (0.10, 0.62, 0.21, 0.78), 'light', False),
+                        # the sheet's side view hangs the arm down the flank (paw by the hip) where the picture holds
+                        # the paws up at the chest: painted on, it was a second, ghost arm
+                        ('side', (0.33, 0.50, 0.64, 0.90), 'notshirt', False),
+                        # its ear turned to the viewer shows the pink inside, which landed on the ear's back
+                        ('side', (0.30, 0.0, 0.70, 0.34), 'pinkear', False)],
               # the shirt's letter seen edge-on from the side: a white stripe that the warp laid along the arm
               'monkey': [('side', (0.18, 0.58, 0.36, 0.84), 'white', False)],
+              # the cat's tail curled up its back (the back view): the mesh has no tail there, painted on it was a
+              # yellow-and-brown stripe down the shirt
+              'cat': [('back', (0.36, 0.45, 0.62, 0.95), 'cattail', False)],
               # the ant's antenna in front of its hat's crown (side view): it landed on the crown as brown smears; the
               # back view's thin white gaps between the arms and the abdomen: a white streak on top of the abdomen
               'ant': [('side', (0.22, 0.0, 0.62, 0.145), 'antenna', False),
@@ -145,6 +167,59 @@ def tsr_mesh(kind, res):
     c = np.asarray(mesh.visual.vertex_colors[:, :3], np.uint8)
     np.savez_compressed(cache, v=v, f=f, c=c)
     return v, f, c
+
+
+def tsg_mesh(kind):
+    """TripoSG: picture -> (vertices, faces) in its own frame, cached in ~/dev/tools/TripoSG/out (tools/tsg_mesh.py
+    runs it in TripoSG's own venv: diffusers/transformers there would clash with TripoSR's)"""
+    cache = os.path.join(OUT_TSG, f'{kind}.npz')
+    if not os.path.exists(cache):
+        import subprocess
+        subprocess.run([os.path.join(TSG_DIR, '.venv', 'bin', 'python'), os.path.join(ROOT, 'tools', 'tsg_mesh.py'), kind],
+                       check=True)
+    z = np.load(cache)
+    return z['v'].astype(np.float32), z['f'].astype(np.int32)
+
+
+def solidify(v, f, res=int(os.environ.get("TC_VRES", 400)), sigma=float(os.environ.get("TC_VSIG", 3.2)), its=int(os.environ.get("TC_VITS", 60))):
+    """the raw TripoSG mesh rebuilt as one clean, closed, smooth surface: its triangles sampled into a voxel grid
+    (res cells along the longest side), the shell closed and filled, the solid blurred a little and its surface taken
+    again (marching cubes at the half level). TripoSG's own surface had cracks and pits (dark slits on the duck's head
+    and round its cap), the 'terrace' rings of marching cubes on a saturated field, and thousands of loose inner
+    shells; seen turning (the prize spin) they all showed"""
+    import trimesh
+    from scipy import ndimage as ndi
+    from skimage.measure import marching_cubes
+    m = trimesh.Trimesh(v, f, process=False)
+    lo, hi = v.min(0), v.max(0)
+    cell = (hi - lo).max() / res
+    pad = 6
+    shape = np.ceil((hi - lo) / cell).astype(int) + 2 * pad + 1
+    n = int(min(8e6, max(2e6, m.area / cell ** 2 * 6)))
+    pts, _ = trimesh.sample.sample_surface(m, n, seed=0)
+    pts = np.vstack([pts, v])
+    ijk = np.floor((pts - lo) / cell).astype(int) + pad
+    shell = np.zeros(shape, bool)
+    shell[ijk[:, 0], ijk[:, 1], ijk[:, 2]] = True
+    for d in (1, 2, 3):
+        sh = ndi.binary_dilation(shell, iterations=d) if d > 1 else ndi.binary_dilation(shell)
+        solid = ndi.binary_fill_holes(sh)
+        filled = solid.sum() / max(1, sh.sum())
+        if filled > 2.5:                               # (the inside got filled: the shell was closed at this size)
+            break
+    # (the dilation made it a little fatter: thinned back by as much)
+    solid = ndi.binary_erosion(solid, iterations=d) | (solid & ~ndi.binary_erosion(solid, iterations=d) & False)
+    occ = ndi.gaussian_filter(solid.astype(np.float32), sigma)
+    vv, ff, _, _ = marching_cubes(occ, 0.5)
+    vv = (vv - pad + 0.5) * cell + lo
+    mm = trimesh.Trimesh(vv, ff[:, ::-1], process=True)
+    parts = mm.split(only_watertight=False)
+    if len(parts) > 1:
+        big = max(len(p.faces) for p in parts)
+        mm = trimesh.util.concatenate([p for p in parts if len(p.faces) >= 0.02 * big])
+    trimesh.smoothing.filter_taubin(mm, lamb=0.5, nu=-0.53, iterations=its)
+    print(f'  solidified: {res} cells, dilation {d} (fill x{filled:.1f}), {len(mm.faces)} tris')
+    return np.asarray(mm.vertices, np.float32), np.asarray(mm.faces, np.int32)
 
 
 def rotations():
@@ -413,13 +488,48 @@ def bleed(rgb, m, inset=2):
     return rgb[iy, ix]
 
 
-def sheet_views(kind, sheets):
-    """{view: (rgb float 0..1 bled past the outline, mask)} cut from the friend's character sheet, or None"""
+def sheet_x4(path):
+    """the character sheet upscaled x4 with Real-ESRGAN x4plus (BSD; spandrel, on the Mac's GPU), in overlapping tiles;
+    cached next to the model. The sheet's figures are only ~300 px tall: straight from the sheet, the sides and the
+    back came out soft next to the 600-px picture on the front"""
+    os.makedirs(RESR_OUT, exist_ok=True)
+    cache = os.path.join(RESR_OUT, os.path.basename(path).replace('.png', '_x4.png'))
+    if os.path.exists(cache) and os.path.getmtime(cache) >= os.path.getmtime(path):
+        return np.asarray(Image.open(cache).convert('RGB'))
+    import torch
+    from spandrel import ModelLoader
+    dev = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    net = ModelLoader().load_from_file(RESR_MODEL).to(dev).eval()
+    a = np.asarray(Image.open(path).convert('RGB'), np.float32) / 255
+    H, W = a.shape[:2]
+    out = np.zeros((H * 4, W * 4, 3), np.float32)
+    T, P = 256, 16
+    t0 = time.time()
+    for y0 in range(0, H, T):
+        for x0 in range(0, W, T):
+            ya, xa = max(0, y0 - P), max(0, x0 - P)
+            yb, xb = min(H, y0 + T + P), min(W, x0 + T + P)
+            t = torch.from_numpy(a[ya:yb, xa:xb]).permute(2, 0, 1)[None].to(dev)
+            with torch.no_grad():
+                o = net(t)[0].clamp(0, 1).permute(1, 2, 0).cpu().numpy()
+            y1, x1 = min(H, y0 + T), min(W, x0 + T)
+            out[y0 * 4:y1 * 4, x0 * 4:x1 * 4] = o[(y0 - ya) * 4:(y1 - ya) * 4, (x0 - xa) * 4:(x1 - xa) * 4]
+    out = (out * 255 + 0.5).astype(np.uint8)
+    Image.fromarray(out).save(cache)
+    print(f'  sheet x4 (Real-ESRGAN): {W}x{H} -> {W * 4}x{H * 4} in {time.time() - t0:.0f}s')
+    return out
+
+
+def sheet_views(kind, sheets, up=True):
+    """{view: (rgb float 0..1 bled past the outline, mask, texture mask)} cut from the friend's character sheet, or None.
+    Cut and cleaned at the sheet's own size; with up, the colours are then taken from the x4 Real-ESRGAN sheet and the
+    masks scaled up to match (everything downstream finds its scale from the masks)"""
     from scipy import ndimage as ndi
     path = os.path.join(sheets or '', f'{kind}_sheet.png')
     if kind not in SHEET_VIEWS or not os.path.exists(path):
         return None
     a = np.asarray(Image.open(path).convert('RGB'))
+    a4 = sheet_x4(path) if up else None
     fg = segment(a)
     lab, n = ndi.label(fg)
     sizes = ndi.sum(fg, lab, range(1, n + 1))
@@ -455,6 +565,14 @@ def sheet_views(kind, sheets):
                 drop = box & m & (vv > 185) & (ss < 50)
             elif what == 'light':                      # (a greyer one, in a tight box)
                 drop = box & m & (vv > 150) & (ss < 60)
+            elif what == 'notshirt':                   # grey fur and a pink paw over a red shirt
+                drop = box & m & ~(((hh <= 12) | (hh >= 168)) & (ss > 140))
+            elif what == 'pinkear':                    # the pink inside of an ear (not the grey fur round it)
+                drop = box & m & ((hh <= 12) | (hh >= 150)) & (ss > 45) & (vv > 120)
+            elif what == 'green':                      # (the turkey's middle tail feather)
+                drop = box & m & (hh >= 35) & (hh <= 95) & (ss > 50)
+            elif what == 'cattail':                    # yellow and brown stripes (not the red shirt, not the cream fur)
+                drop = box & m & (ss > 80) & (hh >= 9) & (hh <= 40)
             elif what == 'antenna':                    # brown, darker than the hat's beige
                 drop = box & m & (hh <= 16) & (vv < 185) & (ss > 125)
             else:
@@ -474,7 +592,12 @@ def sheet_views(kind, sheets):
                 mt &= m
         # colours: the figure's own pixels bled outward — the specks filled into the mask (thin gaps between an arm and
         # the body: the sheet's white) take their neighbours' colours, else they painted thin white lines
-        out[name] = (bleed(rgb, m0), m, mt)
+        if a4 is None:
+            out[name] = (bleed(rgb, m0), m, mt)
+            continue
+        up4 = lambda x: np.asarray(Image.fromarray((x * 255).astype(np.uint8)).resize((x.shape[1] * 4, x.shape[0] * 4), Image.BILINEAR)) > 127
+        rgb4 = a4[sl[0].start * 4:sl[0].stop * 4, sl[1].start * 4:sl[1].stop * 4].astype(np.float32) / 255
+        out[name] = (bleed(rgb4, up4(m0), inset=6), up4(m), up4(mt))
     return out
 
 
@@ -543,26 +666,48 @@ def apply_lut(rgb, lut):
 
 # ------------------------------------------------------------------------------------------------ the build
 
-def base_mesh(kind, art, res):
-    """TripoSR's mesh turned to face +z, crumbs dropped, smoothed, its outline box fitted to the picture's (friend
-    frame: x across with the head's middle at 0, y up from the bottom, z toward the camera)"""
+def base_mesh(kind, art, res, shape='tsg'):
+    """the raw mesh (TripoSG, or TripoSR with shape='tsr') turned to face +z, crumbs dropped, smoothed, its outline box
+    fitted to the picture's (friend frame: x across with the head's middle at 0, y up from the bottom, z toward the
+    camera)"""
     import trimesh
     from scipy.spatial import cKDTree
     a = art[kind]
-    v, f, c = tsr_mesh(kind, res)
     pic = Image.open(os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp')).convert('RGBA')
-    score, R, q, err = orient(v, c, pic)
-    v = v @ R.T
-    if np.linalg.det(R) < 0:
-        f = f[:, ::-1]
-    print(f'  orient: iou {q:.2f}, colour err {err:.3f}{"  (mirrored)" if np.linalg.det(R) < 0 else ""}')
-    m = trimesh.Trimesh(v, f, process=True)
-    parts = m.split(only_watertight=False)
-    if len(parts) > 1:                                # keep the body, drop floating crumbs
-        m = max(parts, key=lambda p: len(p.faces))
-    v, f = np.asarray(m.vertices, np.float32), np.asarray(m.faces, np.int32)
-    c = c[cKDTree(np.load(os.path.join(OUT_RAW, f'{kind}.npz'))['v'] @ R.T).query(v)[1]]
-    v = taubin(v, f)
+    if shape == 'tsg':
+        # TripoSG's frame is fixed (y up, the picture's front toward +x): no search. It has no colours: the bake
+        # paints everything from the picture and the sheet
+        v, f = tsg_mesh(kind)
+        R = TSG_R
+        c = np.full((len(v), 3), 160, np.uint8)
+        v = v @ R.T
+        m = trimesh.Trimesh(v, f, process=True)
+        parts = m.split(only_watertight=False)
+        if len(parts) > 1:                            # crumbs off; separate real parts (a loose feather) stay
+            big = max(len(p.faces) for p in parts)
+            m = trimesh.util.concatenate([p for p in parts if len(p.faces) >= 0.01 * big])
+        print(f'  TripoSG: {len(m.faces)} tris, {len(parts)} parts')
+        v, f = np.asarray(m.vertices, np.float32), np.asarray(m.faces, np.int32)
+        if os.environ.get('TC_SOLID', '1') == '1':
+            v, f = solidify(v, f)
+        else:
+            v = taubin(v, f, it=4)
+        c = np.full((len(v), 3), 160, np.uint8)
+    else:
+        v, f, c = tsr_mesh(kind, res)
+        score, R, q, err = orient(v, c, pic)
+        v = v @ R.T
+        if np.linalg.det(R) < 0:
+            f = f[:, ::-1]
+        mir = '  (mirrored)' if np.linalg.det(R) < 0 else ''
+        print(f'  orient: iou {q:.2f}, colour err {err:.3f}{mir}')
+        m = trimesh.Trimesh(v, f, process=True)
+        parts = m.split(only_watertight=False)
+        if len(parts) > 1:                                # keep the body, drop floating crumbs
+            m = max(parts, key=lambda p: len(p.faces))
+        v, f = np.asarray(m.vertices, np.float32), np.asarray(m.faces, np.int32)
+        c = c[cKDTree(np.load(os.path.join(OUT_RAW, f'{kind}.npz'))['v'] @ R.T).query(v)[1]]
+        v = taubin(v, f)
     w, h, u = a['w'] * PX, a['h'] * PX, a['head'][0]
     al = np.asarray(pic)[..., 3] > 128
     ys, xs = np.nonzero(al)
@@ -573,7 +718,7 @@ def base_mesh(kind, art, res):
     kx, ky = (X1 - X0) / (mx[0] - mn[0]), (Y1 - Y0) / (mx[1] - mn[1])
     v[:, 0] = X0 + (v[:, 0] - mn[0]) * kx
     v[:, 1] = Y0 + (v[:, 1] - mn[1]) * ky
-    v[:, 2] = (v[:, 2] - (mn[2] + mx[2]) / 2) * (kx + ky) / 2 * DEPTH_K - 0.02
+    v[:, 2] = (v[:, 2] - (mn[2] + mx[2]) / 2) * (kx + ky) / 2 * (DEPTH_K if shape == 'tsr' else 1.0) - 0.02
     return v.astype(np.float64), f, c, pic
 
 
@@ -832,11 +977,12 @@ class BakeView:
     (maybe another one: the mirrored side shares the side's image), warped onto the mesh's outline there"""
 
     def __init__(self, name, d, vis_plane, img_plane, rgb, mask, warp=None, power=3.0, prio=1.0, valid=None, floor=0.0,
-                 band=None):
+                 band=None, down=None):
         self.name, self.d = name, np.asarray(d, np.float64)
         self.vp, self.ip, self.rgb, self.mask, self.warp = vis_plane, img_plane, rgb, mask, warp
         self.power, self.prio, self.valid, self.floor = power, prio, valid, floor
         self.band = band                               # (only where |n.z| < band: the middle of a side-on friend)
+        self.down = down                               # (none where n.y < down[0], all above down[1]: undersides)
         self.zb = None
 
     def prepare(self, v, f):
@@ -855,6 +1001,9 @@ class BakeView:
             w *= s * s * (3 - 2 * s)                  # (a picture smeared along the steep sides: none of it there)
         if self.band:
             s = np.clip(1 - np.abs(n[:, 2]) / self.band, 0, 1)
+            w *= s * s * (3 - 2 * s)
+        if self.down:
+            s = np.clip((n[:, 1] - self.down[0]) / (self.down[1] - self.down[0]), 0, 1)
             w *= s * s * (3 - 2 * s)
         sel = np.nonzero(w > 1e-4)[0]
         col = np.zeros((len(p), 3), np.float32)
@@ -882,7 +1031,7 @@ def make_views(kind, v, f, art, views, pic, fp, k, lut, dbg=None):
     front (where the shader's full-size picture hands over to the atlas), the sheet's views beyond"""
     from scipy import ndimage as ndi
     rgbP, alP = pic_in_plane(pic, fp)
-    out = [BakeView('front', (0, 0, 1), fp, fp, rgbP, alP, power=4.0, prio=9.0, floor=0.2)]
+    out = [BakeView('front', (0, 0, 1), fp, fp, rgbP, alP, power=4.0, prio=9.0, floor=0.2, down=(-0.8, -0.5))]
 
     def sheet_view(name, d, r, mirror_of=None):
         rgb, m, mt = views[name]
@@ -891,11 +1040,13 @@ def make_views(kind, v, f, art, views, pic, fp, k, lut, dbg=None):
         S = pl.mask(v, f)
         q, ox, oy, sx, sy = place(m, k, S)
         T = placed(m.astype(np.float32), S.shape, ox, oy, sx, sy, cval=0) > 0.5
+        SHEET_FIG[name] = T                            # (the whole figure, with what SHEET_DROP left out: bake_clean)
         u = demons(S, T, its=(70, 50, 40), sig=(3.5, 3.0, 2.5))
         T2 = warp_mask(T, u)
         print(f'  {name}: placed iou {q:.3f} (scale {sx / k:.3f}) -> warped {iou(T2, S):.3f}')
         img = placed(rgb, S.shape, ox, oy, sx, sy)
-        mk = placed(ndi.binary_erosion(mt, iterations=1).astype(np.float32), S.shape, ox, oy, sx, sy, cval=0)
+        er = max(1, int(round(m.shape[0] / 330)))      # (1 px of the sheet's own size: more on the x4 sheet)
+        mk = placed(ndi.binary_erosion(mt, iterations=er).astype(np.float32), S.shape, ox, oy, sx, sy, cval=0)
         # a part of the mesh well outside what the sheet shows there (the mouse's raised tail: the sheet draws it on the
         # floor) gets no colours stretched over from its neighbours — the picture and the fill colour it
         tol = 0.03 * S.shape[0]
@@ -979,7 +1130,425 @@ def flip_letter(rgb, al, box, margin):
     return out
 
 
-def bake(v, f, n, views, res=1024, pad=8, dbg=None):
+
+def fabric_regions(rgb, mask):
+    """the picture's fabric regions: (label image, -1 outside or on a region's edge; ok per label = big enough to seed
+    the fill; rep per label = the fabric's colour). The pictures are 3D renders with real shading (the duck's yellow
+    runs from L 88 to an olive L 57 at its sides, through the same hues as its orange feet in shade), so colours alone
+    can't tell a fabric from its shade: the regions are grown over the picture (Felzenszwalb's graph segmentation) —
+    smooth shading stays inside one, the sharp edges between two fabrics (and the outlines, eyes, letters) split them"""
+    from scipy import ndimage as ndi
+    from skimage.segmentation import felzenszwalb
+    m = mask > 0.5
+    x = np.clip(rgb, 0, 1).copy(); x[~m] = 1
+    seg = felzenszwalb(x.astype(np.float64), scale=300, sigma=0.8, min_size=150).astype(np.int32)
+    seg[~m] = -1
+    labs = np.unique(seg[m])
+    K = int(labs.max()) + 1
+    edge = np.zeros(m.shape, bool)
+    for L in labs:
+        r = seg == L
+        edge |= ndi.binary_dilation(r, iterations=2) & ~r
+    core = seg.copy(); core[edge | (mask < 0.95)] = -1
+    share = np.bincount(core[core >= 0], minlength=K) / max(1, m.sum())
+    # the fabric's colour: toward the lit side (the median of the pixels between the 55th and 90th percentile of
+    # brightness) — round the back the shader's own shade darkens it; a plain median came out a dull mustard next to
+    # the duck's bright yellow front
+    rep = np.zeros((K, 3), np.float32)
+    lum_r = np.zeros(K, np.float32)
+    for L in labs:
+        px = rgb[core == L]
+        if len(px) < 10:
+            continue
+        lum = px.mean(1)
+        lo, hi = np.percentile(lum, [55, 90])
+        sel = (lum >= lo) & (lum <= hi)
+        rep[L] = np.median(px[sel] if sel.sum() > 10 else px, 0)
+        lum_r[L] = rep[L].mean()
+    # shades and highlights: a region that is a darker or lighter shade of a bigger neighbour (same chromaticity: the
+    # shade under the duck's cap brim, the crevices between its legs, the shine on its head) is that neighbour's fabric — else it painted a dark patch
+    # (with rings, following the mesh's terraces) round the back of the head
+    lin = np.clip(rep, 1e-4, 1) ** 2.2
+    chrom = lin[:, :2] / lin.sum(1, keepdims=True) * 100
+    order = np.argsort(share)                          # (small ones first)
+    for L in order:
+        if share[L] == 0:
+            continue
+        ring = ndi.binary_dilation(seg == L, iterations=4) & (seg != L) & (seg >= 0)
+        nb, cnt = np.unique(seg[ring], return_counts=True)
+        best = None
+        for N, c in zip(nb, cnt):
+            if share[N] > share[L] and np.linalg.norm(chrom[N] - chrom[L]) < 10 and max(lum_r[N], lum_r[L]) < 1.6 * min(lum_r[N], lum_r[L]):
+                if best is None or share[N] > share[best]:
+                    best = N
+        if best is not None:
+            rep[L] = rep[best]; lum_r[L] = lum_r[best]; chrom[L] = chrom[best]
+            share[best] += share[L]
+            core[core == L] = best; seg[seg == L] = best
+            share[L] = 0
+    # one fabric split into several pieces (the duck's yellow head and body; left and right): one colour — else the
+    # back showed two yellows meeting in a seam down the middle
+    import cv2
+    labc = cv2.cvtColor((np.clip(rep, 0, 1)[None] * 255).astype(np.uint8), cv2.COLOR_RGB2LAB)[0].astype(np.float32)
+    labc[:, 0] *= 100 / 255; labc[:, 1:] -= 128
+    big = [L for L in np.argsort(-share) if share[L] >= 0.015]
+    for a_ in range(len(big)):
+        A_ = big[a_]
+        if share[A_] == 0:
+            continue
+        for B_ in big[a_ + 1:]:
+            if share[B_] and np.linalg.norm(labc[A_] - labc[B_]) < 9:
+                rep[B_] = rep[A_]; labc[B_] = labc[A_]
+    # one fabric in several pieces anywhere in the picture, lit and in shade (the monkey's fur: four browns; the seal's
+    # jacket: two blues) — merged by chromaticity, lightness up to x3 apart; the biggest piece gives the colour
+    lin2 = np.clip(rep, 1e-4, 1) ** 2.2
+    ch2 = lin2[:, :2] / lin2.sum(1, keepdims=True) * 100
+    lu2 = lin2.sum(1)
+    order = [L for L in np.argsort(-share) if share[L] > 0]
+    owner = {}
+    for L in order:
+        for O in list(dict.fromkeys(owner.values())):
+            if np.linalg.norm(ch2[L] - ch2[O]) < 6 and max(lu2[L], lu2[O]) < 3.0 * min(lu2[L], lu2[O]):
+                owner[L] = O
+                break
+        else:
+            owner[L] = L
+    for L, O in owner.items():
+        if O != L:
+            rep[L] = rep[O]; share[O] += share[L]; share[L] = 0
+            core[core == L] = O; seg[seg == L] = O
+    ok = share >= 0.015
+    print('  fabric regions: ' + ', '.join(f'{share[L]:.0%}#' + '%02x%02x%02x' % tuple((np.clip(rep[L], 0, 1) * 255).astype(int)) for L in np.argsort(-share) if ok[L]))
+    # a bank of the picture's pixels with their fabric (lit and shaded) to match the sheet's colours against
+    yy, xx = np.nonzero((core >= 0) & ok[np.maximum(core, 0)])
+    pick = np.random.default_rng(1).choice(len(yy), size=min(len(yy), 30000), replace=False)
+    fabric_regions.bank = (rgb[yy[pick], xx[pick]].astype(np.float32), core[yy[pick], xx[pick]])
+    fabric_regions.share = share
+    return core, ok, rep
+
+PIC_VIEWS = ('front', 'flank', 'mid')
+THIN = 0.12                                       # (thinner parts take no labels from the sheet)
+# the sheet's labels only for a friend's biggest fabrics: the turkey's sheet fan, laid on TripoSG's fan, put other
+# feathers' colours on each feather — its head (red) and body (brown) come from the sheet, the feathers from the picture
+LABEL_TOP = {}
+SHEET_OFF = {}
+# friends whose sheet draws colours the picture doesn't have round the back (the turkey's fan from behind: blue,
+# orange, yellow, green feathers): each of the sheet's regions keeps its own flat colour
+SHEET_OWN = ('turkey',)
+FAN = {}
+# which sheet views place the fabrics: the mouse's side view hangs its arms down the flanks (the picture holds the
+# paws up at the chest) — grey patches on the shirt's sides; its back view alone wraps the shirt round
+LABEL_VIEWS = {'mouse': ('back',)}
+# friends whose SHEET_DROP holes stay empty (the picture's fabrics reach in round the mesh instead): the turkey's
+# brown head-back on the sheet, dropped, is the picture's red head
+NO_HOLE_FILL = ('turkey',)                      # (how far behind the picture's seeds the sheet's start)               # the bake's views that are the user's picture (not the sheet)
+
+
+def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
+    """the atlas without the character sheet's views (user: "360도 회전에도 깔끔하게 뭉게지는 거 없이 매끈하게"):
+    laid on a mesh that is not the sheet's, the sheet's sides and back came out as smears and streaks. Here the picture
+    paints what faces the front squarely (it fades out from ~55 deg, before it stretches), and every other part takes
+    the colour of the nearest place the picture shows well, measured ALONG THE SURFACE (geodesic, on the fine mesh
+    before simplification) — the back of an arm the arm's colour, the back of an ear its rim's grey (not the pink
+    inside, which a straight-line nearest would reach through the ear), the shirt round the back the shirt's red —
+    flat fabric colours like a sewn plush, no stretched print. The seeds' colours are local medians (an eye, a line or
+    the outline's rim shading next to them doesn't run round the back)."""
+    import xatlas
+    import trimesh
+    from scipy import ndimage as ndi
+    from scipy.spatial import cKDTree
+    import scipy.sparse as sp
+    from scipy.sparse import csgraph
+    pv = [bv for bv in views if bv.name in PIC_VIEWS]
+    atlas = xatlas.Atlas()
+    atlas.add_mesh(v.astype(np.float32), f.astype(np.uint32))
+    co = xatlas.ChartOptions(); co.max_iterations = 4; co.max_cost = 6.0
+    po = xatlas.PackOptions(); po.resolution = res; po.padding = pad; po.bilinear = True; po.rotate_charts = True
+    atlas.generate(co, po)
+    vmap, idx, uv = atlas[0]
+    print(f'  atlas: {atlas.chart_count} charts, {len(vmap)} verts (was {len(v)}), utilisation {float(np.ravel(atlas.utilization)[0]):.2f}')
+
+    # the fine mesh: the picture's colours where it faces a picture view squarely (the seeds)
+    m0 = trimesh.Trimesh(np.asarray(v0, np.float64), np.asarray(f0, np.int64), process=False)
+    f0 = np.asarray(m0.faces)
+    n0 = smooth_normals(v0, f0, its=8)
+    # (TripoSG's marching-cubes winding faces inward: turned to agree with the simplified mesh, whose normals are fixed)
+    nf = smooth_normals(v, f, its=8)
+    agree = (n0 * nf[cKDTree(v).query(v0)[1]]).sum(1)
+    if np.median(agree) < 0:
+        f0 = f0[:, ::-1]; n0 = -n0
+    # the picture's fabric regions: colours clustered (Lab) and clusters of the same fabric under the painted light
+    # merged (close in hue/chroma, not too far in lightness); small regions (eyes, mouths, letters, lines, the dark
+    # crevices between limbs) never seed the fill. Without this, the painted shading and crevices ran round the back
+    # as bands and brown patches
+    fr = [bv for bv in pv if bv.name == 'front'][0]
+    lab_img, okL, repL = fabric_regions(fr.rgb, fr.mask)
+    share_now = fabric_regions.share
+    seed_w = np.zeros(len(v0), np.float32); seed_c = np.zeros((len(v0), 3), np.float32)
+    seed_l = np.full(len(v0), -1, np.int32)
+    for bv in pv:
+        if bv.name == 'mid':
+            continue
+        w, c = bv.weights_colours(v0, n0)
+        nd = n0 @ bv.d
+        q = bv.ip.pix(v0)
+        qi = np.clip(q[:, 0].astype(int), 0, lab_img.shape[1] - 1); qj = np.clip(q[:, 1].astype(int), 0, lab_img.shape[0] - 1)
+        L = lab_img[qj, qi]
+        s_ = (w > 0) & (nd > 0.5) & (L >= 0) & okL[np.maximum(L, 0)]
+        better = s_ & (seed_w == 0)
+        seed_c[better] = c[better]; seed_l[better] = L[better]; seed_w[better] = 1
+    # the character sheet's side and back views say WHICH fabric is where round the back (a shirt that wraps round,
+    # the turkey's red head in front of its fan, a jacket's back) — only that: each of their pixels is matched to the
+    # nearest of the picture's fabrics (by chromaticity, lightness counting less: the sheet is shaded too), so the
+    # colours stay the picture's own flat fabrics and nothing of the sheet's drawing is stretched over the mesh
+    import cv2
+    def to_lab(c):
+        x = cv2.cvtColor((np.clip(c, 0, 1)[None] * 255).astype(np.uint8), cv2.COLOR_RGB2LAB)[0].astype(np.float32)
+        x[:, 0] *= 100 / 255 * 0.6; x[:, 1:] -= 128                    # (lightness counts less: the sheet is shaded too)
+        return x
+    bank_c, bank_l = fabric_regions.bank
+    tb = cKDTree(to_lab(bank_c))
+    def classify(c):
+        _, I = tb.query(to_lab(c), k=7)
+        L = bank_l[I]
+        out = np.empty(len(c), np.int32)
+        for i in range(len(c)):
+            u, n_ = np.unique(L[i], return_counts=True); out[i] = u[np.argmax(n_)]
+        return out, None
+    # thin parts (a feather, an ear, a brim, a tail): their back is the same fabric as their front — the sheet,
+    # drawn a little differently, put other feathers' colours on them. Thickness along the inward normal, on the
+    # simplified mesh
+    mF = trimesh.Trimesh(v, f, process=False)
+    nF = smooth_normals(v, f, its=8)
+    org = v - nF * 2e-3
+    loc, ri, _ = mF.ray.intersects_location(org, -nF, multiple_hits=False)
+    thick = np.full(len(v), 9.0)
+    thick[ri] = np.linalg.norm(loc - org[ri], axis=1)
+    nearF = cKDTree(v).query(v0)[1]
+    thin0 = thick[nearF] < THIN
+    print(f'  thin parts: {thin0.mean():.0%} of the surface')
+    sheet_w = np.zeros(len(v0), np.float32); sheet_l = np.full(len(v0), -1, np.int32)
+    from skimage.segmentation import felzenszwalb
+    own_ids = []
+    for bv in views:
+        if bv.name in PIC_VIEWS or (KIND_NOW in LABEL_VIEWS and bv.name not in LABEL_VIEWS[KIND_NOW]):
+            continue
+        # the view's own regions (graph segmentation, like the picture's), each matched as a whole: the most common
+        # fabric among its pixels — one label per jacket back, per sleeve, per feather
+        mk = bv.mask > 0.5
+        fig = SHEET_FIG.get('side' if bv.name == 'side2' else bv.name)
+        if fig is None or fig.shape != mk.shape:
+            fig = ndi.binary_fill_holes(ndi.binary_closing(mk, iterations=3))
+        fig = fig | mk                                 # (the figure, with what SHEET_DROP left out of it)
+        img = np.clip(bv.rgb, 0, 1).astype(np.float64).copy(); img[~mk] = 1
+        sz = max(150, int(mk.sum() * 0.002))
+        sg = felzenszwalb(img, scale=300 * max(1.0, mk.shape[0] / 600), sigma=0.8, min_size=sz)
+        sg[~mk] = -1
+        limg = np.full(mk.shape, -1, np.int32)
+        for Sg in np.unique(sg[sg >= 0]):
+            r = sg == Sg
+            px = bv.rgb[r]
+            if len(px) > 4000:
+                px = px[np.random.default_rng(3).choice(len(px), 4000, replace=False)]
+            cS = np.median(px, 0)
+            satS = (cS.max() - cS.min()) / max(cS.max(), 1e-3)
+            if KIND_NOW in SHEET_OWN and satS <= 0.3:  # (a pale highlight: no fabric of its own, left to the fill)
+                continue
+            if KIND_NOW in SHEET_OWN:
+                lum = px.mean(1); lo, hi = np.percentile(lum, [55, 90]); sel_ = (lum >= lo) & (lum <= hi)
+                cS = np.median(px[sel_] if sel_.sum() > 10 else px, 0)
+                # (a highlight or a shade of a colour already met — the same fabric: no cream patches)
+                linS = np.clip(cS, 1e-4, 1) ** 2.2; chS = linS[:2] / linS.sum() * 100
+                hit = -1
+                for j in own_ids:
+                    lj = np.clip(repL[j], 1e-4, 1) ** 2.2; chj = lj[:2] / lj.sum() * 100
+                    if np.linalg.norm(chS - chj) < 6 and max(lj.sum(), linS.sum()) < 3 * min(lj.sum(), linS.sum()):
+                        hit = j; break
+                if hit < 0:
+                    repL = np.vstack([repL, cS[None]]); okL = np.r_[okL, True]
+                    hit = len(repL) - 1; own_ids.append(hit)
+                limg[r] = hit
+                continue
+            lab_, _ = classify(px)
+            u, n_ = np.unique(lab_, return_counts=True)
+            limg[r] = u[np.argmax(n_)]
+        # (left out of the sheet — the cat's tail on its back, the mouse's hanging arm: the regions round them)
+        # (each hole one fabric: the most common one round its edge — the shirt round the cat's tail, not the brown
+        # patch its tip reaches down to)
+        hole = fig & (limg < 0)
+        if hole.any() and (limg >= 0).any() and KIND_NOW not in NO_HOLE_FILL:
+            hl, nh = ndi.label(hole)
+            for i in range(1, nh + 1):
+                hi_ = hl == i
+                ring = ndi.binary_dilation(hi_, iterations=4) & ~hi_ & (limg >= 0)
+                if ring.any():
+                    u, n_ = np.unique(limg[ring], return_counts=True)
+                    limg[hi_] = u[np.argmax(n_)]
+        nd = n0 @ bv.d
+        xy = bv.vp.pix(v0)
+        ixv = np.clip(xy[:, 0].astype(int), 0, bv.vp.W - 1); iyv = np.clip(xy[:, 1].astype(int), 0, bv.vp.H - 1)
+        vis = (v0 @ bv.d) >= bv.zb[iyv, ixv] - 0.012
+        w = np.where(vis & (nd > 0), nd, 0).astype(np.float32)
+        notfan = np.ones(len(v0), bool)
+        if KIND_NOW in FAN:
+            z0, z1 = v0[:, 2].min(), v0[:, 2].max()
+            notfan = v0[:, 2] >= z0 + FAN[KIND_NOW] * (z1 - z0)
+        sel = np.nonzero((w > 0) & (nd > 0.45) & (seed_w == 0) & (w > sheet_w) & ~thin0 & notfan)[0]
+        if not len(sel):
+            continue
+        q = bv.ip.pix(v0[sel])
+        if bv.warp is not None:
+            du = sample(np.moveaxis(bv.warp, 0, -1), q)
+            q = q + du[:, ::-1]
+        L = np.round(sample(limg.astype(np.float32), q, order=0)).astype(np.int32)
+        good = L >= 0
+        if KIND_NOW in LABEL_TOP:
+            top = np.argsort(-share_now)[:LABEL_TOP[KIND_NOW]]
+            good &= np.isin(L, top)
+        sheet_l[sel[good]] = L[good]; sheet_w[sel[good]] = w[sel[good]]
+    # (speckles: a few rounds of majority vote among the neighbours over the mesh)
+    E1 = np.unique(np.sort(m0.edges_unique, axis=1), axis=0)
+    ii1, jj1 = np.r_[E1[:, 0], E1[:, 1]], np.r_[E1[:, 1], E1[:, 0]]
+    on = sheet_l >= 0
+    if on.any():
+        nl = len(repL)
+        for _ in range(6):
+            cnt = np.zeros((len(v0), nl), np.float32)
+            ok_e = on[jj1]
+            np.add.at(cnt, (ii1[ok_e], sheet_l[jj1[ok_e]]), 1)
+            cnt[np.nonzero(on)[0], sheet_l[on]] += 1
+            sheet_l = np.where(on, np.argmax(cnt, 1), -1).astype(np.int32)
+        seed_l[on] = sheet_l[on]; seed_w[on] = 1
+        print(f'  sheet labels: {on.sum()} fine verts')
+    sheet_from = np.zeros(len(v0), bool); sheet_from[on] = True
+    seeds = np.nonzero(seed_w > 0)[0]
+    ts = cKDTree(v0[seeds])
+    sc = repL[seed_l[seeds]]                         # (each seed: its fabric's colour)
+    # geodesic nearest seed over the fine mesh's edges: its region and colour
+    E = np.unique(np.sort(m0.edges_unique, axis=1), axis=0)
+    dv = v0[E[:, 1]] - v0[E[:, 0]]
+    Ln = np.linalg.norm(dv, axis=1) + 1e-7
+    # crossing a concave crease costs more (the brim's underside meeting the head, an arm against the body): the colours
+    # meet along the creases, where two fabrics are sewn, not halfway across a smooth surface
+    conc = np.maximum(0, -((n0[E[:, 1]] - n0[E[:, 0]]) * dv).sum(1) / Ln ** 2)
+    # and going up or down costs more than going round: fabrics wrap round a plush (a shirt, a hat's band, the head
+    # under a cap) — the back of the head takes the head's sides, not the cap from over the top
+    Ln = Ln * (1 + 0.06 * conc) * (1 + 1.0 * np.abs(dv[:, 1]) / Ln)
+    G = sp.coo_matrix((np.r_[Ln, Ln], (np.r_[E[:, 0], E[:, 1]], np.r_[E[:, 1], E[:, 0]])), shape=(len(v0),) * 2).tocsr()
+    # the picture's seeds start ahead of the sheet's (a virtual source joined to every seed, the sheet's a little
+    # further away): next to what the picture shows, its fabrics win over the sheet's guesses
+    from_sheet = sheet_from[seeds]
+    off = np.where(from_sheet, SHEET_OFF.get(KIND_NOW, 0.03), 0.0) + 1e-6
+    N0 = len(v0)
+    Gc = G.tocoo()
+    G2 = sp.coo_matrix((np.r_[Gc.data, off], (np.r_[Gc.row, np.full(len(seeds), N0)], np.r_[Gc.col, seeds])),
+                       shape=(N0 + 1, N0 + 1)).tocsr()
+    dist, pred = csgraph.dijkstra(G2, directed=True, indices=N0, return_predecessors=True)
+    dist = dist[:N0]
+    r = pred[:N0].copy()
+    r[r < 0] = -1
+    r[seeds] = seeds
+    for _ in range(int(np.ceil(np.log2(N0))) + 2):
+        rr = np.where(r >= 0, r, 0)
+        r = np.where(r >= 0, r[rr], -1)
+    src = r
+    ok = (src >= 0) & np.isin(src, seeds)
+    near = np.zeros(len(v0), np.int64)
+    near[ok] = np.searchsorted(seeds, src[ok])
+    if (~ok).any():                                   # (a loose part with no seed: the nearest seed in space)
+        near[~ok] = ts.query(v0[~ok])[1]
+    reg = seed_l[seeds][near]
+    reg[seeds] = seed_l[seeds]
+    if KIND_NOW in FAN:
+        top = np.argsort(-share_now)[:LABEL_TOP.get(KIND_NOW, 2)]
+        feath = (lab_img >= 0) & ~np.isin(lab_img, top) & okL[np.maximum(lab_img, 0)]
+        z0, z1 = v0[:, 2].min(), v0[:, 2].max()
+        fan = np.nonzero((v0[:, 2] < z0 + FAN[KIND_NOW] * (z1 - z0)) & (seed_w == 0) & (n0[:, 2] < 0.3))[0]
+        if feath.any() and len(fan):
+            _, (iy, ix) = ndi.distance_transform_edt(~feath, return_indices=True)
+            fl = lab_img[iy, ix]
+            q = fr.ip.pix(v0[fan])
+            qi = np.clip(q[:, 0].astype(int), 0, fl.shape[1] - 1); qj = np.clip(q[:, 1].astype(int), 0, fl.shape[0] - 1)
+            reg[fan] = fl[qj, qi]
+            print(f'  fan from the picture: {len(fan)} fine verts')
+    fill = repL[np.maximum(reg, 0)].astype(np.float64)
+    # within each region the colour is smoothed over the surface (no bands from the painted light along the edge the
+    # colours came from); between regions the seam stays crisp, like two fabrics sewn together
+    ii, jj = np.r_[E[:, 0], E[:, 1]], np.r_[E[:, 1], E[:, 0]]
+    keep = reg[ii] == reg[jj]
+    A0 = sp.coo_matrix((np.ones(keep.sum()), (ii[keep], jj[keep])), shape=(len(v0),) * 2).tocsr()
+    dg = np.maximum(np.asarray(A0.sum(1)).ravel(), 1)[:, None]
+    free = (seed_w == 0)[:, None]
+    # and a light pass across the seams (a few edges), so they are clean lines, not stair-steps of triangles
+    A1 = sp.coo_matrix((np.ones(len(ii)), (ii, jj)), shape=(len(v0),) * 2).tocsr()
+    d1 = np.maximum(np.asarray(A1.sum(1)).ravel(), 1)[:, None]
+    for _ in range(4):
+        fill = 0.5 * fill + 0.5 * (A1 @ fill) / d1
+    if os.environ.get('TC_DBG'):
+        np.savez(os.path.expanduser('~/.cache/agent-scratch/tc/clean_dbg.npz'), v0=v0, f0=f0, n0=n0, fill=fill, reg=reg,
+                 seeds=seeds, sc=sc, seed_c=seed_c, seed_l=seed_l, lab_img=lab_img, okL=okL, dist=dist, repL=repL)
+    print(f'  clean fill: {len(seeds)} seeds of {len(v0)} fine verts, furthest {np.nanmax(np.where(np.isfinite(dist), dist, 0)):.2f}')
+
+    # texels
+    ft = idx.astype(np.int64)
+    P = np.stack([uv[:, 0] * res, (1 - uv[:, 1]) * res], 1)
+    fid, bary = raster(P, ft, res, res)
+    on = fid >= 0
+    tri = ft[fid[on]]
+    b = bary[on]
+    nsm = smooth_normals(v, f)
+    vv, nn = v[vmap], nsm[vmap]
+    p = (b[:, :, None] * vv[tri]).sum(1)
+    nrm = (b[:, :, None] * nn[tri]).sum(1)
+    nrm /= np.maximum(np.linalg.norm(nrm, axis=1), 1e-9)[:, None]
+    # the fill at each texel: the fine vertices around it on the same side of the surface
+    t0 = cKDTree(v0)
+    D, I = t0.query(p, k=8)
+    wq = np.exp(-((D - D[:, :1]) / (0.5 * D[:, :1] + 0.002)) ** 2) * np.clip((nrm[:, None, :] * n0[I]).sum(-1), 0, 1) ** 2 + 1e-6
+    fb = (fill[I] * wq[:, :, None]).sum(1) / wq.sum(1, keepdims=True)
+    # volume round the sides and back: the flat fabric colours lit softly — ambient occlusion (creases under the arms,
+    # the neck under the head, the seat) and a little more light from above; the picture has its own painted light
+    rng = np.random.default_rng(2)
+    dirs = rng.normal(size=(24, 3)); dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+    occ = np.zeros(len(v), np.float32); tot = np.zeros(len(v), np.float32)
+    for dvec in dirs:
+        cosd = nF @ dvec
+        use = np.nonzero(cosd > 0.05)[0]
+        if not len(use):
+            continue
+        hit = mF.ray.intersects_any(v[use] + nF[use] * 2e-3, np.tile(dvec, (len(use), 1)))
+        occ[use] += hit * cosd[use]; tot[use] += cosd[use]
+    ao = 1 - occ / np.maximum(tot, 1e-6)
+    A1f = sp.coo_matrix((np.ones(len(f) * 6), (f[:, [0, 1, 2, 1, 2, 0]].ravel(), f[:, [1, 2, 0, 0, 1, 2]].ravel())), shape=(len(v),) * 2).tocsr()
+    dgf = np.maximum(np.asarray(A1f.sum(1)).ravel(), 1)
+    for _ in range(4):
+        ao = 0.5 * ao + 0.5 * (A1f @ ao) / dgf
+    light_v = (0.62 + 0.38 * ao) * (0.93 + 0.07 * nF[:, 1])
+    light_t = (b * light_v[vmap][tri]).sum(1)
+    fb = fb * light_t[:, None]
+    # the picture where it faces squarely: full from ~55 deg in, none past ~70 deg
+    acc = np.zeros((len(p), 3), np.float32); ws = np.zeros(len(p), np.float32)
+    for bv in pv:
+        if bv.name == 'mid':                          # (the profile stretched across the turtle's face: a second
+            continue                                  # smile and eye ghosts seen face-on; its face is the fill + eyes)
+        w, c = bv.weights_colours(p, nrm)
+        nd = nrm @ bv.d
+        s = np.clip((nd - 0.4) / 0.4, 0, 1)
+        w = (w > 0) * s * s * (3 - 2 * s) * (0.35 if bv.name == 'mid' else 1.0)
+        acc += w[:, None] * c; ws += w
+    a = np.clip(ws, 0, 1)[:, None]
+    col = a * acc / np.maximum(ws, 1e-6)[:, None] + (1 - a) * fb
+    img = np.zeros((res, res, 3), np.float32)
+    img[on] = col
+    _, (iy, ix) = ndi.distance_transform_edt(~on, return_indices=True)
+    img = img[iy, ix]
+    if dbg is not None:
+        seen = np.zeros((res, res), np.float32); seen[on] = a[:, 0]
+        dbg['atlas'] = (img, seen)
+    return vmap, idx, uv, img
+
+
+def bake(v, f, n, views, res=1024, pad=8, dbg=None, kind_consist=True):
     """UV atlas (xatlas) + the texture: every texel's colour from the views that see it squarely, what none sees filled
     from around it (over the mesh), the empty atlas around the charts filled with the nearest chart colour.
     pad: texels between the charts — 8, not 4: the game draws the atlas mip-mapped, and at a quarter size two charts
@@ -992,6 +1561,7 @@ def bake(v, f, n, views, res=1024, pad=8, dbg=None):
     atlas.add_mesh(v.astype(np.float32), f.astype(np.uint32))
     co = xatlas.ChartOptions()
     co.max_iterations = 4
+    co.max_cost = 6.0
     po = xatlas.PackOptions()
     po.resolution = res; po.padding = pad; po.bilinear = True; po.rotate_charts = True
     atlas.generate(co, po)
@@ -1006,12 +1576,25 @@ def bake(v, f, n, views, res=1024, pad=8, dbg=None):
         """bary_tri: (barycentrics, triangle corners in vmap'd vertices) to interpolate per-vertex trust, or None (p are
         the vertices themselves)"""
         acc = np.zeros((len(p), 3), np.float32); ws = np.zeros(len(p), np.float32)
+        wf = np.zeros(len(p), np.float32)              # (the picture's share: the front and the mirrored flank)
         for bv in views:
             w, c = bv.weights_colours(p, nn)
             tv = getattr(bv, 'trust_v', None)
             if tv is not None:
                 w = w * (tv if bary_tri is None else (bary_tri[0] * tv[vmap][bary_tri[1]]).sum(1))
             acc += w[:, None] * c; ws += w
+            if bv.name in ('front', 'flank', 'mid'):
+                wf += w
+        pr = getattr(colours, 'prop', None)
+        if pr is not None:                             # (the picture's part colours where a sheet view was distrusted)
+            cpv, rw = pr
+            if bary_tri is None:
+                w, c = rw, cpv
+            else:
+                w = (bary_tri[0] * rw[vmap][bary_tri[1]]).sum(1)
+                c = (bary_tri[0][:, :, None] * cpv[vmap][bary_tri[1]]).sum(1)
+            acc += w[:, None] * c; ws += w
+        colours.wf = wf
         return acc, ws
 
     E = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
@@ -1051,8 +1634,42 @@ def bake(v, f, n, views, res=1024, pad=8, dbg=None):
         bm.trust_v = trust
         print(f'  mirrored side: distrusted on {(trust < 0.5).mean():.0%} of the mesh')
 
-    # what no view sees well: filled over the mesh from the vertices around it — from their patch colours (a median over
-    # the neighbourhood), so an eye or a line next to an unseen bit doesn't run into it as a smudge
+    # the sheet's views where they disagree with the picture next to it: the sheet's friend is posed differently
+    # (the mouse's arms hang down on the sheet and are held up at the chest in the picture; the duck's feet sit
+    # elsewhere) and its limbs came out as ghosts — an extra paw on the hip, yellow streaks on an orange foot. Near
+    # what the picture shows, every vertex has the picture's colour of its part (a median of the nearest vertices the
+    # picture sees well); a sheet view that paints a different colour there is distrusted, smoothly, and the picture's
+    # part colour takes its place. Far round the back, the sheet is trusted as it is
+    fv = [bv for bv in views if bv.name == 'front']
+    if fv and kind_consist:
+        wF, cF = fv[0].weights_colours(v, n)
+        kF = np.nonzero(wF > 1.0)[0]
+        if len(kF) > 50:
+            tF = cKDTree(v[kF])
+            d, I = tF.query(v, k=16)
+            wg = np.exp(-((d - d[:, :1]) / (0.5 * d[:, :1] + 0.01)) ** 2) * np.clip((n[:, None, :] * n[kF][I]).sum(-1) + 0.3, 0.02, 1)
+            cprop = wmedian(cF[kF][I].astype(np.float32), wg)
+            band = np.exp(-(d[:, 0] / 0.14) ** 2)
+            rep_w = np.zeros(len(v)); 
+            for bv in views:
+                if bv.name not in ('side', 'side2', 'back', 'head', 'tail'):
+                    continue
+                w, c = bv.weights_colours(v, n)
+                seen = (w > 0.02).astype(np.float64)
+                cp = c.astype(np.float64)
+                for _ in range(3):                  # (patches, not texels: a little misregistration is fine)
+                    cp = np.where(seen[:, None] > 0, ((Adj @ (cp * seen[:, None])) + cp) / (Adj @ seen + 1)[:, None], cp)
+                dist = np.linalg.norm(cp - cprop, axis=1)
+                t = np.clip((dist - 0.2) / 0.16, 0, 1)
+                un = band * t * t * (3 - 2 * t) * (seen > 0)
+                for _ in range(3):
+                    un = 0.5 * un + 0.5 * (Adj @ un) / np.maximum(deg, 1)
+                tr = np.clip(1 - 1.4 * un, 0, 1)
+                old = getattr(bv, 'trust_v', None)
+                bv.trust_v = tr if old is None else old * tr
+                rep_w = np.maximum(rep_w, w * (1 - tr))
+                print(f'  {bv.name}: distrusted next to the picture on {(tr < 0.5).mean():.0%} of the mesh')
+            colours.prop = (cprop.astype(np.float32), rep_w.astype(np.float32))
     acc, ws = colours(v, n, None)
     vc = acc / np.maximum(ws, 1e-6)[:, None]
     known = ws > 0.15
@@ -1086,17 +1703,25 @@ def bake(v, f, n, views, res=1024, pad=8, dbg=None):
     # face, between the picture and its mirror): the colours of the nearest texels that are seen and face about the
     # same way — a median, so an eye or a line beside it doesn't run in; deeper in, from a wider ring of them, so it
     # stays smooth instead of streaking out from the nearest one
+    wf = colours.wf
     kn = ws > 0.12
     need = np.nonzero(ws < 0.8)[0]
-    if kn.sum() > 50 and len(need):
-        kc = (acc[kn] / ws[kn, None]).astype(np.float32)
-        kp, kq = p[kn], nrm[kn]
+    # undersides (the seat, the soles) are filled from the fabric the sheet's side and back views show — not from the
+    # picture's bottom edge: its prints (a shirt's hem, a letter, a bandana) were dragged in under the seat as smears
+    down = nrm[need, 1] < -0.35
+    fabric = kn & (wf < 0.35 * ws)
+    groups = [(need[~down], kn), (need[down], fabric if fabric.sum() > 200 else kn)]
+    for qsel, known in groups:
+        if known.sum() <= 50 or not len(qsel):
+            continue
+        kc = (acc[known] / ws[known, None]).astype(np.float32)
+        kp, kq = p[known], nrm[known]
         t1 = cKDTree(kp)
         sub = np.random.default_rng(0).choice(len(kp), size=max(50, min(len(kp), len(kp) // 16)), replace=False)
         t2 = cKDTree(kp[sub])
-        kd = np.zeros((len(need), 3), np.float32); dm = np.zeros(len(need), np.float32)
-        for s0 in range(0, len(need), 60000):
-            qi = need[s0:s0 + 60000]
+        kd = np.zeros((len(qsel), 3), np.float32); dm = np.zeros(len(qsel), np.float32)
+        for s0 in range(0, len(qsel), 60000):
+            qi = qsel[s0:s0 + 60000]
             d1, i1 = t1.query(p[qi], k=12)
             d2, i2 = t2.query(p[qi], k=24)
             D = np.concatenate([d1, d2], 1); I = np.concatenate([i1, sub[i2]], 1)
@@ -1105,7 +1730,7 @@ def bake(v, f, n, views, res=1024, pad=8, dbg=None):
             kd[s0:s0 + len(qi)] = wmedian(kc[I], wg)
             dm[s0:s0 + len(qi)] = d0[:, 0]
         cf = np.exp(-(dm / 0.12) ** 2)[:, None]
-        fb[need] = cf * kd + (1 - cf) * fb[need]
+        fb[qsel] = cf * kd + (1 - cf) * fb[qsel]
     col = (acc + W0 * fb) / (ws + W0)[:, None]
     img = np.zeros((res, res, 3), np.float32)
     img[on] = col
@@ -1130,13 +1755,13 @@ def bake(v, f, n, views, res=1024, pad=8, dbg=None):
     return vmap, idx, uv, img
 
 
-def build(kind, art, res, target, sheets=None, dbg=None):
+def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024):
     import trimesh
     a = art[kind]
     w, h, u = a['w'] * PX, a['h'] * PX, a['head'][0]
     gy = (1 - a['head'][1]) * h
-    v, f, c, pic = base_mesh(kind, art, res)
-    views = sheet_views(kind, sheets)
+    v, f, c, pic = base_mesh(kind, art, res, shape)
+    views = sheet_views(kind, sheets, up=not os.environ.get("TC_NO_X4"))
     pa = np.asarray(pic).astype(np.float32)
     W, H = pa.shape[1], pa.shape[0]
     if views:
@@ -1163,6 +1788,8 @@ def build(kind, art, res, target, sheets=None, dbg=None):
             both &= g < np.quantile(g[both], 0.7)
             lut = colour_lut(Sf[both], rgbP[both])
         skip = SHEET_SKIP.get(kind, ())
+        if shape == 'tsg':                         # (TripoSG's depth and parts are its own, from the picture: the
+            skip = tuple(skip) + ('depth', 'tails')   # sheet's side outline only dragged them about)
         if 'depth' not in skip:
             v = fit_depth(v, f, views, k, kind, h, dbg)
         if kind in SIDE_ON:
@@ -1172,8 +1799,8 @@ def build(kind, art, res, target, sheets=None, dbg=None):
         v = recentre(v, gy, h)
     else:
         print('  (no character sheet: guessed colours round the back)')
-    v0 = v
-    v, f = decimate(v, f, target or (9000 if views else 6000))   # (textured from a sheet: finer, for sharp outlines)
+    v0, f0 = v, f
+    v, f = decimate(v, f, target or (TRIS if views else 6000))   # (textured from a sheet: finer, for sharp outlines)
     if not views:
         from scipy.spatial import cKDTree
         c = c[cKDTree(v0).query(v)[1]]
@@ -1196,7 +1823,12 @@ def build(kind, art, res, target, sheets=None, dbg=None):
         for bv in bvs:
             if bv.name == 'back' and extra.any():
                 bv.trust_v = (~extra).astype(np.float64)
-        vmap, idx, uv, tex = bake(v, f, n, bvs, dbg=dbg)
+        if TEX_MODE == 'clean':
+            global KIND_NOW
+            KIND_NOW = kind
+            vmap, idx, uv, tex = bake_clean(v, f, n, bvs, v0, f0, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
+        else:
+            vmap, idx, uv, tex = bake(v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg, kind_consist=kind not in CONSIST_SKIP)
         print(f'  {len(v)} verts, {len(f)} tris, front {fw.mean():.2f}, depth {v[:, 2].max() - v[:, 2].min():.2f} '
               f'(w {w:.2f} h {h:.2f})')
         return {'v': v[vmap], 'f': idx.astype(np.int64), 'fw': fw[vmap], 'uv': uv, 'tex': tex}
@@ -1242,6 +1874,8 @@ def main():
     ap.add_argument('--target', type=int, default=0, help='triangles (default 9000 with a sheet, else 6000)')
     ap.add_argument('--sheets', default=os.path.join(ROOT, 'design', 'sheets'))
     ap.add_argument('--debug', default='')
+    ap.add_argument('--shape', default='tsg', choices=('tsg', 'tsr'), help='shape source: TripoSG (default) or TripoSR')
+    ap.add_argument('--atlas', type=int, default=1024, help='atlas texture size')
     o = ap.parse_args()
     art = load_art()
     kinds = [k for k in art if not o.only or k in o.only.split(',')]
@@ -1255,10 +1889,10 @@ def main():
     for k in kinds:
         print(k)
         dbg = {} if o.debug else None
-        r = build(k, art, o.res, o.target, o.sheets, dbg)
+        r = build(k, art, o.res, o.target, o.sheets, dbg, o.shape, o.atlas)
         assert len(r['v']) < 65536
         data[k] = pack(r)
-        print(f'  packed {sum(len(x) for x in data[k].values() if isinstance(x, str)) // 1024} KB')
+        print(f'  packed {sum(len(x) for x in data[k].values() if isinstance(x, str)) // 1024} KB (' + ', '.join(f'{a} {len(x) // 1024}' for a, x in data[k].items() if isinstance(x, str)) + ')')
         if dbg:
             save_debug(o.debug, k, dbg)
     with open(path, 'w', encoding='utf-8') as fh:
