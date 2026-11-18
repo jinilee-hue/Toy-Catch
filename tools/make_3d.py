@@ -60,8 +60,25 @@ GRIP_Z = -0.02                                   # the head's middle (depth) at 
 # distrust of the sheet next to the picture (bake), which would flatten its feathers into one colour
 CONSIST_SKIP = ('turkey',)
 KIND_NOW = ''
+# two fabrics of one hue told apart by lightness: the turtle's light-green head and darker shell, the fish's pale
+# head and blue body (merged, the head took the shell's green all round)
+MERGE_LUM = {'turtle': 1.5, 'fish': 1.5}
+# the dog's cream chest in shade (#b79680) is the cream fabric (else a grey-tan patch down its back)
+MERGE_CH = {'dog': 8}
+# per friend, which source places the fabrics round the back: the seal's MV views guessed a yellow jacket back (the
+# sheet draws it blue) — the sheet's labels for it
+TEX_KIND = {'seal': 'clean'}
+MV_TRUST = float(os.environ.get('TC_MVT', 9))     # (Lab distance, L x 0.6: an MV region this far from every picture colour is left out)
+SEAM_SMOOTH = int(os.environ.get('TC_SEAM', 40))      # (diffusion rounds for the fabric seams on the fine mesh)
+ISLAND = 0.002                                   # (patches smaller than this share of the surface are absorbed)
+# side-on friends: MV-Adapter draws a face on the head-on end (a smile band, eye whites) the picture never shows
+ISLAND_K = {'turtle': 0.015, 'fish': 0.012}
+ART_NOW = None
+# friends whose fan (design/parts/ masks, from tools/parts_sam.py) takes its back from its own feather tips in the
+# picture — along the surface, each lobe the colour of its tip — not from the sheet, whose fan isn't TripoSG's
+FAN_PARTS = {'turkey': ('fan_l', 'fan_r')}
 SHEET_FIG = {}
-TEX_MODE = os.environ.get('TC_TEX', 'clean')       # clean: picture + geodesic fill (no sheet views); sheet: the old bake
+TEX_MODE = os.environ.get('TC_TEX', 'mvlabel')     # mvlabel: MV-Adapter views place the picture's fabrics; clean: the sheet does; mv: MV colours as painted; sheet: the old bake
 TRIS = 18000                                     # triangles per friend (with a sheet)
 TSG_R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], np.float32)
 
@@ -1178,7 +1195,7 @@ def fabric_regions(rgb, mask):
         nb, cnt = np.unique(seg[ring], return_counts=True)
         best = None
         for N, c in zip(nb, cnt):
-            if share[N] > share[L] and np.linalg.norm(chrom[N] - chrom[L]) < 10 and max(lum_r[N], lum_r[L]) < 1.6 * min(lum_r[N], lum_r[L]):
+            if share[N] > share[L] and np.linalg.norm(chrom[N] - chrom[L]) < (5 if KIND_NOW in MERGE_LUM else 10) and max(lum_r[N], lum_r[L]) < 1.6 * min(lum_r[N], lum_r[L]):
                 if best is None or share[N] > share[best]:
                     best = N
         if best is not None:
@@ -1208,7 +1225,7 @@ def fabric_regions(rgb, mask):
     owner = {}
     for L in order:
         for O in list(dict.fromkeys(owner.values())):
-            if np.linalg.norm(ch2[L] - ch2[O]) < 6 and max(lu2[L], lu2[O]) < 3.0 * min(lu2[L], lu2[O]):
+            if np.linalg.norm(ch2[L] - ch2[O]) < MERGE_CH.get(KIND_NOW, 6) and max(lu2[L], lu2[O]) < MERGE_LUM.get(KIND_NOW, 3.0) * min(lu2[L], lu2[O]):
                 owner[L] = O
                 break
         else:
@@ -1282,7 +1299,21 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
     # crevices between limbs) never seed the fill. Without this, the painted shading and crevices ran round the back
     # as bands and brown patches
     fr = [bv for bv in pv if bv.name == 'front'][0]
-    lab_img, okL, repL = fabric_regions(fr.rgb, fr.mask)
+    # (the painted eyes — iris, pupil, their white rings — are no fabric: js/eyes.js domes replace them; as a fabric the
+    # whites came back as pale patches where MV-Adapter drew eyes on the fish's and the turtle's faces)
+    emask = np.zeros(fr.mask.shape, bool)
+    try:
+        js = open(os.path.join(ROOT, 'js', 'eyes.js'), encoding='utf-8').read()
+        tab = json.loads(js[js.index('/*@eyes*/') + 9:js.index('/*@end*/')]).get(KIND_NOW)
+    except Exception:
+        tab = None
+    if tab and ART_NOW:
+        Wp, Hp, mg = ART_NOW['w'], ART_NOW['h'], fr.ip.margin
+        yy_, xx_ = np.mgrid[0:emask.shape[0], 0:emask.shape[1]]
+        g_ = 2.3 if tab.get('ring') else 1.8
+        for (eu, ev, erx, ery, _) in tab['eyes']:
+            emask |= ((xx_ - (eu * Wp + mg)) / (g_ * erx * Wp)) ** 2 + ((yy_ - (ev * Hp + mg)) / (g_ * ery * Hp)) ** 2 < 1
+    lab_img, okL, repL = fabric_regions(fr.rgb, fr.mask * ~emask)
     share_now = fabric_regions.share
     seed_w = np.zeros(len(v0), np.float32); seed_c = np.zeros((len(v0), 3), np.float32)
     seed_l = np.full(len(v0), -1, np.int32)
@@ -1309,12 +1340,12 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
     bank_c, bank_l = fabric_regions.bank
     tb = cKDTree(to_lab(bank_c))
     def classify(c):
-        _, I = tb.query(to_lab(c), k=7)
+        D, I = tb.query(to_lab(c), k=7)
         L = bank_l[I]
         out = np.empty(len(c), np.int32)
         for i in range(len(c)):
             u, n_ = np.unique(L[i], return_counts=True); out[i] = u[np.argmax(n_)]
-        return out, None
+        return out, D[:, 0]
     # thin parts (a feather, an ear, a brim, a tail): their back is the same fabric as their front — the sheet,
     # drawn a little differently, put other feathers' colours on them. Thickness along the inward normal, on the
     # simplified mesh
@@ -1330,7 +1361,65 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
     sheet_w = np.zeros(len(v0), np.float32); sheet_l = np.full(len(v0), -1, np.int32)
     from skimage.segmentation import felzenszwalb
     own_ids = []
-    for bv in views:
+    if TEX_MODE == 'mvlabel':
+        # MV-Adapter's six views, painted to fit THIS mesh (tools/mv_views.py): they say which fabric is where all round
+        # — their own colours (shaded, a little grey) never reach the atlas, only the picture's fabrics
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import mv_views as MV
+        imgs, centerM, scaleM = mv_views(KIND_NOW, v, f)
+        # (round the eyes, on both sides of a side-on friend: MV's own drawing of an eye — its iris matched to the
+        # nearest fabric (orange on the fish), its white to the palest — is no fabric; the domes sit there)
+        eye0 = np.zeros(len(v0), bool)
+        if tab and ART_NOW:
+            wA, hA, uA = ART_NOW['w'] * PX, ART_NOW['h'] * PX, ART_NOW['head'][0]
+            pu = v0[:, 0] / wA + uA; pv_ = 1 - v0[:, 1] / hA
+            for (eu, ev, erx, ery, _) in tab['eyes']:
+                inside = ((pu - eu) / (2.2 * erx)) ** 2 + ((pv_ - ev) / (2.2 * ery)) ** 2 < 1
+                eye0 |= inside
+        Hm, Wm = imgs.shape[1:3]
+        vs0 = MV.to_std(v0, centerM, scaleM); ns0 = MV.nrm_std(n0); vsF = MV.to_std(v, centerM, scaleM)
+        for i, cam in enumerate(MV.cameras()):
+            if i == 0:
+                continue                              # (the front: the picture itself)
+            mk = np.ones((Hm, Wm), bool)
+            Pv, zv = MV.project(vsF, cam, Hm, Wm)
+            fd, bb = raster(Pv, f, Wm, Hm, -zv)
+            mk = fd >= 0
+            D = np.full((Hm, Wm), np.inf, np.float32)
+            D[mk] = (bb[mk] * zv[f[fd[mk]]]).sum(1)
+            D = ndi.minimum_filter(D, size=3)
+            img = imgs[i].astype(np.float64).copy(); img[~mk] = 0.5
+            sz = max(150, int(mk.sum() * 0.002))
+            sg = felzenszwalb(img, scale=300 * Hm / 600, sigma=0.8, min_size=sz)
+            sg[~mk] = -1
+            limg = np.full(mk.shape, -1, np.int32)
+            for Sg in np.unique(sg[sg >= 0]):
+                r = sg == Sg
+                px = imgs[i][r]
+                if len(px) > 4000:
+                    px = px[np.random.default_rng(3).choice(len(px), 4000, replace=False)]
+                lab_, dd = classify(px)
+                if np.median(dd) > MV_TRUST:              # (no fabric of the picture's is that colour: MV's shading
+                    continue                              # or a guess — the fabrics round it fill it in)
+                u_, n_ = np.unique(lab_, return_counts=True)
+                Lb = u_[np.argmax(n_)]
+                # (much duller or darker than the fabric it matched: MV's shade, or its guess at an unseen part
+                # in grey — the duck's back of the head, its tail. Left to the fabrics round it)
+                cs, cf = np.median(px, 0), repL[Lb]
+                sat = lambda c: (c.max() - c.min()) / max(c.max(), 1e-3)
+                if sat(cs) < 0.6 * sat(cf) - 0.02 or cs.max() < 0.6 * cf.max():
+                    continue
+                limg[r] = Lb
+            Pp, zp = MV.project(vs0, cam, Hm, Wm)
+            ix = np.clip(Pp[:, 0].astype(int), 0, Wm - 1); iy = np.clip(Pp[:, 1].astype(int), 0, Hm - 1)
+            vis = zp <= D[iy, ix] + 0.012
+            face = ns0 @ (-cam[3])
+            w = np.where(vis & (face > 0.35), face, 0).astype(np.float32)
+            sel = np.nonzero((w > 0) & (seed_w == 0) & (w > sheet_w) & ~eye0)[0]
+            L = limg[iy[sel], ix[sel]]
+            good = L >= 0
+            sheet_l[sel[good]] = L[good]; sheet_w[sel[good]] = w[sel[good]]
+    for bv in (views if TEX_MODE != 'mvlabel' else ()):
         if bv.name in PIC_VIEWS or (KIND_NOW in LABEL_VIEWS and bv.name not in LABEL_VIEWS[KIND_NOW]):
             continue
         # the view's own regions (graph segmentation, like the picture's), each matched as a whole: the most common
@@ -1357,6 +1446,8 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
             if KIND_NOW in SHEET_OWN:
                 lum = px.mean(1); lo, hi = np.percentile(lum, [55, 90]); sel_ = (lum >= lo) & (lum <= hi)
                 cS = np.median(px[sel_] if sel_.sum() > 10 else px, 0)
+                if (cS.max() - cS.min()) / max(cS.max(), 1e-3) <= 0.3:
+                    continue                           # (its lit side pale: a highlight after all)
                 # (a highlight or a shade of a colour already met — the same fabric: no cream patches)
                 linS = np.clip(cS, 1e-4, 1) ** 2.2; chS = linS[:2] / linS.sum() * 100
                 hit = -1
@@ -1406,6 +1497,7 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
             top = np.argsort(-share_now)[:LABEL_TOP[KIND_NOW]]
             good &= np.isin(L, top)
         sheet_l[sel[good]] = L[good]; sheet_w[sel[good]] = w[sel[good]]
+    pic_seed = seed_w > 0
     # (speckles: a few rounds of majority vote among the neighbours over the mesh)
     E1 = np.unique(np.sort(m0.edges_unique, axis=1), axis=0)
     ii1, jj1 = np.r_[E1[:, 0], E1[:, 1]], np.r_[E1[:, 1], E1[:, 0]]
@@ -1459,6 +1551,22 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
         near[~ok] = ts.query(v0[~ok])[1]
     reg = seed_l[seeds][near]
     reg[seeds] = seed_l[seeds]
+    if KIND_NOW in FAN_PARTS and pic_seed.any():
+        pj = json.load(open(os.path.join(ROOT, 'design', 'parts', 'parts.json')))[KIND_NOW]
+        pm = np.asarray(Image.open(os.path.join(ROOT, 'design', 'parts', f'{KIND_NOW}.png')))
+        ids = [q['id'] for q in pj['parts'] if q['name'] in FAN_PARTS[KIND_NOW]]
+        a_ = ART_NOW
+        wA, hA, uA = a_['w'] * PX, a_['h'] * PX, a_['head'][0]
+        ps_ = np.nonzero(pic_seed)[0]
+        px_ = np.clip(((v0[ps_, 0] / wA + uA) * pm.shape[1]).astype(int), 0, pm.shape[1] - 1)
+        py_ = np.clip(((1 - v0[ps_, 1] / hA) * pm.shape[0]).astype(int), 0, pm.shape[0] - 1)
+        is_fan = np.isin(pm[py_, px_], ids)
+        _, _, srcP = csgraph.dijkstra(G, directed=False, indices=ps_, min_only=True, return_predecessors=True)
+        okP = srcP >= 0
+        jP = np.zeros(len(v0), np.int64); jP[okP] = np.searchsorted(ps_, srcP[okP])
+        terr = okP & is_fan[jP] & ~pic_seed & (n0[:, 2] < 0.2)
+        reg[terr] = seed_l[ps_][jP[terr]]
+        print(f'  fan backs from their own tips: {terr.sum()} fine verts')
     if KIND_NOW in FAN:
         top = np.argsort(-share_now)[:LABEL_TOP.get(KIND_NOW, 2)]
         feath = (lab_img >= 0) & ~np.isin(lab_img, top) & okL[np.maximum(lab_img, 0)]
@@ -1471,6 +1579,49 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
             qi = np.clip(q[:, 0].astype(int), 0, fl.shape[1] - 1); qj = np.clip(q[:, 1].astype(int), 0, fl.shape[0] - 1)
             reg[fan] = fl[qj, qi]
             print(f'  fan from the picture: {len(fan)} fine verts')
+    # clean seams (user: "영역별 색이 섞이지 않고 깔끔하게"): each fabric's region smoothed over the surface (its
+    # indicator diffused, then the strongest fabric wins) — the seams become smooth curves, not the zig-zag of the
+    # triangles and the sheet's pixels — and islands too small to be a real patch go to the fabric round them
+    reg = np.maximum(reg, 0)
+    labs_u = np.unique(reg)
+    if len(labs_u) > 1:
+        ii2, jj2 = np.r_[E[:, 0], E[:, 1]], np.r_[E[:, 1], E[:, 0]]
+        A2 = sp.coo_matrix((np.ones(len(ii2)), (ii2, jj2)), shape=(len(v0),) * 2).tocsr()
+        d2 = np.maximum(np.asarray(A2.sum(1)).ravel(), 1)[:, None]
+        X = (reg[:, None] == labs_u[None]).astype(np.float32)
+        for _ in range(SEAM_SMOOTH):
+            X = 0.5 * X + 0.5 * (A2 @ X) / d2
+        reg = labs_u[np.argmax(X, 1)]
+        # islands
+        same = reg[ii2] == reg[jj2]
+        Ac = sp.coo_matrix((np.ones(same.sum()), (ii2[same], jj2[same])), shape=(len(v0),) * 2).tocsr()
+        ncomp, comp = csgraph.connected_components(Ac, directed=False)
+        csize = np.bincount(comp, minlength=ncomp)
+        small = csize < ISLAND_K.get(KIND_NOW, ISLAND) * len(v0)
+        for _ in range(3):
+            bad = small[comp]
+            if not bad.any():
+                break
+            # each small island takes the most common fabric on its border
+            cross = bad[ii2] & ~bad[jj2]
+            if not cross.any():
+                break
+            cc = comp[ii2[cross]]; ll = reg[jj2[cross]]
+            key = cc.astype(np.int64) * (reg.max() + 1) + ll
+            uk, cnt = np.unique(key, return_counts=True)
+            best = {}
+            for k_, n_ in zip(uk, cnt):
+                c_, l_ = divmod(int(k_), int(reg.max() + 1))
+                if n_ > best.get(c_, (0, -1))[0]:
+                    best[c_] = (n_, l_)
+            for c_, (_, l_) in best.items():
+                reg[comp == c_] = l_
+            same = reg[ii2] == reg[jj2]
+            Ac = sp.coo_matrix((np.ones(same.sum()), (ii2[same], jj2[same])), shape=(len(v0),) * 2).tocsr()
+            ncomp, comp = csgraph.connected_components(Ac, directed=False)
+            csize = np.bincount(comp, minlength=ncomp)
+            small = csize < ISLAND_K.get(KIND_NOW, ISLAND) * len(v0)
+        print(f'  seams smoothed: {len(np.unique(reg))} fabrics, {ncomp} patches')
     fill = repL[np.maximum(reg, 0)].astype(np.float64)
     # within each region the colour is smoothed over the surface (no bands from the painted light along the edge the
     # colours came from); between regions the seam stays crisp, like two fabrics sewn together
@@ -1533,7 +1684,7 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
             continue                                  # smile and eye ghosts seen face-on; its face is the fill + eyes)
         w, c = bv.weights_colours(p, nrm)
         nd = nrm @ bv.d
-        s = np.clip((nd - 0.4) / 0.4, 0, 1)
+        s = np.clip((nd - 0.4) / 0.4, 0, 1) if KIND_NOW not in SIDE_ON else np.clip((nd - 0.6) / 0.3, 0, 1)
         w = (w > 0) * s * s * (3 - 2 * s) * (0.35 if bv.name == 'mid' else 1.0)
         acc += w[:, None] * c; ws += w
     a = np.clip(ws, 0, 1)[:, None]
@@ -1544,6 +1695,122 @@ def bake_clean(v, f, n, views, v0, f0, res=1024, pad=8, dbg=None):
     img = img[iy, ix]
     if dbg is not None:
         seen = np.zeros((res, res), np.float32); seen[on] = a[:, 0]
+        dbg['atlas'] = (img, seen)
+    return vmap, idx, uv, img
+
+
+MV_DIR = os.path.expanduser('~/dev/tools/MV-Adapter')
+
+
+def mv_views(kind, v, f):
+    """the six MV-Adapter views painted to fit this exact mesh (tools/mv_views.py in MV-Adapter's venv), cached by the
+    mesh's own bytes"""
+    import hashlib
+    import subprocess
+    out_dir = os.path.join(MV_DIR, 'out'); os.makedirs(out_dir, exist_ok=True)
+    key = hashlib.md5(np.ascontiguousarray(v.astype(np.float32)).tobytes() + np.ascontiguousarray(f.astype(np.int32)).tobytes()).hexdigest()[:10]
+    out = os.path.join(out_dir, f'{kind}_{key}.npz')
+    if not os.path.exists(out):
+        mesh = os.path.join(out_dir, f'{kind}_{key}_mesh.npz')
+        np.savez(mesh, v=v, f=f)
+        if os.environ.get('TC_MV_EXPORT'):           # (only list the job: tools/mv_views.py --batch runs them all)
+            with open(os.path.join(out_dir, 'jobs.txt'), 'a') as fh:
+                fh.write(f"{mesh} {os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp')} {out}\n")
+            raise RuntimeError('MV job listed')
+        t0 = time.time()
+        subprocess.run([os.path.join(MV_DIR, '.venv', 'bin', 'python'), os.path.join(ROOT, 'tools', 'mv_views.py'), mesh,
+                        os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp'), out,
+                        '--steps', os.environ.get('TC_MV_STEPS', '40')], check=True)
+        print(f'  MV-Adapter views: {time.time() - t0:.0f}s -> {out}')
+    z = np.load(out)
+    return z['views'].astype(np.float32) / 255, z['center'], float(z['scale'])
+
+
+def bake_mv(kind, v, f, n, views, res=1024, pad=8, dbg=None):
+    """the atlas from the six views MV-Adapter painted onto this mesh (front, right, back, left, top, bottom), each
+    seen only where it faces the surface squarely and nothing nearer hides it; the user's picture over them where the
+    front faces the camera (it is the art itself, and sharper). The views are brought to the picture's colours first
+    (tone curves from the front view against the picture, where both show the friend)"""
+    import xatlas
+    import trimesh
+    from scipy import ndimage as ndi
+    from scipy.spatial import cKDTree
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mv_views as MV
+    imgs, center, scale = mv_views(kind, v, f)
+    H, W = imgs.shape[1:3]
+    cams = MV.cameras()
+    pv = [bv for bv in views if bv.name in ('front', 'flank')]
+    atlas = xatlas.Atlas()
+    atlas.add_mesh(v.astype(np.float32), f.astype(np.uint32))
+    co = xatlas.ChartOptions(); co.max_iterations = 4; co.max_cost = 6.0
+    po = xatlas.PackOptions(); po.resolution = res; po.padding = pad; po.bilinear = True; po.rotate_charts = True
+    atlas.generate(co, po)
+    vmap, idx, uv = atlas[0]
+    print(f'  atlas: {atlas.chart_count} charts, {len(vmap)} verts (was {len(v)}), utilisation {float(np.ravel(atlas.utilization)[0]):.2f}')
+    ft = idx.astype(np.int64)
+    P = np.stack([uv[:, 0] * res, (1 - uv[:, 1]) * res], 1)
+    fid, bary = raster(P, ft, res, res)
+    on = fid >= 0
+    tri = ft[fid[on]]
+    b = bary[on]
+    nsm = smooth_normals(v, f, its=6)
+    vv, nn = v[vmap], nsm[vmap]
+    p = (b[:, :, None] * vv[tri]).sum(1)
+    nrm = (b[:, :, None] * nn[tri]).sum(1)
+    nrm /= np.maximum(np.linalg.norm(nrm, axis=1), 1e-9)[:, None]
+    ps, ns = MV.to_std(p, center, scale), MV.nrm_std(nrm)
+    vs = MV.to_std(v, center, scale)
+    # the picture vs the MV front view (where the picture is opaque and the mesh faces the front): tone curves
+    fr = pv[0]
+    wF, cF = fr.weights_colours(p, nrm)
+    P0, z0 = MV.project(ps, cams[0], H, W)
+    c0 = sample(imgs[0], P0)
+    both = (wF > 2.0)
+    lut = colour_lut(c0[both], cF[both]) if both.sum() > 500 else None
+    if lut is not None:
+        imgs = np.stack([apply_lut(im, lut) for im in imgs])
+    acc = np.zeros((len(p), 3), np.float32); ws = np.zeros(len(p), np.float32)
+    for i, cam in enumerate(cams):
+        Pv, zv = MV.project(vs, cam, H, W)
+        fd, bb = raster(Pv, f, W, H, -zv)
+        D = np.full((H, W), np.inf, np.float32)
+        okd = fd >= 0
+        D[okd] = (bb[okd] * zv[f[fd[okd]]]).sum(1)
+        D = ndi.minimum_filter(D, size=3)                 # (a texel right on the outline still counts as seen)
+        Pp, zp = MV.project(ps, cam, H, W)
+        ix = np.clip(Pp[:, 0].astype(int), 0, W - 1); iy = np.clip(Pp[:, 1].astype(int), 0, H - 1)
+        vis = zp <= D[iy, ix] + 0.012
+        face = np.clip(ns @ (-cam[3]), 0, 1)
+        w = vis * np.clip((face - 0.15) / 0.85, 0, 1) ** 2.5
+        if i >= 4:
+            w = w * 0.6                                   # (top and bottom: less trusted than the four round views)
+        c = sample(imgs[i], Pp)
+        acc += w[:, None] * c; ws += w
+    known = ws > 0.02
+    col = acc / np.maximum(ws, 1e-6)[:, None]
+    # what no view sees (deep in a crease): the nearest seen texels facing the same way
+    if (~known).any() and known.sum() > 50:
+        kt = cKDTree(p[known])
+        d_, I_ = kt.query(p[~known], k=8)
+        wq = np.exp(-((d_ - d_[:, :1]) / (0.5 * d_[:, :1] + 0.003)) ** 2) * np.clip((nrm[~known][:, None, :] * nrm[known][I_]).sum(-1) + 0.3, 0.02, 1)
+        col[~known] = (col[known][I_] * wq[:, :, None]).sum(1) / wq.sum(1, keepdims=True)
+    # the picture where it faces squarely: full from ~55 deg in
+    pacc = np.zeros((len(p), 3), np.float32); pws = np.zeros(len(p), np.float32)
+    for bv in pv:
+        w, c = bv.weights_colours(p, nrm)
+        nd = nrm @ bv.d
+        s_ = np.clip((nd - 0.4) / 0.4, 0, 1)
+        w = (w > 0) * s_ * s_ * (3 - 2 * s_)
+        pacc += w[:, None] * c; pws += w
+    a = np.clip(pws, 0, 1)[:, None]
+    col = a * pacc / np.maximum(pws, 1e-6)[:, None] + (1 - a) * col
+    img = np.zeros((res, res, 3), np.float32)
+    img[on] = col
+    _, (iy, ix) = ndi.distance_transform_edt(~on, return_indices=True)
+    img = img[iy, ix]
+    if dbg is not None:
+        seen = np.zeros((res, res), np.float32); seen[on] = np.clip(ws, 0, 1)
         dbg['atlas'] = (img, seen)
     return vmap, idx, uv, img
 
@@ -1789,7 +2056,7 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
             lut = colour_lut(Sf[both], rgbP[both])
         skip = SHEET_SKIP.get(kind, ())
         if shape == 'tsg':                         # (TripoSG's depth and parts are its own, from the picture: the
-            skip = tuple(skip) + ('depth', 'tails')   # sheet's side outline only dragged them about)
+            skip = tuple(skip) + (('depth',) if os.environ.get('TC_TAILS', '1') == '1' else ('depth', 'tails'))   # sheet's side outline only dragged them about; tails: TripoSG has none behind)
         if 'depth' not in skip:
             v = fit_depth(v, f, views, k, kind, h, dbg)
         if kind in SIDE_ON:
@@ -1823,12 +2090,18 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
         for bv in bvs:
             if bv.name == 'back' and extra.any():
                 bv.trust_v = (~extra).astype(np.float64)
-        if TEX_MODE == 'clean':
-            global KIND_NOW
-            KIND_NOW = kind
+        global TEX_MODE
+        tex_mode0 = TEX_MODE
+        TEX_MODE = TEX_KIND.get(kind, TEX_MODE) if TEX_MODE == 'mvlabel' else TEX_MODE
+        if TEX_MODE == 'mv':
+            vmap, idx, uv, tex = bake_mv(kind, v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
+        elif TEX_MODE in ('clean', 'mvlabel'):
+            global KIND_NOW, ART_NOW
+            KIND_NOW = kind; ART_NOW = art[kind]
             vmap, idx, uv, tex = bake_clean(v, f, n, bvs, v0, f0, res=atlas, pad=8 * atlas // 1024, dbg=dbg)
         else:
             vmap, idx, uv, tex = bake(v, f, n, bvs, res=atlas, pad=8 * atlas // 1024, dbg=dbg, kind_consist=kind not in CONSIST_SKIP)
+        TEX_MODE = tex_mode0
         print(f'  {len(v)} verts, {len(f)} tris, front {fw.mean():.2f}, depth {v[:, 2].max() - v[:, 2].min():.2f} '
               f'(w {w:.2f} h {h:.2f})')
         return {'v': v[vmap], 'f': idx.astype(np.int64), 'fw': fw[vmap], 'uv': uv, 'tex': tex}
@@ -1891,7 +2164,13 @@ def main():
     for k in kinds:
         print(k)
         dbg = {} if o.debug else None
-        r = build(k, art, o.res, o.target, o.sheets, dbg, o.shape, o.atlas)
+        try:
+            r = build(k, art, o.res, o.target, o.sheets, dbg, o.shape, o.atlas)
+        except RuntimeError as e:
+            if 'MV job listed' not in str(e):
+                raise
+            print('  (MV views to make first: listed in jobs.txt)')
+            continue
         eyes_stage.post_bake(k, r, art)             # (tools/eyes.py: no painted eyes left on the atlas by js/eyes.js's domes)
         from rig import rig_hook                    # its limbs on joints: tools/rig.py (design/parts/ masks)
         r = rig_hook(k, r, art)

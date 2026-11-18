@@ -169,6 +169,14 @@ void main() {
         // cat's yellow patch. The picture's rgb is bled past its edge, so it holds up to where it is nearly see-through)
         vec2 th = mix(vec2(-0.45, -0.25), vec2(0.42, 0.62), vTurn);
         float pw = vFw * smoothstep(th.x, th.y, vNz) * mix(smoothstep(0.02, 0.25, texel.a), smoothstep(0.3, 0.7, texel.a), vTurn);
+        #ifdef CLAW_EYES
+        // (round each new eye the picture's own painted eye gives way to the atlas, where tools/eyes.py painted it
+        // out: seen at a slant, the painted eye's white stuck out past the dome as a pale crescent — fish, turtle)
+        for (int i = 0; i < 2; i++) {
+          vec3 q = vec3(dot(uEyeX[i].xyz, vEyeRest) + uEyeX[i].w, dot(uEyeY[i].xyz, vEyeRest) + uEyeY[i].w, dot(uEyeZ[i].xyz, vEyeRest) + uEyeZ[i].w);
+          pw *= 1.0 - smoothstep(1.75, 1.35, length(q.xy)) * (1.0 - smoothstep(0.6, 1.2, abs(q.z)));
+        }
+        #endif
       #else
         vec3 behind = vColor.rgb;                                       // (vColor is a vec4 in this three)
         float pw = vFw * smoothstep(0.3, 0.7, texel.a);

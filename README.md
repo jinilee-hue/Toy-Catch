@@ -31,11 +31,16 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 - 결과 화면: 로고와 같은 하늘색 유리판 카드(금색 테두리, 위쪽 흰 광택), 별 자리에 HUD와 같은 동전 별 3개(얻은 만큼 금화가
   튀어나와 한 번 뒤집힘), 그 아래 금색 숫자 점수(카운트업, 박스 없음), 잡은 친구는 HUD와 같은 흰 유리 트레이, PLAY AGAIN은 파란 알약, 홈은 흰 유리 버튼. 제목은 접힌 꼬리 리본(게임의 파랑) 위에 로고식 금색 젤리
   글자(`resultTitle`, 판 없음). 비교용 `?ribbon=pink`(예전 분홍 리본), `?title=rainbow`(무지개 글자).
-- 3D 친구 11종은 캐릭터 시트(design/sheets, git 제외)로 다시 만들었다. 정면은 게임 그림 그대로(외곽선도 그림과 같음), 옆·뒤는
-  시트의 측면·후면을 구운 텍스처(webp, `js/friends-3d.js` 안). 다시 만들기: `~/dev/tools/TripoSR/.venv/bin/python
-  tools/make_3d.py --only dog --sheets design/sheets`(venv에 xatlas·opencv 필요). 시트와 그림이 다른 부분은 make_3d.py의
-  SHEET_SKIP/SHEET_DROP으로 뺀다(거북이 머리 크기, 칠면조 꼬리 부채, 쥐 꼬리). 확인: `dev/friends3d.html?ortho`(정면을 그림과
-  비교) · `?still` · `?row&weights`(포즈 부위).
+- 3D 친구 11종(2026-11-18 다시 만듦, 사용자: "360도 회전에도 깔끔하게 뭉게지는 거 없이 매끈하게"):
+  - 모양: TripoSG(MIT, 로컬)로 그림 한 장 → 팔·발·날개·부리·모자챙이 따로 나온 형상. 원본 표면의 갈라짐·구멍·등고선 계단은
+    복셀로 채운 뒤 부드럽게 다시 뽑아 없앤다(`make_3d.py solidify`). 꼬리는 시트 옆모습에서 덧붙임(고양이·개·소).
+  - 색: 정면은 게임 그림 그대로. 옆·뒤·위·아래는 MV-Adapter(Apache-2.0, SDXL, 로컬)가 **이 형상에 맞춰** 그린 6방향 그림으로
+    "어디가 어떤 원단인지"만 정하고, 색은 그림의 원단 색 단색으로 칠한다(`TC_TEX=mvlabel`, 기본). MV 그림이 칙칙하거나 어두운
+    곳(그늘·추측)은 버리고 주변 원단이 이어 칠한다. 경계는 매끈한 곡선, 작은 조각은 주변에 흡수. 뒤쪽엔 은은한 AO만.
+  - 다시 만들기: `~/dev/tools/TripoSR/.venv/bin/python tools/make_3d.py --only dog --sheets design/sheets`
+    (MV 그림이 캐시에 없으면 `tools/mv_views.py`를 MV-Adapter venv로 불러 만든다, 한 마리 3~12분. 여러 마리는
+    `TC_MV_EXPORT=1`로 목록만 만들고 `~/dev/tools/MV-Adapter/.venv/bin/python tools/mv_views.py <out>/jobs.txt --batch`).
+  - 확인: `dev/friends3d.html?orbit&kind=duck`(드래그로 아무 방향, 휠 줌) · `?orbit&clay`(형상만) · `?row&held&spin`.
 - 1x 모니터에서도 3D 화면을 2배 해상도로 그려(최대 약 950만 픽셀) 친구들·공 외곽선의 계단과 떨림을 없앤다. 시작 3초 뒤 한 번
   GPU를 재서 한 프레임이 14 ms를 넘으면 원래 배율로 돌아간다(`js/stage.js`, `?pr=1`로 배율 강제). 정면 가까이에서는 그림이
   외곽선 끝까지 칠해져 외곽을 따라 보이던 1px 시트색 선이 없다(`js/friends.js`).
@@ -147,7 +152,10 @@ zsh -ic '/Users/jini/.hermes/bin/uv run --with numpy python tools/build_voice.py
 ```
 URL 옵션: `?sec=10`(라운드 시간) · `?order=m,a,s,t` · `?kinds=cat,seal,ant,turtle,monkey,dog`(뒷줄 3 → 앞줄 3, 자리 고정) · `?nohint`.
 
-3D 인형 다시 만들기(한 번만 설치, 약 3 GB: torch + TripoSR 가중치 1.7 GB):
+3D 인형 다시 만들기 — 형상 TripoSG(`~/dev/tools/TripoSG`, 자체 venv, `tools/tsg_mesh.py`), 색 배치 MV-Adapter
+(`~/dev/tools/MV-Adapter`, 자체 venv: torch · diffusers 0.32.2 · transformers 4.48.3 · peft 0.14 · trimesh, 가중치 SDXL fp16 +
+sdxl-vae-fp16-fix + mvadapter_ig2mv_sdxl 약 10 GB, CUDA 렌더러 대신 `mv_views.py`가 위치·법선 지도를 직접 그림).
+예전 TripoSR 설치(약 3 GB: torch + TripoSR 가중치 1.7 GB, `--shape tsr`):
 ```sh
 git clone --depth 1 https://github.com/VAST-AI-Research/TripoSR.git ~/dev/tools/TripoSR && cd ~/dev/tools/TripoSR
 uv venv -p 3.11 .venv && uv pip install --python .venv/bin/python torch "numpy<2" omegaconf==2.3.0 Pillow einops==0.7.0 \
