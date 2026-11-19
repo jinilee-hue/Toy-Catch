@@ -360,6 +360,10 @@
     P.poseStop = () => { restart(); st.one = false; st.lk = 0; st.lt = 0; };   // (eases back to rest)
     P.poser = {
       get busy() { return st.one; },
+      /* where the pose is now (s into it, -1 = not posing) and how long it lasts: a turntable friend plays its drawn
+         motion frames by this (js/friends.js spinCard) */
+      get t() { return st.one ? st.t : (st.lk > 0.5 && st.lt < D.dur ? st.lt : -1); },
+      dur: D.dur,
       update(dt) {
         const s = P.st;
         if (st.one && (st.t += dt) >= D.dur) { st.one = false; st.lt = 0; }
@@ -559,6 +563,10 @@
     P.poseStop = () => { restart(); st.one = false; st.lk = 0; st.lt = 0; };   // (eases back to rest)
     P.poser = {
       get busy() { return st.one; },
+      /* where the pose is now (s into it, -1 = not posing) and how long it lasts: a turntable friend plays its drawn
+         motion frames by this (js/friends.js spinCard) */
+      get t() { return st.one ? st.t : (st.lk > 0.5 && st.lt < D.dur ? st.lt : -1); },
+      dur: D.dur,
       update(dt) {
         const s = P.st;
         if (st.one && (st.t += dt) >= D.dur) { st.one = false; st.lt = 0; }

@@ -392,12 +392,43 @@ void main() {
       },
     };
   }
+  function spinMotion(M, im, card, cardMat) {
+    const t = new T.Texture(im); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true;
+    const U = { uA: { value: new T.Vector2() }, uB: { value: new T.Vector2() }, uMix: { value: 0 }, uOn: { value: 0 },
+      uCell: { value: new T.Vector2(1 / M.cols, 1 / M.rows) } };
+    const geo = new T.PlaneGeometry(M.w, M.h);
+    geo.translate((0.5 - M.ax) * M.w, M.by * M.h - M.h / 2, 0.002);
+    const mat = new T.MeshBasicMaterial({ map: t, alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, U); sh.uniforms.uLit = cardMat.userData.uLit;
+      sh.fragmentShader = sh.fragmentShader
+        .replace('void main() {', 'uniform vec2 uA, uB, uCell; uniform float uMix, uLit, uOn;\nvoid main() {')
+        .replace('#include <map_fragment>', `
+          if (uOn < 0.5) discard;
+          diffuseColor *= mix(texture2D(map, uA + vMapUv * uCell), texture2D(map, uB + vMapUv * uCell), uMix);
+          diffuseColor.rgb *= 1.0 + 0.22 * uLit;`)
+        .replace('#include <colorspace_fragment>', SAT_GLSL);
+    };
+    const mesh = new T.Mesh(geo, mat);
+    mesh.raycast = () => {}; mesh.frustumCulled = false;
+    card.add(mesh);
+    const cell = (i) => { const r = Math.floor(i / M.cols), c = i % M.cols; return [c / M.cols, 1 - (r + 1) / M.rows]; };
+    return {
+      mesh, U,
+      /* k: 0..1 through the pose — frame 01 … last, each held for most of its slot */
+      at(k) {
+        const x = Math.max(0, Math.min(0.9999, k)) * M.n, i = Math.floor(x), j = Math.min(M.n - 1, i + 1);
+        U.uA.value.set(...cell(i)); U.uB.value.set(...cell(j));
+        U.uMix.value = 0;                                // (a clean cut from drawing to drawing: blended, two showed at once)
+      },
+    };
+  }
   function spinCard(P, kind, bodyMat) {
     const S = SPIN[kind];
     const at = new T.Texture(spinEyed(kind));
     at.colorSpace = T.SRGBColorSpace; at.anisotropy = 8; at.needsUpdate = true;
     const SU = { uA: { value: new T.Vector2() }, uB: { value: new T.Vector2() }, uMix: { value: 0 },
-      uCell: { value: new T.Vector2(1 / S.cols, 1 / S.rows) }, uBody: { value: null }, uUseBody: { value: 0 } };
+      uCell: { value: new T.Vector2(1 / S.cols, 1 / S.rows) }, uBody: { value: null }, uUseBody: { value: 0 }, uHide: { value: 0 } };
     const bodyC = S.pose && spinBody(kind), limbIm = S.pose && spinImgs[kind + ':limb'];
     const tex = (im) => { const t = new T.Texture(im); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true; return t; };
     if (bodyC) SU.uBody.value = tex(bodyC);
@@ -409,11 +440,12 @@ void main() {
       Object.assign(sh.uniforms, SU);
       sh.uniforms.uLit = mat.userData.uLit;
       sh.fragmentShader = sh.fragmentShader
-        .replace('void main() {', 'uniform vec2 uA, uB, uCell;\nuniform float uMix, uLit, uUseBody;\nuniform sampler2D uBody;\nvoid main() {')
+        .replace('void main() {', 'uniform vec2 uA, uB, uCell;\nuniform float uMix, uLit, uUseBody, uHide;\nuniform sampler2D uBody;\nvoid main() {')
         .replace('#include <map_fragment>', `
           vec4 ta = texture2D(map, uA + vMapUv * uCell), tb = texture2D(map, uB + vMapUv * uCell);
           vec4 tx = mix(ta, tb, uMix);
           if (uUseBody > 0.5) tx = texture2D(uBody, vMapUv);
+          if (uHide > 0.5) discard;
           diffuseColor *= tx;
           diffuseColor.rgb *= 1.0 + 0.22 * uLit;`)
         .replace('#include <colorspace_fragment>', SAT_GLSL);
@@ -421,6 +453,8 @@ void main() {
     const card = new T.Mesh(geo, mat);
     card.raycast = () => {};                             // (taps hit the body)
     const warp = S.warp && spinImgs[kind + ':wfront'] && spinWarp(S, kind, card, mat);
+    const motion = S.motion && spinImgs[kind + ':motion'] && spinMotion(S.motion, spinImgs[kind + ':motion'], card, mat);
+    if (motion) motion.mesh.onBeforeRender = (renderer, scene, camera, g, m, grp) => card.onBeforeRender(renderer, scene, camera, g, m, grp);
     if (warp) {
       SU.uBody.value = tex(spinImgs[kind + ':wbase']);
       // (the mesh may be drawn before the card: whichever comes first sets both up for this frame)
@@ -480,6 +514,15 @@ void main() {
       // (each frame shown whole, a short cross-fade only right at the hand-over: half-and-half mixes of two frames
       // were double letters and ghost eyes while it spun)
       SU.uA.value.set(...cell(a)); SU.uB.value.set(...cell(b)); SU.uMix.value = Math.min(1, Math.max(0, (t - 0.3) / 0.4));
+      if (motion) {
+        // the drawn pose (design/from-front/<kind>/motion): while the friend poses facing you, its frames in turn —
+        // each held, a short cross-fade into the next, back to the turntable when it ends
+        const pt = P.poser ? P.poser.t : -1, front = Math.abs(f - S.front) < 0.6 || Math.abs(f - S.front - S.n) < 0.6;
+        const on = pt >= 0 && front;
+        SU.uHide.value = on ? 1 : 0;
+        motion.U.uOn.value = on ? 1 : 0;
+        if (on) motion.at(pt / (P.poser.dur || 1.5));
+      }
       if (warp) {
         const mx = SU.uMix.value, shown = mx < 0.01 ? a : mx > 0.99 ? b : -1;
         const on = warp.update(bodyMat) && shown === S.front;
@@ -518,6 +561,7 @@ void main() {
       im.src = src;
     });
     const spn = Object.keys(SPIN).filter(k => KINDS.includes(k)).flatMap(k => [img(SPIN[k].src, (im) => { spinImgs[k] = im; })]
+      .concat(SPIN[k].motion ? [img(SPIN[k].motion.src, (im) => { spinImgs[k + ':motion'] = im; })] : [])
       .concat(SPIN[k].warp ? [img(SPIN[k].warp.front, (im) => { spinImgs[k + ':wfront'] = im; }),
         img(SPIN[k].warp.base, (im) => { spinImgs[k + ':wbase'] = im; }),
         img(SPIN[k].warp.wt, (im) => { spinImgs[k + ':wt'] = im; })] : [])
@@ -712,6 +756,7 @@ void main() {
         P.face.rotation.y = want - tmpE.y + sway;
       }
       if (P.poser) P.poser.update(dt, t);
+      if (P.card && SPIN[kind] && SPIN[kind].motion) { P.pic.position.y = 0; P.pic.rotation.set(0, 0, 0); }
       if (is3d) softBody(dt, t, hop, sit);
       if (P.rig) P.rig.update(dt, t);
     };

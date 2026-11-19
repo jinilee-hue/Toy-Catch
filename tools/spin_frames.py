@@ -224,13 +224,17 @@ WARP = {
     'ant': [dict(n='antenna_l', di=0, j=(688, 445), parent='hat', g=1.2, sewn=True),
             dict(n='antenna_r', di=1, j=(858, 445), parent='hat', g=1.2, sewn=True),
             dict(n='hat', di=2, j=(775, 605), g=1.4, sewn=True)],
-    'seal': [dict(n='flipper_l', di=0, j=(548, 922), g=1.25), dict(n='flipper_r', di=1, j=(1022, 922), g=1.25)],
+    # (user: "seal도 팔 움직일때 옷이 잘려서 보였다 안보였다": the flippers turn BEHIND the sleeves, their roots carried on
+    # under them — the shirt stays as it is)
+    'seal': [dict(n='flipper_l', di=0, j=(548, 922), g=1.25, z=-1, noring=True, tuck=0.035),
+             dict(n='flipper_r', di=1, j=(1022, 922), g=1.25, z=-1, noring=True, tuck=0.035)],
     'turkey': [dict(n='fan_l', di=0, j=(600, 800), box=(380, 598, 560, 1010), minus=('wing_l',), sewn=True, g=1.6),
                dict(n='fan_r', di=1, j=(936, 800), box=(938, 1160, 560, 1010), minus=('wing_r',), sewn=True, g=1.6),
                dict(n='wing_l', di=2, j=(628, 845), z=1, g=1.2, nohue=(118, 165), fillr=0.03),
                dict(n='wing_r', di=3, j=(888, 845), z=1, g=1.2, nohue=(118, 165), fillr=0.03)],
-    'turtle': [dict(n='head', di=0, j=(767, 712), sewn=True, g=1.3), dict(n='arm_l', di=1, j=(655, 765), g=1.3),
-               dict(n='arm_r', di=2, j=(880, 765), g=1.3)],
+    # (user: "등껍질은 두고 팔만 흔들어야지": the arms alone, in front, the shell left as it is — filled in behind them)
+    'turtle': [dict(n='arm_l', di=1, j=(655, 765), g=1.3, z=1, noring=True, fillr=0.07, tuck=0.03),
+               dict(n='arm_r', di=2, j=(880, 765), g=1.3, z=1, noring=True, fillr=0.07, tuck=0.03)],
     'cat': [dict(n='arm_r', di=0, j=(932, 885), z=1), dict(n='ear_l', di=1, j=(612, 512), g=1.5, sewn=True),
             dict(n='ear_r', di=2, j=(898, 512), g=1.5, sewn=True)],
     'cow': [dict(n='ear_l', di=0, j=(603, 522), g=1.3, sewn=True), dict(n='ear_r', di=1, j=(902, 522), g=1.3, sewn=True),
@@ -311,7 +315,21 @@ def warp_layers(kind, rgb, al, m, x0, y0, bw, bh, cw, ch):
     parts, removed = [], np.zeros_like(m)
     mrgb = rgb.copy()                                   # (the warp mesh's texture: + the hidden bits of behind-parts)
     for q in cfg:
-        if q.get('z', 0) < 0 and q['n'] in masks and not q.get('rigid'):
+        if q.get('tuck') and q['n'] in masks:
+            M0 = masks[q['n']]
+            J = np.array([q['j'][0] - x0, q['j'][1] - y0], np.float32)
+            rt_ = int(q['tuck'] * bh)
+            ext = ndi.binary_dilation(M0, iterations=rt_) & ~M0 & (np.hypot(xx - J[0], yy - J[1]) < 2.2 * rt_ + 0.02 * bh)
+            ext = ndi.binary_opening(ext | M0, iterations=max(2, rt_ // 3)) & ~M0
+            if ext.any():
+                _, (iy, ix) = ndi.distance_transform_edt(~ndi.binary_erosion(M0, iterations=2), return_indices=True)
+                nc = rgb[iy, ix]
+                nc = np.stack([ndi.gaussian_filter(nc[..., c_], 2.0) for c_ in range(3)], -1)
+                mrgb = np.where(ext[..., None], nc, mrgb)
+                masks[q['n'] + ':hid'] = masks.get(q['n'] + ':hid', np.zeros_like(m)) | ext
+                masks[q['n']] = M0 | ext
+    for q in cfg:
+        if q.get('z', 0) < 0 and q['n'] in masks and not q.get('rigid') and not q.get('tuck'):
             M0 = masks[q['n']]
             rc = max(3, int(0.035 * bh))
             yd, xd = np.mgrid[-rc:rc + 1, -rc:rc + 1]
@@ -337,6 +355,10 @@ def warp_layers(kind, rgb, al, m, x0, y0, bw, bh, cw, ch):
             hw = M.sum() / L / 2
             if q.get('rigid'):
                 lab, w = M, M.astype(np.float32)
+            elif q.get('noring'):                       # (the part alone turns; nothing round it bends)
+                r = max(6.0, min(0.6 * hw, 0.35 * L))
+                ramp = np.clip((t + r) / (2 * r), 0, 1); ramp = ramp * ramp * (3 - 2 * ramp)
+                lab, w = M, np.where(M, np.maximum(ramp, 0.85), 0)
             else:
                 r = max(6.0, min(0.6 * hw, 0.35 * L))
                 ramp = np.clip((t + r) / (2 * r), 0, 1); ramp = ramp * ramp * (3 - 2 * ramp)
@@ -393,11 +415,18 @@ def warp_layers(kind, rgb, al, m, x0, y0, bw, bh, cw, ch):
             fill |= q.pop('_bridge') & ~rest
         if q.get('fillr') and q['n'] in masks:          # (a part lying over the body: the body filled in behind it)
             rr2 = max(2, int(q['fillr'] * bh))
-            fill |= ndi.binary_closing(rest, iterations=rr2) & ndi.binary_dilation(masks[q['n']], iterations=3) & removed
+            ff = ndi.binary_closing(rest, iterations=rr2) & ndi.binary_dilation(masks[q['n']], iterations=3) & removed
+            fill |= ff
+            inp_ = inp_ | ff if 'inp_' in dir() else ff
     _, (iy, ix) = ndi.distance_transform_edt(~rest, return_indices=True)
     near = rgb[iy, ix]
     soft = np.stack([ndi.gaussian_filter(near[..., c], 2.0) for c in range(3)], -1)
     brgb = np.where(fill[..., None], soft, rgb)
+    if 'inp_' in dir() and inp_.any():                 # (smooth fabric behind a part, not streaks)
+        import cv2
+        u8 = (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
+        pt = cv2.inpaint(u8, (ndi.binary_dilation(inp_, iterations=2) & ~rest | inp_).astype(np.uint8) * 255, 12, cv2.INPAINT_TELEA)
+        brgb = np.where(inp_[..., None], pt.astype(np.float32) / 255, brgb)
     bal = np.where(rest, al, np.where(fill, 1.0, 0.0))
     hid = np.zeros_like(m)
     for k_, v_ in masks.items():
@@ -414,6 +443,96 @@ def warp_layers(kind, rgb, al, m, x0, y0, bw, bh, cw, ch):
         Image.fromarray((np.clip(W, 0, 1) * 255).astype(np.uint8), 'RGBA').save(dbg + '_w.png')
     return {'front': webp_url(front, (cw, ch)), 'base': webp_url(base, (cw, ch)),
             'wt': 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode(), 'parts': parts}
+
+
+MOTION = os.path.join(ROOT, 'design', 'from-front')
+
+
+def motion_frames(kind, f13, x0, y0, bw, bh, s, axis, bottom):
+    """the signature pose as drawn by the user (design/from-front/<kind>/motion/01..06.png, the front view acting,
+    01 = at rest): the frames laid on the turntable's front frame — one scale and offset for all, found by fitting
+    frame 01's outline onto the front frame's — so the pose starts exactly where the friend stands. Returns
+    {n, cols, rows, w, h, ax, by, src} (its own card: raised arms and a popped hat reach past the turntable's box)"""
+    d = os.path.join(MOTION, kind, 'motion')
+    fs = sorted(f for f in os.listdir(d) if re.match(r'\d\d\.png$', f)) if os.path.isdir(d) else []
+    if len(fs) < 2:
+        return None
+    mo = []
+    for f in fs:
+        rgb, al, m = cut(os.path.join(d, f))
+        # (bits of the neighbouring drawing on the frame's edge — the strip was cut into frames: a tail tip from the
+        # next pose stood beside the friend)
+        lb, nl = ndi.label(m)
+        if nl > 1:
+            sz = ndi.sum(m, lb, range(1, nl + 1)); main = 1 + int(np.argmax(sz))
+            edge = set(np.unique(np.r_[lb[:, :3].ravel(), lb[:, -3:].ravel(), lb[:3].ravel(), lb[-3:].ravel()])) - {0, main}
+            # (and small pieces standing apart from the friend: the same stray bits, a little in from the edge)
+            dmain = ndi.distance_transform_edt(lb != main)
+            for j_ in range(1, nl + 1):
+                if j_ != main and sz[j_ - 1] < 0.03 * sz[main - 1] and dmain[lb == j_].min() > 6:
+                    edge.add(j_)
+            for e_ in edge:
+                m = m & (lb != e_)
+            al = al * m
+        mo.append((rgb, al, m))
+    A = f13                                              # (the front frame's mask, frame px)
+    B = mo[0][2]
+    ay, ax_ = np.nonzero(A); by_, bx_ = np.nonzero(B)
+    s0 = (ay.max() - ay.min()) / max(1, by_.max() - by_.min())
+    # coarse-to-fine: scale and offset that lay 01's outline on the front frame's (quarter size)
+    q = 4
+    Aq = A[::q, ::q]
+    best = None
+    for sc in s0 * np.linspace(0.94, 1.06, 13):
+        Bs = np.asarray(Image.fromarray(B.astype(np.uint8) * 255).resize((max(1, int(B.shape[1] * sc / q)), max(1, int(B.shape[0] * sc / q))), Image.BILINEAR)) > 127
+        ys2, xs2 = np.nonzero(Bs)
+        cx0 = (ax_.min() + ax_.max()) / 2 / q - (xs2.min() + xs2.max()) / 2
+        cy0 = ay.max() / q - ys2.max()
+        for dx in range(-6, 7):
+            for dy in range(-6, 7):
+                ox, oy = int(round(cx0 + dx)), int(round(cy0 + dy))
+                C = np.zeros_like(Aq)
+                ya, xa = max(0, oy), max(0, ox)
+                yb, xb = min(Aq.shape[0], oy + Bs.shape[0]), min(Aq.shape[1], ox + Bs.shape[1])
+                if yb <= ya or xb <= xa:
+                    continue
+                C[ya:yb, xa:xb] = Bs[ya - oy:yb - oy, xa - ox:xb - ox]
+                iou_ = (C & Aq).sum() / max(1, (C | Aq).sum())
+                if best is None or iou_ > best[0]:
+                    best = (iou_, sc, ox * q, oy * q)
+    iou_, sc, ox, oy = best
+    # every frame into front-frame px; their union box
+    placed = []
+    for rgb, al, m in mo:
+        Wd, Hd = int(round(m.shape[1] * sc)), int(round(m.shape[0] * sc))
+        im = np.concatenate([rgb, al[..., None]], -1)
+        im = np.asarray(Image.fromarray((np.clip(im, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGBA').resize((Wd, Hd), Image.LANCZOS))
+        placed.append(im)
+    Wd, Hd = placed[0].shape[1], placed[0].shape[0]
+    alls = np.any([p_[..., 3] > 128 for p_ in placed], 0)
+    yy, xx = np.nonzero(alls)
+    mx0, my0, mx1, my1 = ox + xx.min() - 6, oy + yy.min() - 6, ox + xx.max() + 7, oy + yy.max() + 7
+    mbw, mbh = mx1 - mx0, my1 - my0
+    ch_ = int(round(CELL * mbh / bh)); cw_ = int(round(ch_ * mbw / mbh))
+    n = len(placed); cols = 3; rows = (n + cols - 1) // cols
+    atlas = np.zeros((rows * ch_, cols * cw_, 4), np.uint8)
+    for i, p_ in enumerate(placed):
+        canvas = np.zeros((mbh, mbw, 4), np.uint8)       # (covers mx0..mx1 x my0..my1 of the front frame)
+        X0, X1 = max(mx0, ox), min(mx1, ox + p_.shape[1])
+        Y0, Y1 = max(my0, oy), min(my1, oy + p_.shape[0])
+        canvas[Y0 - my0:Y1 - my0, X0 - mx0:X1 - mx0] = p_[Y0 - oy:Y1 - oy, X0 - ox:X1 - ox]
+        im = Image.fromarray(canvas, 'RGBA').resize((cw_, ch_), Image.LANCZOS)
+        r, c = divmod(i, cols)
+        atlas[r * ch_:(r + 1) * ch_, c * cw_:(c + 1) * cw_] = np.asarray(im)
+    buf = io.BytesIO()
+    Image.fromarray(atlas, 'RGBA').save(buf, 'WEBP', quality=88, method=6)
+    axis_f, bottom_f = x0 + axis, y0 + bottom          # (front-frame px)
+    print(f'  motion: {n} frames, fit iou {iou_:.3f} (scale {sc:.3f}), cell {cw_}x{ch_}, {len(buf.getvalue()) // 1024} KB')
+    if os.environ.get('SPIN_DBG'):
+        Image.fromarray(atlas, 'RGBA').save(os.path.expanduser(f'~/.cache/agent-scratch/tc/motion_{kind}.png'))
+    return {'n': n, 'cols': cols, 'rows': rows, 'w': round(mbw * s, 5), 'h': round(mbh * s, 5),
+            'ax': round((axis_f - mx0) / mbw, 5), 'by': round((bottom_f - my0) / mbh, 5),
+            'src': 'data:image/webp;base64,' + base64.b64encode(buf.getvalue()).decode()}
 
 
 def pack(kind):
@@ -468,8 +587,9 @@ def pack(kind):
           f'scale {s:.5f}/px, axis {axis:.1f}, bottom {bottom:.1f} (box {bw}x{bh})')
     pose = None
     rgbF, alF, mF = frames[FRONT - 1]
-    warp = warp_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, cw, ch)
-    L = None if warp else limb_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, s, axis, bottom)
+    motion = motion_frames(kind, mF, x0, y0, bw, bh, s, axis, bottom)
+    warp = None if motion else warp_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, cw, ch)
+    L = None if (warp or motion) else limb_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, s, axis, bottom)
     if L:
         body, limb, pv, sleeve = L
         pose = {'bone': POSE_LIMB[kind], 'body': webp_url(body, (cw, ch)), 'limb': webp_url(limb, (cw, ch)),
@@ -482,6 +602,7 @@ def pack(kind):
                 round(e[4], 1), e[5]] for e in fe] for fe in eyes]
     print('  eyes per frame:', [len(fe) for fe in eyes])
     return {'n': n, 'cols': COLS, 'rows': rows, 'front': FRONT - 1, 'step': STEP, 'eyes': eyes_c, 'pose': pose, 'warp': warp,
+            'motion': motion,
             'w': round(bw * s, 5), 'h': round(bh * s, 5),                  # the card, world units
             'ax': round(axis / bw, 5), 'by': round(bottom / bh, 5),         # axis / ground in card fractions
             'src': url}
