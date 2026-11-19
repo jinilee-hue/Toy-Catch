@@ -89,6 +89,7 @@ def find_eyes(rgb, m, i):
 # it about its joint while the friend does its pose (the monkey waves), the rest of the front frame with the limb
 # taken off underneath
 POSE_LIMB = {'monkey': 'arm_r'}
+LIMB_IN = 0.05                       # (how far past the limb's top, x box height, its joint sits under the shirt)
 
 
 def limb_layers(kind, rgb, al, m, x0, y0, bw, bh, s, axis, bottom):
@@ -114,12 +115,10 @@ def limb_layers(kind, rgb, al, m, x0, y0, bw, bh, s, axis, bottom):
     # layer is drawn just behind the body, so turning up it comes out of the sleeve
     gone = ndi.binary_dilation(limb, iterations=1)
     brgb, bal = rgb, np.where(gone, 0.0, al)
-    lal = ndi.gaussian_filter(limb.astype(np.float32), 0.7) * al
-    # its joint: the limb's end toward the shoulder — along its long axis, the end that is higher (the paw hangs
-    # low), a little in from that end (the touching edge along the shirt ran half its length: the arm turned about
-    # its middle)
-    hsv = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.int32)
-    red = ((hsv[..., 0] <= 8) | (hsv[..., 0] >= 170)) & (hsv[..., 1] > 120) & m
+    # its joint: the limb's top end (along its long axis, the end that is higher — the paw hangs low), then on in
+    # under the shirt to the shoulder. The limb is carried on up to there as a rounded stump of its own fur (the cut
+    # where SAM parted it from the sleeve was a straight edge: raised, it looked chopped off) and drawn BEHIND the
+    # body, so the shirt hides the root and the arm comes out from under the sleeve
     ly, lx = np.nonzero(limb)
     c0 = np.array([lx.mean(), ly.mean()])
     ev, evec = np.linalg.eigh(np.cov(np.stack([lx - c0[0], ly - c0[1]])))
@@ -127,18 +126,33 @@ def limb_layers(kind, rgb, al, m, x0, y0, bw, bh, s, axis, bottom):
     if ax_[1] > 0:
         ax_ = -ax_                                     # (pointing up the arm)
     t = (lx - c0[0]) * ax_[0] + (ly - c0[1]) * ax_[1]
-    t_top = np.percentile(t, 97)
-    pivot = tuple(c0 + ax_ * (t_top - 0.16 * (t_top - np.percentile(t, 3))))
-    # the sleeve round the joint (the shirt within reach of it): drawn over the raised limb, so it comes out of the
-    # sleeve, in front of the body
+    t_top, t_bot = np.percentile(t, 99), np.percentile(t, 1)
+    half = limb.sum() / max(1.0, t_top - t_bot) / 2   # (half its width)
+    top = c0 + ax_ * (t_top - half)
+    pivot = c0 + ax_ * (t_top + LIMB_IN * bh)
     yy, xx = np.mgrid[0:bh, 0:bw]
-    near = np.hypot(xx - pivot[0], yy - pivot[1]) < 0.045 * bh
-    sleeve = red & near & ~limb
-    sal = ndi.gaussian_filter(sleeve.astype(np.float32), 0.8) * al
-    print(f'  pose layer {name}: {limb.sum()} px, sleeve {sleeve.sum()} px, pivot {pivot[0]:.0f},{pivot[1]:.0f}')
+    # the capsule from the limb's top to the joint, as wide as the limb
+    P = np.stack([xx - top[0], yy - top[1]], -1)
+    seg = pivot - top
+    tt = np.clip((P @ seg) / max(1e-6, seg @ seg), 0, 1)
+    d = np.hypot(P[..., 0] - tt * seg[0], P[..., 1] - tt * seg[1])
+    stump = (d < half * 0.95) & ~limb
+    ext = limb | stump
+    # (rounded where the stump meets the limb: the cut's corners showed as a step under the raised arm)
+    rr_ = max(3, int(half * 0.45))
+    yd, xd = np.mgrid[-rr_:rr_ + 1, -rr_:rr_ + 1]
+    disk = (xd * xd + yd * yd) <= rr_ * rr_
+    ext = ndi.binary_opening(ndi.binary_closing(ext, structure=disk), structure=disk) | ndi.binary_erosion(limb, iterations=2)
+    keep = ndi.binary_erosion(limb, iterations=3)
+    # (the stump's colours: the limb's own fur, the nearest of it, softened — an inpaint pulled black in from outside)
+    _, (iy, ix) = ndi.distance_transform_edt(~keep, return_indices=True)
+    near_c = rgb[iy, ix]
+    soft = np.stack([ndi.gaussian_filter(near_c[..., c], 2.0) for c in range(3)], -1)
+    lrgb = np.where((ext & ~keep)[..., None], soft, rgb)
+    lal = ndi.gaussian_filter(ext.astype(np.float32), 0.7)
+    print(f'  pose layer {name}: {limb.sum()} px (+ stump {stump.sum()} px), half width {half:.0f}, pivot {pivot[0]:.0f},{pivot[1]:.0f}')
     return (np.concatenate([brgb, np.clip(bal, 0, 1)[..., None]], -1),
-            np.concatenate([rgb, np.clip(lal, 0, 1)[..., None]], -1), pivot,
-            np.concatenate([rgb, np.clip(sal, 0, 1)[..., None]], -1))
+            np.concatenate([lrgb, np.clip(lal, 0, 1)[..., None]], -1), tuple(pivot), None)
 
 
 def webp_url(rgba, size):
@@ -199,9 +213,8 @@ def pack(kind):
     rgbF, alF, mF = frames[FRONT - 1]
     L = limb_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, s, axis, bottom)
     if L:
-        body, limb, pv, sleeve = L
+        body, limb, pv, _ = L
         pose = {'bone': POSE_LIMB[kind], 'body': webp_url(body, (cw, ch)), 'limb': webp_url(limb, (cw, ch)),
-                'sleeve': webp_url(sleeve, (cw, ch)),
                 'pivot': [round(pv[0] / bw, 4), round(pv[1] / bh, 4)]}
         if os.environ.get('SPIN_DBG'):
             Image.fromarray((np.clip(body, 0, 1) * 255).astype(np.uint8), 'RGBA').save(os.path.expanduser(f'~/.cache/agent-scratch/tc/{kind}_body.png'))

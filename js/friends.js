@@ -292,7 +292,7 @@ void main() {
      frame index from the camera's direction in the friend's own frame (frame `front` faces it, `step`° apart — the
      turntable turns the friend so that its left side shows next) */
   const tmpS = new T.Vector3(), spinCanvas = {};
-  const LIMB_GAIN = 1.25;                               // (the card's arm up high enough to read as a wave)
+  const LIMB_GAIN = 0.95;                               // (the card's arm up high enough to read as a wave)
   /* the turntable atlas with the game's own eyes (whites, glossy iris: js/eyes.js) painted over the frames' eyes */
   function spinEyed(kind) {
     const S = SPIN[kind], im = spinImgs[kind];
@@ -370,7 +370,7 @@ void main() {
       const lg = new T.PlaneGeometry(S.w, S.h);
       lg.translate((0.5 - S.ax) * S.w - px, S.by * S.h - S.h / 2 - py, 0);
       const limb = new T.Mesh(lg, layerMat(limbIm)); limb.raycast = () => {};
-      limbG = new T.Group(); limbG.position.set(px, py, 0.004); limbG.add(limb); limbG.visible = false;   // (in front)
+      limbG = new T.Group(); limbG.position.set(px, py, -0.004); limbG.add(limb); limbG.visible = false;   // (behind: the shirt hides its root)
       card.add(limbG);
       const slIm = spinImgs[kind + ':sleeve'];
       if (slIm) {                                        // the sleeve over the limb's root (it comes out of the sleeve)
@@ -424,13 +424,13 @@ void main() {
     const img = (src, put) => new Promise((res) => {
       const im = new Image();
       im.onload = () => { put(im); res(); };
-      im.onerror = () => { console.warn('friend turntable failed:', src.slice(0, 40)); res(); };
+      im.onerror = () => { console.warn('friend turntable failed:', String(src).slice(0, 40)); res(); };
       im.src = src;
     });
     const spn = Object.keys(SPIN).filter(k => KINDS.includes(k)).flatMap(k => [img(SPIN[k].src, (im) => { spinImgs[k] = im; })]
       .concat(SPIN[k].pose ? [img(SPIN[k].pose.body, (im) => { spinImgs[k + ':body'] = im; }),
-        img(SPIN[k].pose.limb, (im) => { spinImgs[k + ':limb'] = im; }),
-        img(SPIN[k].pose.sleeve, (im) => { spinImgs[k + ':sleeve'] = im; })] : []));
+        img(SPIN[k].pose.limb, (im) => { spinImgs[k + ':limb'] = im; })]
+        .concat(SPIN[k].pose.sleeve ? [img(SPIN[k].pose.sleeve, (im) => { spinImgs[k + ':sleeve'] = im; })] : []) : []));
     return Promise.all(atl.concat(spn, KINDS.map(k => new Promise((res) => {
       const im = new Image();
       im.onload = () => {
