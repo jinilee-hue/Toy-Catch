@@ -5,15 +5,15 @@ window.CLAW_VOICE = {
 "clips": {
 "w:monkey": [
 "w_monkey.mp3",
-0.43,
-0.634,
-0.981
+0.47,
+0.663,
+0.97
 ],
 "w:mouse": [
 "w_mouse.mp3",
-0.44,
-0.634,
-0.971
+0.48,
+0.679,
+0.96
 ],
 "w:ant": [
 "w_ant.mp3",

@@ -1,5 +1,6 @@
 """Voice clips for Toy Catch → assets/voice/*.mp3 + js/voice.js + js/voice-data.js (base64, so file:// plays them)
 
+- (2026-11-19, phonics-kit rule) monkey / mouse: Phonics Match's clips are now the lesson pack FP.K.U1L1's recordings.
 - LETTER SOUNDS + WORDS: the official recordings (FPR K letter sounds, FPR K / Constella word recordings), taken
   already trimmed and levelled from Phonics Match (public/voice, src/data/voice.json); turkey (not in Phonics Match)
   from Phonics Island's copy of the FPR K Unit 1 Lesson 4 file, trimmed and levelled here the same way.
