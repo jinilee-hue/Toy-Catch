@@ -148,19 +148,19 @@
         o.nod = 0.06 * e * wave(t, 1.5);
       },
     },
-    turtle: {
-      dur: 1.5,
+    turtle: {                                          // (the redrawn turtle stands up: a head tilt and a wave, both arms)
+      dur: 1.6,
       parts: [
-        // the head (the picture is the turtle's side), not the shell's rim over its neck
-        { at: [0.4, 0.47], to: [0.0, 0.44], ell: [0.2, 0.44, 0.27, 0.35], j: [0.0, 0.22], not: [[0.67, 0.36, 0.31, 0.37], [0.36, 0.82, 0.1, 0.13]] },
+        { at: [0.5, 0.42], to: [0.5, 0.05], ell: [0.5, 0.24, 0.36, 0.22], j: [0.0, 0.2] },   // head
+        { at: [0.2, 0.42], to: [0.02, 0.5], r: 0.07, j: [0.05, 0.4] },              // left arm
+        { at: [0.8, 0.42], to: [0.98, 0.5], r: 0.07, j: [0.05, 0.4] },              // right arm
       ],
       act(t, o) {
-        const inn = sm(0.05, 0.3, t) * (1 - sm(0.62, 0.78, t));                 // ducks in …
-        const out = ring(t, 0.72, 1.6, 4.5) * sm(0.64, 0.74, t);                // … pops out with a wobble
-        o.t[0] = 0.15 * inn - 0.04 * out; o.t[2] = -0.12 * inn;
-        o.s[0] = -0.24 * inn;
-        o.a[0] = -0.12 * out;
-        o.hop = 0.03 * bell(t, 0.84, 0.14);
+        const e = env(t, 1.6, 0.25, 0.4), w = wave(t, 2.6);
+        o.a[0] = 0.12 * e * wave(t, 1.1);                                        // a little head tilt
+        o.a[1] = -e * (0.35 + 0.25 * w);                                         // arms up and flapping: yay!
+        o.a[2] = e * (0.35 + 0.25 * w);
+        o.hop = 0.03 * bell(t, 0.8, 0.18);
       },
     },
     cat: {

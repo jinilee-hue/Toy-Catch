@@ -207,6 +207,215 @@ def webp_url(rgba, size):
     return 'data:image/webp;base64,' + base64.b64encode(buf.getvalue()).decode()
 
 
+# the signature poses as a WARP of the front frame (user: "원숭이처럼 옷이랑 같이 팔이 안움직이고 팔만 움직이는 형태로는
+# 자연스럽지가 않아"): every part (SAM 2 masks, tools/turntable_parts.py -> design/turntable/<kind>/part_<n>.png) turns
+# about its joint, and round the joint the friend's own surface (a sleeve, the neck, the base of an ear) bends with it
+# over a short ramp — so a sleeve lifts with the arm instead of the arm sliding out of it. Where a part only lies against
+# the body (an arm down the side), the two separate (the game drops the stretched triangles there). Keys: n part, di
+# the js/poses.js DATA part that drives it (its angle a, move t, scale s), j joint (front-frame px), g gain on the angle,
+# z +1 in front / -1 behind, parent (a child moves with its parent too), above (the part = everything above that row:
+# a head with its ears), rigid (no ramp: a fan behind the body), f (mask file stem), bridge (thin parts behind it — a
+# tail behind the paw — are joined up underneath)
+WARP = {
+    'monkey': [dict(n='arm_r', di=0, j=(898, 848), g=1.45, z=1, f='limb_arm_r', bridge=True),
+               dict(n='ear_r', di=1, j=(948, 630), g=1.6, sewn=True)],
+    'mouse': [dict(n='ear_l', di=0, j=(645, 545), g=1.5, sewn=True), dict(n='ear_r', di=1, j=(878, 545), g=1.5, sewn=True),
+              dict(n='tail', di=2, j=(890, 1035), z=-1, g=1.3)],
+    'ant': [dict(n='antenna_l', di=0, j=(688, 445), parent='hat', g=1.2, sewn=True),
+            dict(n='antenna_r', di=1, j=(858, 445), parent='hat', g=1.2, sewn=True),
+            dict(n='hat', di=2, j=(775, 605), g=1.4, sewn=True)],
+    'seal': [dict(n='flipper_l', di=0, j=(548, 922), g=1.25), dict(n='flipper_r', di=1, j=(1022, 922), g=1.25)],
+    'turkey': [dict(n='fan_l', di=0, j=(600, 800), box=(380, 598, 560, 1010), minus=('wing_l',), sewn=True, g=1.6),
+               dict(n='fan_r', di=1, j=(936, 800), box=(938, 1160, 560, 1010), minus=('wing_r',), sewn=True, g=1.6),
+               dict(n='wing_l', di=2, j=(628, 845), z=1, g=1.2, nohue=(118, 165), fillr=0.03),
+               dict(n='wing_r', di=3, j=(888, 845), z=1, g=1.2, nohue=(118, 165), fillr=0.03)],
+    'turtle': [dict(n='head', di=0, j=(767, 712), sewn=True, g=1.3), dict(n='arm_l', di=1, j=(655, 765), g=1.3),
+               dict(n='arm_r', di=2, j=(880, 765), g=1.3)],
+    'cat': [dict(n='arm_r', di=0, j=(932, 885), z=1), dict(n='ear_l', di=1, j=(612, 512), g=1.5, sewn=True),
+            dict(n='ear_r', di=2, j=(898, 512), g=1.5, sewn=True)],
+    'cow': [dict(n='ear_l', di=0, j=(603, 522), g=1.3, sewn=True), dict(n='ear_r', di=1, j=(902, 522), g=1.3, sewn=True),
+            dict(n='head', di=2, j=(762, 772), above=772, g=1.6)],
+    'dog': [dict(n='ear_l', di=0, j=(592, 455), g=1.3, sewn=True), dict(n='ear_r', di=1, j=(908, 455), g=1.3, sewn=True),
+            dict(n='head', di=2, j=(768, 770), above=770, g=1.2)],
+    'duck': [dict(n='wing_l', di=0, j=(640, 878), g=1.3), dict(n='wing_r', di=1, j=(895, 878), g=1.3)],
+    'fish': [dict(n='tail_fin', di=0, j=(1015, 800), g=0.9, sewn=True), dict(n='top_fin', di=1, j=(770, 655), g=1.6, sewn=True)],
+}
+
+
+def warp_layers(kind, rgb, al, m, x0, y0, bw, bh, cw, ch):
+    """{front, base, wt, parts} for the card's pose warp, or None"""
+    cfg = WARP.get(kind)
+    if not cfg:
+        return None
+    rgb, al, m = rgb[y0:y0 + bh, x0:x0 + bw], al[y0:y0 + bh, x0:x0 + bw], m[y0:y0 + bh, x0:x0 + bw]
+    yy, xx = np.mgrid[0:bh, 0:bw].astype(np.float32)
+    masks = {}
+    for q in cfg:
+        if q.get('above'):
+            M = m & (yy < q['above'] - y0)
+        elif q.get('box'):                              # (a region of the frame: the turkey's fan halves)
+            bx0, bx1, by0, by1 = q['box']
+            M = m & (xx >= bx0 - x0) & (xx < bx1 - x0) & (yy >= by0 - y0) & (yy < by1 - y0)
+            for o_ in q.get('minus', ()):
+                pth = os.path.join(SRC, kind, f'part_{o_}.png')
+                if os.path.exists(pth):
+                    M &= ~ndi.binary_dilation(np.asarray(Image.open(pth).convert('L'))[y0:y0 + bh, x0:x0 + bw] > 127, iterations=3)
+            M = ndi.binary_opening(M, iterations=2)
+            lbb, nlb = ndi.label(M)                     # (the fan itself, not a feather tip cut off below the wing)
+            if nlb > 1:
+                M = lbb == 1 + int(np.argmax(ndi.sum(M, lbb, range(1, nlb + 1))))
+        else:
+            path = os.path.join(SRC, kind, (q.get('f') or f'part_{q["n"]}') + '.png')
+            if not os.path.exists(path):
+                print(f'  warp: no mask for {q["n"]}'); continue
+            M = np.asarray(Image.open(path).convert('L'))[y0:y0 + bh, x0:x0 + bw] > 127
+            M = ndi.binary_fill_holes(ndi.binary_closing(M, iterations=6 if q.get('rigid') else 2)) & m
+            if q.get('nohue'):                          # (the fan's purple feathers behind the turkey's wings: not the wing)
+                import cv2
+                hsv = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
+                h0, h1 = q['nohue']
+                M &= ~((hsv[..., 0] >= h0) & (hsv[..., 0] <= h1) & (hsv[..., 1] > 50))
+            M = ndi.binary_opening(M, iterations=2)
+            lbm, nlm = ndi.label(M)
+            if nlm > 1:
+                M = lbm == 1 + int(np.argmax(ndi.sum(M, lbm, range(1, nlm + 1))))
+            # (the part's own soft rim on the outline — SAM's mask stops a few px short of it: left behind, it was a
+            # pale ghost crescent round a moving ear)
+            M |= m & ndi.binary_dilation(M, iterations=5) & ndi.binary_dilation(~m, iterations=5)
+            lb, nl = ndi.label(M)
+            if nl > 1:
+                sz = ndi.sum(M, lb, range(1, nl + 1)); M = np.isin(lb, 1 + np.nonzero(sz >= 0.15 * sz.max())[0])
+        masks[q['n']] = M
+    # (little bits of the frame left between a part and the outline — the fan's purple tips under the turkey's wings —
+    # go with the part next to them: left still, they floated off as specks when it moved)
+    allp = np.zeros_like(m)
+    for M_ in masks.values():
+        allp |= M_
+    lb_, nl_ = ndi.label(m & ~allp)
+    if nl_ > 1:
+        sz_ = ndi.sum(m & ~allp, lb_, range(1, nl_ + 1))
+        for j_ in np.nonzero(sz_ < 0.004 * m.sum())[0]:
+            isl = lb_ == j_ + 1
+            ring_ = ndi.binary_dilation(isl, iterations=3)
+            best, bo = None, 0
+            for nm_, M_ in masks.items():
+                ov_ = (ring_ & M_).sum()
+                if ov_ > bo:
+                    best, bo = nm_, ov_
+            if best is not None:
+                masks[best] = masks[best] | isl
+    for q in cfg:                                       # (a child's pixels belong to its parent too)
+        if q.get('parent') and q['n'] in masks and q['parent'] in masks:
+            masks[q['parent']] = masks[q['parent']] | masks[q['n']]
+    W = np.zeros((bh, bw, 4), np.float32)
+    parts, removed = [], np.zeros_like(m)
+    mrgb = rgb.copy()                                   # (the warp mesh's texture: + the hidden bits of behind-parts)
+    for q in cfg:
+        if q.get('z', 0) < 0 and q['n'] in masks and not q.get('rigid'):
+            M0 = masks[q['n']]
+            rc = max(3, int(0.035 * bh))
+            yd, xd = np.mgrid[-rc:rc + 1, -rc:rc + 1]
+            add = ndi.binary_closing(M0, structure=(xd * xd + yd * yd) <= rc * rc) & ~M0 & m
+            if add.any():
+                _, (iy, ix) = ndi.distance_transform_edt(~M0, return_indices=True)
+                mrgb = np.where(add[..., None], rgb[iy, ix], mrgb)
+                masks[q['n'] + ':hid'] = add
+                masks[q['n']] = M0 | add
+    for i, q in enumerate([q for q in cfg if q['n'] in masks][:4]):
+        M = masks[q['n']]
+        J = np.array([q['j'][0] - x0, q['j'][1] - y0], np.float32)
+        if q.get('above'):
+            d = np.array([0.0, -1.0]); r = 0.03 * bh
+            t = (xx - J[0]) * d[0] + (yy - J[1]) * d[1]
+            lab = m & (t > -r)
+            w = np.where(lab, np.clip((t + r) / (2 * r), 0, 1), 0)
+        else:
+            ys, xs = np.nonzero(M)
+            c = np.array([xs.mean(), ys.mean()]); d = (c - J) / max(1e-6, np.linalg.norm(c - J))
+            t = (xx - J[0]) * d[0] + (yy - J[1]) * d[1]
+            L = max(1.0, np.percentile(t[M], 98))
+            hw = M.sum() / L / 2
+            if q.get('rigid'):
+                lab, w = M, M.astype(np.float32)
+            else:
+                r = max(6.0, min(0.6 * hw, 0.35 * L))
+                ramp = np.clip((t + r) / (2 * r), 0, 1); ramp = ramp * ramp * (3 - 2 * ramp)
+                Rd = 1.4 * hw + r
+                dist = np.hypot(xx - J[0], yy - J[1])
+                fall = np.clip((Rd - dist) / (0.45 * Rd), 0, 1); fall = fall * fall * (3 - 2 * fall)
+                ring = m & ~M & (dist < Rd) & (t > -r)
+                w = np.where(M, ramp, np.where(ring, ramp * fall, 0))
+                if q.get('sewn'):
+                    # (sewn on along its whole edge — an ear on the head, a fin on the body: the surface next to it
+                    # gives a little all along instead of tearing open there)
+                    band = q.get('band', 0.045) * bh
+                    dM = ndi.distance_transform_edt(~M)
+                    f2 = np.clip(1 - dM / band, 0, 1); f2 = f2 * f2 * (3 - 2 * f2)
+                    ring2 = m & ~M & (dM < band)
+                    w = np.where(ring2 & ~M, np.maximum(w, np.clip((t + r) / (2 * r), 0, 1) * f2), w)
+                    ring = ring | ring2
+                lab = M | (ring & (w > 0.01))
+        # (the see-through margin round the part moves with it: its outline stays whole instead of stretching out
+        # into strands toward the still background)
+        near_bg = ~m & (ndi.distance_transform_edt(~lab) < 0.015 * bh)
+        if near_bg.any():
+            _, (iy_, ix_) = ndi.distance_transform_edt(~lab, return_indices=True)
+            w = np.where(near_bg, w[iy_, ix_], w)
+            lab = lab | near_bg
+        W[..., i] = np.where(lab, 0.1 + 0.9 * w, 0)
+        removed |= M & ~masks.get(q['n'] + ':hid', np.zeros_like(M))
+        if q.get('nohue'):
+            # (the fan's purple tips peeking out under the wing: off the base while it flaps — left behind they were
+            # loose purple specks beside the body)
+            import cv2
+            hsv_ = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2HSV)
+            pur = (hsv_[..., 0] >= q['nohue'][0]) & (hsv_[..., 0] <= q['nohue'][1]) & (hsv_[..., 1] > 50) & m
+            removed |= pur & ndi.binary_dilation(M, iterations=int(0.035 * bh)) & (yy > J[1])
+        parts.append({'n': q['n'], 'di': q['di'], 'g': q.get('g', 1.0), 'z': q.get('z', 0), 'sewn': 1 if q.get('sewn') or q.get('above') else 0,
+                      'j': [round(float(J[0]) / bw, 4), round(float(J[1]) / bh, 4)]})
+        if q.get('bridge'):
+            rt = max(3, int(0.025 * bh))
+            yd, xd = np.mgrid[-rt:rt + 1, -rt:rt + 1]
+            rest0 = m & ~M
+            thin = rest0 & ~ndi.binary_opening(rest0, structure=(xd * xd + yd * yd) <= rt * rt)
+            my = np.nonzero(M.any(1))[0]
+            thin[:my.min() + int(0.55 * (my.max() - my.min()))] = False
+            r0 = max(3, int(0.05 * bh)); yd, xd = np.mgrid[-r0:r0 + 1, -r0:r0 + 1]
+            W[..., i] = W[..., i]                       # (bridge recorded below)
+            q['_bridge'] = ndi.binary_closing(thin, structure=(xd * xd + yd * yd) <= r0 * r0) & ndi.binary_dilation(M, iterations=6)
+    # the base underneath while posing: the frame without the moving parts; what they hid filled from round it
+    removed = ndi.binary_dilation(removed, iterations=2) & m   # (no ghost outline left)
+    rest = m & ~removed
+    r1 = max(2, int(0.012 * bh))
+    fill = ndi.binary_closing(rest, iterations=r1) & removed
+    for q in cfg:
+        if q.get('_bridge') is not None:
+            fill |= q.pop('_bridge') & ~rest
+        if q.get('fillr') and q['n'] in masks:          # (a part lying over the body: the body filled in behind it)
+            rr2 = max(2, int(q['fillr'] * bh))
+            fill |= ndi.binary_closing(rest, iterations=rr2) & ndi.binary_dilation(masks[q['n']], iterations=3) & removed
+    _, (iy, ix) = ndi.distance_transform_edt(~rest, return_indices=True)
+    near = rgb[iy, ix]
+    soft = np.stack([ndi.gaussian_filter(near[..., c], 2.0) for c in range(3)], -1)
+    brgb = np.where(fill[..., None], soft, rgb)
+    bal = np.where(rest, al, np.where(fill, 1.0, 0.0))
+    hid = np.zeros_like(m)
+    for k_, v_ in masks.items():
+        if k_.endswith(':hid'):
+            hid |= v_
+    front = np.concatenate([mrgb, np.where(hid, 1.0, al)[..., None]], -1)
+    base = np.concatenate([brgb, np.clip(bal, 0, 1)[..., None]], -1)
+    wt = Image.fromarray((np.clip(W, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGBA').resize((cw, ch), Image.NEAREST)
+    buf = io.BytesIO(); wt.save(buf, 'PNG', optimize=True)
+    print(f'  warp: {", ".join(p_["n"] for p_ in parts)}; base fill {int(fill.sum())} px')
+    if os.environ.get('SPIN_DBG'):
+        dbg = os.path.expanduser(f'~/.cache/agent-scratch/tc/warp_{kind}')
+        Image.fromarray((np.clip(base, 0, 1) * 255).astype(np.uint8), 'RGBA').save(dbg + '_base.png')
+        Image.fromarray((np.clip(W, 0, 1) * 255).astype(np.uint8), 'RGBA').save(dbg + '_w.png')
+    return {'front': webp_url(front, (cw, ch)), 'base': webp_url(base, (cw, ch)),
+            'wt': 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode(), 'parts': parts}
+
+
 def pack(kind):
     d = os.path.join(SRC, kind)
     fs = sorted(f for f in os.listdir(d) if re.match(r'f\d\d\.png$', f))
@@ -259,7 +468,8 @@ def pack(kind):
           f'scale {s:.5f}/px, axis {axis:.1f}, bottom {bottom:.1f} (box {bw}x{bh})')
     pose = None
     rgbF, alF, mF = frames[FRONT - 1]
-    L = limb_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, s, axis, bottom)
+    warp = warp_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, cw, ch)
+    L = None if warp else limb_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, s, axis, bottom)
     if L:
         body, limb, pv, sleeve = L
         pose = {'bone': POSE_LIMB[kind], 'body': webp_url(body, (cw, ch)), 'limb': webp_url(limb, (cw, ch)),
@@ -271,7 +481,7 @@ def pack(kind):
     eyes_c = [[[round((e[0] - x0) / bw, 4), round((e[1] - y0) / bh, 4), round(e[2] / bw, 4), round(e[3] / bh, 4),
                 round(e[4], 1), e[5]] for e in fe] for fe in eyes]
     print('  eyes per frame:', [len(fe) for fe in eyes])
-    return {'n': n, 'cols': COLS, 'rows': rows, 'front': FRONT - 1, 'step': STEP, 'eyes': eyes_c, 'pose': pose,
+    return {'n': n, 'cols': COLS, 'rows': rows, 'front': FRONT - 1, 'step': STEP, 'eyes': eyes_c, 'pose': pose, 'warp': warp,
             'w': round(bw * s, 5), 'h': round(bh * s, 5),                  # the card, world units
             'ax': round(axis / bw, 5), 'by': round(bottom / bh, 5),         # axis / ground in card fractions
             'src': url}

@@ -326,6 +326,72 @@ void main() {
       Eyes.paintAt(g, list.map(([x, y, rx, ry, t, sx]) => [x * c.width, y * c.height, rx * c.width, ry * c.height, t, sx]));
     return c;
   }
+  /* the signature pose on a turntable card (tools/spin_frames.py WARP): the front frame on a fine grid, each part turned
+     about its joint by its js/poses.js DATA part (angle, move, scale) with the weights baked per pixel (1 on the part,
+     a short ramp round the joint so a sleeve or an ear's base bends with it — user: "옷이랑 같이"), children before
+     parents; a triangle stretched across a part's edge (an arm lying against the body) is dropped so the two separate.
+     Under it the card shows the frame without the moving parts (what they hid filled in) */
+  const WARP_VS = `
+    uniform sampler2D uW; uniform vec2 uJ[4], uT[4]; uniform float uA[4], uS[4], uZ[4];
+    varying vec4 vLab, vWt;
+    vec2 turn(vec2 p, int i) { float c = cos(uA[i]), s = sin(uA[i]); vec2 d = (p - uJ[i]) * (1.0 + uS[i]); return uJ[i] + vec2(c * d.x - s * d.y, s * d.x + c * d.y) + uT[i]; }`;
+  function spinWarp(S, kind, card, cardMat) {
+    const W = S.warp, NX = Math.round(S.w / S.h * 150), NY = 150;
+    const geo = new T.PlaneGeometry(S.w, S.h, NX, NY);
+    geo.translate((0.5 - S.ax) * S.w, S.by * S.h - S.h / 2, 0);
+    const tex = (im, nearest) => { const t = new T.Texture(im); t.colorSpace = nearest ? T.NoColorSpace : T.SRGBColorSpace;
+      if (nearest) { t.magFilter = t.minFilter = T.NearestFilter; t.generateMipmaps = false; } else t.anisotropy = 8; t.needsUpdate = true; return t; };
+    const n = W.parts.length;
+    const U = { uW: { value: tex(spinImgs[kind + ':wt'], true) }, uJ: { value: [0, 1, 2, 3].map(i => new T.Vector2(
+        i < n ? (W.parts[i].j[0] - S.ax) * S.w : 0, i < n ? (S.by - W.parts[i].j[1]) * S.h : 0)) },
+      uT: { value: [0, 1, 2, 3].map(() => new T.Vector2()) }, uA: { value: [0, 0, 0, 0] }, uS: { value: [0, 0, 0, 0] },
+      uZ: { value: [0, 1, 2, 3].map(i => (i < n ? W.parts[i].z || 0 : 0) * 0.004) }, uAmt: { value: new T.Vector4() }, uOn: { value: 0 },
+      uTear: { value: new T.Vector4(...[0, 1, 2, 3].map(i => (i < n && W.parts[i].sewn ? 0.3 : 0.04))) } };
+    const mat = new T.MeshBasicMaterial({ map: tex(spinImgs[kind + ':wfront']), alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, U); sh.uniforms.uLit = cardMat.userData.uLit;
+      sh.vertexShader = sh.vertexShader.replace('void main() {', WARP_VS + '\nvoid main() {')
+        .replace('#include <begin_vertex>', `
+          vec4 wv = texture2D(uW, uv);
+          vLab = step(vec4(0.05), wv); vWt = clamp((wv - 0.1) / 0.9, 0.0, 1.0) * vLab;
+          vec2 p = position.xy; float z = 0.0;
+          for (int i = 0; i < 4; i++) { if (vLab[i] > 0.5) { p = mix(p, turn(p, i), vWt[i]); z += uZ[i] * vWt[i]; } }
+          vec3 transformed = vec3(p, position.z + (z < 0.0 ? z : 0.001 + z));`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('void main() {', 'uniform vec4 uAmt, uTear; uniform float uLit, uOn; varying vec4 vLab, vWt;\nvoid main() {')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+          if (uOn < 0.5) discard;
+          // (only the moving parts and the surface that bends with them: the rest — a tail behind the waving paw, the
+          // body round a flapping ear — is the base under it, still and whole)
+          if (max(max(vLab.x, vLab.y), max(vLab.z, vLab.w)) < 0.02) discard;
+          for (int i = 0; i < 4; i++) if (uAmt[i] > 0.003 && vLab[i] > 0.02 && vLab[i] < 0.98 && vWt[i] > uTear[i]) discard;   // (a limb lying on the body parts from it; a sewn-on ear only where it really tears)
+          diffuseColor.rgb *= 1.0 + 0.22 * uLit;`)
+        .replace('#include <colorspace_fragment>', SAT_GLSL);
+    };
+    const mesh = new T.Mesh(geo, mat);
+    mesh.raycast = () => {};                             // (always drawn: uOn gates it, set with the card's own switch
+    mesh.frustumCulled = false;                          //  in the same frame — visible toggled there lagged a frame)
+    card.add(mesh);
+    return {
+      mesh, U,
+      /* the pose's parts this frame (from the region pose player's uniforms); true if any is moving */
+      update(bodyMat) {
+        const u = bodyMat.userData.u, PA = u && u.uPA, PT = u && u.uPT, PP = u && u.uPP;
+        if (!PA) return false;
+        let any = false;
+        for (let i = 0; i < 4; i++) {
+          const q = W.parts[i];
+          if (!q) { U.uAmt.value.setComponent(i, 0); continue; }
+          const d = q.di, a = PA.value[d * 4 + 3] * (q.g || 1), tx = PT.value[d * 4], ty = PT.value[d * 4 + 1], sc = PP.value[d * 4 + 3] - 1;
+          U.uA.value[i] = a; U.uT.value[i].set(tx, ty); U.uS.value[i] = sc;
+          const amt = Math.abs(a) + Math.abs(tx) * 8 + Math.abs(ty) * 8 + Math.abs(sc);
+          U.uAmt.value.setComponent(i, amt);
+          if (amt > 0.003) any = true;
+        }
+        return any;
+      },
+    };
+  }
   function spinCard(P, kind, bodyMat) {
     const S = SPIN[kind];
     const at = new T.Texture(spinEyed(kind));
@@ -354,6 +420,12 @@ void main() {
     };
     const card = new T.Mesh(geo, mat);
     card.raycast = () => {};                             // (taps hit the body)
+    const warp = S.warp && spinImgs[kind + ':wfront'] && spinWarp(S, kind, card, mat);
+    if (warp) {
+      SU.uBody.value = tex(spinImgs[kind + ':wbase']);
+      // (the mesh may be drawn before the card: whichever comes first sets both up for this frame)
+      warp.mesh.onBeforeRender = (renderer, scene, camera, g, m, grp) => card.onBeforeRender(renderer, scene, camera, g, m, grp);
+    }
     // the signature pose's limb (the monkey's waving arm): its own layer just behind the front frame, turned about its
     // joint by the pose's bone (js/poses.js BONES via js/rig.js) — shown only while the pose moves it and the front
     // frame is up
@@ -381,12 +453,20 @@ void main() {
       }
     }
     const cell = (i) => { const r = Math.floor(i / S.cols), c = i % S.cols; return [c / S.cols, 1 - (r + 1) / S.rows]; };
+    let synced = -1;
     card.onBeforeRender = (renderer, scene, camera) => {
+      if (synced === renderer.info.render.frame) return;
+      synced = renderer.info.render.frame;
       const par = card.parent;
       tmpS.setFromMatrixPosition(camera.matrixWorld);
       par.worldToLocal(tmpS);
       const phi = Math.atan2(tmpS.x, tmpS.z);
       card.rotation.y = phi;
+      // (which frame: from the friend's own facing, not the pose's turn — the fish's swim-turn crossed into the next
+      // frame and the two showed at once, two eyes)
+      tmpS.setFromMatrixPosition(camera.matrixWorld);
+      P.face.worldToLocal(tmpS);
+      const phiF = Math.atan2(tmpS.x, tmpS.z);
       card.updateMatrix(); card.matrixWorld.multiplyMatrices(par.matrixWorld, card.matrix);
       card.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse, card.matrixWorld);
       card.normalMatrix.getNormalMatrix(card.modelViewMatrix);
@@ -394,12 +474,18 @@ void main() {
         card.updateMatrixWorld(true);                    // (the limb layer follows the turned card this frame)
         if (!bone && P.rig) bone = P.rig.bones.find(b => b.name === S.pose.bone) || null;
       }
-      let f = S.front - phi * 180 / Math.PI / S.step;
+      let f = S.front - phiF * 180 / Math.PI / S.step;
       f = ((f % S.n) + S.n) % S.n;
       const a = Math.floor(f), b = (a + 1) % S.n, t = f - a;
       // (each frame shown whole, a short cross-fade only right at the hand-over: half-and-half mixes of two frames
       // were double letters and ghost eyes while it spun)
       SU.uA.value.set(...cell(a)); SU.uB.value.set(...cell(b)); SU.uMix.value = Math.min(1, Math.max(0, (t - 0.3) / 0.4));
+      if (warp) {
+        const mx = SU.uMix.value, shown = mx < 0.01 ? a : mx > 0.99 ? b : -1;
+        const on = warp.update(bodyMat) && shown === S.front;
+        SU.uUseBody.value = on ? 1 : 0;
+        warp.U.uOn.value = on ? 1 : 0;
+      }
       if (limbG) {
         const mx = SU.uMix.value, shown = mx < 0.01 ? a : mx > 0.99 ? b : -1;     // (the one frame up, if one is)
         // (the pose's angle: the rig's bone, or — no rig — the region pose's part angle, js/poses.js DATA)
@@ -432,6 +518,9 @@ void main() {
       im.src = src;
     });
     const spn = Object.keys(SPIN).filter(k => KINDS.includes(k)).flatMap(k => [img(SPIN[k].src, (im) => { spinImgs[k] = im; })]
+      .concat(SPIN[k].warp ? [img(SPIN[k].warp.front, (im) => { spinImgs[k + ':wfront'] = im; }),
+        img(SPIN[k].warp.base, (im) => { spinImgs[k + ':wbase'] = im; }),
+        img(SPIN[k].warp.wt, (im) => { spinImgs[k + ':wt'] = im; })] : [])
       .concat(SPIN[k].pose ? [img(SPIN[k].pose.body, (im) => { spinImgs[k + ':body'] = im; }),
         img(SPIN[k].pose.limb, (im) => { spinImgs[k + ':limb'] = im; })]
         .concat(SPIN[k].pose.sleeve ? [img(SPIN[k].pose.sleeve, (im) => { spinImgs[k + ':sleeve'] = im; })] : []) : []));
@@ -602,8 +691,13 @@ void main() {
       P.seat.rotation.z = (Math.sin(t * 1.1 + ph) * 0.03 + Math.sin(t * 9 + ph) * 0.09 * s.ck + s.lean + rock) * sit;
       // held: the body swings under the claw's grip
       P.hang.rotation.z = Math.sin(t * 2.6 + ph) * 0.07 * s.hk + shake * s.hk + P.tilt;
-      P.blob.material.opacity = Math.max(0, 1 - s.hk * 1.6);
+      // (the shadow stays on the seat: lifted, it fades out at once — the contact blob is the friend's own child and
+      // used to float up under its feet, and the body's cast shadow followed it about over the balls (user: "동물들 밑에
+      // 그림자가 뽑았을때 따라다니던데 어색해"); set down, it comes back)
+      s.sh = (s.sh == null ? 1 : s.sh) + ((s.held ? 0 : 1) - (s.sh == null ? 1 : s.sh)) * Math.min(1, dt * (s.held ? 14 : 4));
+      P.blob.material.opacity = s.held ? Math.min(s.sh, Math.max(0, 1 - s.hk * 6)) : Math.max(0, Math.min(s.sh, 1 - s.hk * 1.6));
       P.blob.visible = P.blob.material.opacity > 0.01;
+      P.pic.castShadow = !s.held && s.hk < 0.05;
       // always face the camera (turn about the vertical; whatever the parents' yaw)
       const cam = window.Stage && Stage.camera;
       if (cam && P.faceCam) {
