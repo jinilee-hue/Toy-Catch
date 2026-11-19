@@ -245,17 +245,29 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 /* ── sound / exit ── */
 .sys { position: absolute; z-index: 40; right: calc(3 * var(--u)); top: calc(3 * var(--u)); display: flex; gap: calc(.17 * var(--hb)); }
 #app[data-screen="game"] .sys { top: calc(9.6 * var(--u) - var(--hb) / 2); right: calc(4.5 * var(--u)); }   /* in the HUD row, right of the time */
-#app[data-screen="game"] .sysbtn { background: linear-gradient(#ffffff, #e6f0fb); }
-/* (one size on every screen: the intro's were bigger than the game's — user: "게임화면에 있는거와 크기 맞춰서 작게") */
+/* (one size on every screen: the intro's were bigger than the game's — user: "게임화면에 있는거와 크기 맞춰서 작게")
+   The game's own candy parts (user: "버튼들도 전체적인 게임스타일에 맞춰서"): a blue jelly like the target speaker
+   (.tg-snd) in the time pill's blue — glossy cap on top, light from below, a darker side for thickness, a white spot,
+   a white icon with a navy drop — and no outline lines (the HUD rule). Muted = the same jelly gone slate-grey. */
 .sysbtn {
-  position: relative; width: var(--hb); height: var(--hb); border-radius: 50%; display: grid; place-items: center; color: #2f5fb3;
-  background: linear-gradient(rgba(255,255,255,.88), rgba(255,255,255,.62)); box-shadow: 0 calc(.6 * var(--u)) calc(1.4 * var(--u)) rgba(30,60,120,.22);
+  --e: calc(.09 * var(--hb));                                   /* the jelly's side */
+  --jt: #6cc4ff; --jm: #2b8ff0; --jl: #1d6fd8; --jg: #9fe0ff; --jb: #1a63c8; --js: #1650aa; --jd: #123f8f;
+  position: relative; width: var(--hb); height: var(--hb); border-radius: 50%; display: grid; place-items: center; color: #fff;
+  translate: 0 calc(-.5 * var(--e)); transition: translate .08s, box-shadow .08s;
+  background:
+    radial-gradient(130% 80% at 50% -6%, rgba(255,255,255,.5) 0 40%, rgba(255,255,255,.28) 47%, rgba(255,255,255,0) 52%),
+    radial-gradient(circle at 50% 118%, var(--jg) 0, rgba(255,255,255,0) 46%),
+    linear-gradient(var(--jt), var(--jm) 50%, var(--jl));
+  box-shadow: inset 0 0 calc(.07 * var(--hb)) var(--jb), 0 var(--e) 0 0 var(--js),
+    0 calc(var(--e) + .06 * var(--hb)) calc(.15 * var(--hb)) rgba(8,40,120,.35);
 }
-.sysbtn svg { width: 56%; height: 56%; }
+.sysbtn::before { content: ''; position: absolute; left: 21%; top: 16%; width: 15%; height: 9%; border-radius: 50%; background: rgba(255,255,255,.92); rotate: -32deg; pointer-events: none; }
+.sysbtn svg { width: 54%; height: 54%; filter: drop-shadow(0 calc(.03 * var(--hb)) 0 var(--jd)); }
+.sysbtn:active { translate: 0 calc(.2 * var(--e)); --e: calc(.03 * var(--hb)); }
 .sysbtn::after { content: ''; position: absolute; inset: calc(-.08 * var(--hb)); border-radius: 50%; }   /* (a slightly bigger tap area — small fingers) */
 .sysbtn .off { display: none; }
 #app.muted #btnSound .on { display: none; } #app.muted #btnSound .off { display: inline; }
-#app.muted #btnSound { color: #e8453c; }
+#app.muted #btnSound { --jt: #c3cfe0; --jm: #98a9c2; --jl: #8193b0; --jg: #dde6f2; --jb: #73859f; --js: #64758f; --jd: #4d5c75; }
 
 /* ── controls ── */
 /* the tap area of the 3D DOWN button (machine.js draws it; game.js layout() measures its box on screen) */
@@ -306,7 +318,10 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .prize.show { opacity: 1; }
 .prize .word {
   position: absolute; left: 50%; top: 77%; translate: -50% -50%; padding: calc(1.2 * var(--u)) calc(6 * var(--u)) calc(2 * var(--u));
-  border-radius: calc(5 * var(--u)); background: #fff; box-shadow: 0 0 0 calc(.8 * var(--u)) #ffd23f, 0 calc(1.4 * var(--u)) calc(3 * var(--u)) rgba(40,40,90,.3);
+  /* (no yellow ring, see-through white — user: "노란색 라운드 선 빼고 흰색 배경도 좀 투명도"; a light blur keeps the word
+     readable over the balls) */
+  border-radius: calc(5 * var(--u)); background: rgba(255,255,255,.72); -webkit-backdrop-filter: blur(calc(.8 * var(--u))); backdrop-filter: blur(calc(.8 * var(--u)));
+  box-shadow: 0 calc(1.4 * var(--u)) calc(3 * var(--u)) rgba(40,40,90,.22);
   font: 800 calc(12 * var(--u)) / 1.1 var(--font); color: #2b2a55; letter-spacing: .01em; transform: scale(.3); transition: transform .45s cubic-bezier(.3, 1.6, .5, 1);
 }
 .prize.show .word { transform: scale(1); }
@@ -317,7 +332,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 /* ── result: the same glossy candy and glass as the title and game screens (user: "전체적으로 디자인이 게임화면과 인트로
    화면과 다른 느낌이고 컬러가 너무 많아") — the card is the logo's pale-cyan glass plate (gold rim, a white shine on top),
    the title the logo's jelly letters (game.js resultTitle), the caught friends in a white glass tray like the HUD's, the
-   HUD's score pill, PLAY AGAIN the HUD's blue pill and Home a white glass button like sound / exit. Blue, white and gold
+   HUD's score pill, PLAY AGAIN the HUD's blue pill and Home a white glass button. Blue, white and gold
    (+ the orange score pill and the letters' own colours); no outlines. ── */
 .result { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; pointer-events: none; opacity: 0; transition: opacity .4s; background: radial-gradient(circle, rgba(255,255,255,.1), rgba(30,40,100,.35)); }
 #app[data-screen="result"] .result { opacity: 1; pointer-events: auto; }
@@ -397,7 +412,7 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .caught .slot em b { color: var(--lc, #163d8f); }
 /* the score: the HUD's score pill — orange, the same 3D coin, a white number (.score), a little bigger */
 .btns { display: flex; align-items: center; gap: calc(3 * var(--u)); margin-top: calc(.6 * var(--u)); }
-/* Home: a white glass button with a blue line icon, like sound / exit */
+/* Home: a white glass button with a blue line icon (sound / exit are blue jellies since 2026-11-19) */
 .res-home {
   position: relative; width: calc(12 * var(--u)); height: calc(12 * var(--u)); border-radius: 50%; display: grid; place-items: center; color: #2f5fb3;
   background: linear-gradient(#ffffff, #e6f0fb);
@@ -458,14 +473,27 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.
-   Same height (--hb), glass and shadow as the round sound / exit buttons next to it. */
-.lang-tog { position: relative; display: flex; align-items: center; gap: calc(.03 * var(--hb)); height: var(--hb); padding: 0 calc(.08 * var(--hb));
-  border: 0; border-radius: 999px; background: linear-gradient(rgba(255,255,255,.88), rgba(255,255,255,.62)); box-shadow: 0 calc(.6 * var(--u)) calc(1.4 * var(--u)) rgba(30,60,120,.22);
+   Same height (--hb) and candy look as the sound / exit jellies next to it: a white plate with the same side
+   thickness, a groove pressed into it, and the knob = the same blue jelly sliding in the groove. */
+.lang-tog { --e: calc(.09 * var(--hb));
+  position: relative; display: flex; align-items: center; gap: calc(.03 * var(--hb)); height: var(--hb); padding: 0 calc(.08 * var(--hb));
+  border: 0; border-radius: 999px; translate: 0 calc(-.5 * var(--e));
+  background: radial-gradient(130% 80% at 50% -6%, rgba(255,255,255,.9) 0 40%, rgba(255,255,255,0) 52%), linear-gradient(#ffffff, #e4eefb);
+  box-shadow: inset 0 0 calc(.05 * var(--hb)) #c9daf0, 0 var(--e) 0 0 #b9cde9, 0 calc(var(--e) + .06 * var(--hb)) calc(.15 * var(--hb)) rgba(8,40,120,.3);
   cursor: pointer; font: 800 calc(.333 * var(--hb))/1 'Baloo 2', system-ui, sans-serif; color: #2f5fb3; -webkit-tap-highlight-color: transparent; }
-.lang-tog .knob { position: absolute; top: calc(.08 * var(--hb)); left: calc(.08 * var(--hb)); width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); border-radius: 50%;
-  background: linear-gradient(#5aa8ff, #2f6fe0); box-shadow: inset 0 calc(-.054 * var(--hb)) 0 rgba(0,0,0,.15); transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
+.lang-tog::before { content: ''; position: absolute; inset: calc(.07 * var(--hb)); border-radius: 999px; pointer-events: none;
+  background: linear-gradient(#d3e2f6, #e6effb); box-shadow: inset 0 calc(.05 * var(--hb)) calc(.08 * var(--hb)) rgba(30,70,150,.28); }
+.lang-tog .knob { --e2: calc(.05 * var(--hb));
+  position: absolute; top: calc(.075 * var(--hb)); left: calc(.1 * var(--hb)); width: calc(.8 * var(--hb)); height: calc(.8 * var(--hb)); border-radius: 50%;
+  background:
+    radial-gradient(130% 80% at 50% -6%, rgba(255,255,255,.5) 0 40%, rgba(255,255,255,.28) 47%, rgba(255,255,255,0) 52%),
+    radial-gradient(circle at 50% 118%, #9fe0ff 0, rgba(255,255,255,0) 46%),
+    linear-gradient(#6cc4ff, #2b8ff0 50%, #1d6fd8);
+  box-shadow: inset 0 0 calc(.06 * var(--hb)) #1a63c8, 0 var(--e2) 0 0 #1650aa, 0 calc(var(--e2) + .03 * var(--hb)) calc(.08 * var(--hb)) rgba(8,40,120,.35);
+  transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
+.lang-tog .knob::before { content: ''; position: absolute; left: 21%; top: 16%; width: 15%; height: 9%; border-radius: 50%; background: rgba(255,255,255,.92); rotate: -32deg; }
 .lang-tog[data-l="ko"] .knob { transform: translateX(calc(.87 * var(--hb))); }
-.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); padding-top: calc(.03 * var(--hb)); transition: color .25s; color: #8fa3cf; }
-.lang-tog .flag.on { color: #fff; }
+.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); padding-top: calc(.03 * var(--hb)); transition: color .25s; color: #7f95c6; }
+.lang-tog .flag.on { color: #fff; text-shadow: 0 calc(.03 * var(--hb)) 0 #123f8f; }
 .lang-tog:active { transform: scale(.96); }
 #app[data-screen="game"] .lang-tog { display: none; }
