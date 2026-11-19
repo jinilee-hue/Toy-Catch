@@ -39,6 +39,11 @@
   const D3 = window.CLAW_FRIENDS_3D || {};
   const PUFFED = /[?&]puff\b/.test(location.search);
   const has3d = (k) => !FLAT && !PUFFED && !!D3[k];
+  /* 360° turntables (js/friends-spin.js, tools/spin_frames.py; user: "gif가 가장 깔끔한데"): a friend that has one is shown
+     as its turntable's own pictures — a card turned to the camera, the two frames nearest the angle it is seen from
+     cross-faded — over its 3D body, which stays (invisible) for the claw's grip, the shadow and taps. ?nospin: off */
+  const SPIN = (!FLAT && !PUFFED && !/[?&]nospin\b/.test(location.search)) ? (window.CLAW_FRIENDS_SPIN || {}) : {};
+  const spinImgs = {};
   const srgb = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
 
   /* the 3D shape of one friend, in the same frame as the picture: x across (head middle at 0), y up from the bottom,
@@ -283,6 +288,73 @@ void main() {
       .replace('#include <colorspace_fragment>', SAT_GLSL);
   }
 
+  /* the turntable card: over the friend's (now invisible) body, turned to the camera right before it is drawn; the
+     frame index from the camera's direction in the friend's own frame (frame `front` faces it, `step`° apart — the
+     turntable turns the friend so that its left side shows next) */
+  const tmpS = new T.Vector3(), spinCanvas = {};
+  /* the turntable atlas with the game's own eyes (whites, glossy iris: js/eyes.js) painted over the frames' eyes */
+  function spinEyed(kind) {
+    const S = SPIN[kind], im = spinImgs[kind];
+    if (!window.Eyes || !Eyes.paintAt || !S.eyes) return im;
+    if (spinCanvas[kind]) return spinCanvas[kind];
+    const c = document.createElement('canvas');
+    c.width = im.naturalWidth || im.width; c.height = im.naturalHeight || im.height;
+    const g = c.getContext('2d');
+    g.drawImage(im, 0, 0);
+    const cw = c.width / S.cols, ch = c.height / S.rows;
+    S.eyes.forEach((list, i) => {
+      if (!list.length) return;
+      const r = Math.floor(i / S.cols), col = i % S.cols;
+      g.save(); g.beginPath(); g.rect(col * cw, r * ch, cw, ch); g.clip();
+      Eyes.paintAt(g, list.map(([x, y, rx, ry, t, sx]) => [col * cw + x * cw, r * ch + y * ch, rx * cw, ry * ch, t, sx]));
+      g.restore();
+    });
+    return (spinCanvas[kind] = c);
+  }
+  function spinCard(P, kind, bodyMat) {
+    const S = SPIN[kind];
+    const at = new T.Texture(spinEyed(kind));
+    at.colorSpace = T.SRGBColorSpace; at.anisotropy = 8; at.needsUpdate = true;
+    const SU = { uA: { value: new T.Vector2() }, uB: { value: new T.Vector2() }, uMix: { value: 0 },
+      uCell: { value: new T.Vector2(1 / S.cols, 1 / S.rows) } };
+    const geo = new T.PlaneGeometry(S.w, S.h);
+    geo.translate((0.5 - S.ax) * S.w, S.by * S.h - S.h / 2, 0);
+    const mat = new T.MeshBasicMaterial({ map: at, alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+    mat.userData.uLit = bodyMat.userData.uLit;
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, SU);
+      sh.uniforms.uLit = mat.userData.uLit;
+      sh.fragmentShader = sh.fragmentShader
+        .replace('void main() {', 'uniform vec2 uA, uB, uCell;\nuniform float uMix, uLit;\nvoid main() {')
+        .replace('#include <map_fragment>', `
+          vec4 ta = texture2D(map, uA + vMapUv * uCell), tb = texture2D(map, uB + vMapUv * uCell);
+          diffuseColor *= mix(ta, tb, uMix);
+          diffuseColor.rgb *= 1.0 + 0.22 * uLit;`)
+        .replace('#include <colorspace_fragment>', SAT_GLSL);
+    };
+    const card = new T.Mesh(geo, mat);
+    card.raycast = () => {};                             // (taps hit the body)
+    const cell = (i) => { const r = Math.floor(i / S.cols), c = i % S.cols; return [c / S.cols, 1 - (r + 1) / S.rows]; };
+    card.onBeforeRender = (renderer, scene, camera) => {
+      tmpS.setFromMatrixPosition(camera.matrixWorld);
+      P.face.worldToLocal(tmpS);
+      const phi = Math.atan2(tmpS.x, tmpS.z);
+      card.rotation.y = phi;
+      card.updateMatrix(); card.matrixWorld.multiplyMatrices(P.face.matrixWorld, card.matrix);
+      card.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse, card.matrixWorld);
+      card.normalMatrix.getNormalMatrix(card.modelViewMatrix);
+      let f = S.front - phi * 180 / Math.PI / S.step;
+      f = ((f % S.n) + S.n) % S.n;
+      const a = Math.floor(f), b = (a + 1) % S.n, t = f - a;
+      // (each frame shown whole, a short cross-fade only right at the hand-over: half-and-half mixes of two frames
+      // were double letters and ghost eyes while it spun)
+      SU.uA.value.set(...cell(a)); SU.uB.value.set(...cell(b)); SU.uMix.value = Math.min(1, Math.max(0, (t - 0.42) / 0.16));
+    };
+    P.face.add(card); P.card = card;
+    // the body stays for the claw, the shadow and taps — not drawn
+    bodyMat.colorWrite = false; bodyMat.depthWrite = false;
+  }
+
   function load() {
     // the atlases baked from the character sheets (webp data URLs, like the pictures)
     const atl = KINDS.filter(k => D3[k] && D3[k].tex && !FLAT && !PUFFED).map(k => new Promise((res) => {
@@ -291,7 +363,13 @@ void main() {
       im.onerror = () => { console.warn('friend atlas failed:', k); res(); };
       im.src = D3[k].tex;
     }));
-    return Promise.all(atl.concat(KINDS.map(k => new Promise((res) => {
+    const spn = Object.keys(SPIN).filter(k => KINDS.includes(k)).map(k => new Promise((res) => {
+      const im = new Image();
+      im.onload = () => { spinImgs[k] = im; res(); };
+      im.onerror = () => { console.warn('friend turntable failed:', k); res(); };
+      im.src = SPIN[k].src;
+    }));
+    return Promise.all(atl.concat(spn, KINDS.map(k => new Promise((res) => {
       const im = new Image();
       im.onload = () => {
         imgs[k] = im;
@@ -360,6 +438,7 @@ void main() {
     pic.castShadow = true;
     pic.customDepthMaterial = depth;
     P.face.add(pic); P.pic = pic;
+    if (SPIN[kind] && spinImgs[kind]) spinCard(P, kind, mat);
     Object.defineProperty(pic.userData, 'plush', { value: P, enumerable: false, configurable: true });
     // soft contact shadow on the shelf / balls (fades while it's held)
     const sh = new T.Mesh(new T.PlaneGeometry(1, 1), blob());

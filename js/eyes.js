@@ -530,6 +530,41 @@ void main() {`;
       g.restore();
     }
   }
+  /* the new eyes painted over painted ones at given ellipses (a turntable frame: js/friends.js spinCard): each
+     [cx, cy, rx, ry, tilt deg, sx] in g's pixels (sx: the drawing's +x toward the nose). The ellipse keeps its own
+     shape — a far eye seen from the side is narrow — grown a little to cover the old one; only drawn where the frame
+     already is (source-atop: never past the friend's outline) */
+  function paintAt(g, list, grow = 1.28) {
+    const c1 = catchAt(L1, R1), c2 = catchAt(L2, R2);
+    g.save();
+    g.globalCompositeOperation = 'source-atop';
+    for (const [cx, cy, rx, ry, td, sx] of list) {
+      const a = grow * rx + 1, b = grow * ry + 1, tr = (td || 0) * Math.PI / 180;
+      g.save();
+      g.translate(cx, cy); g.rotate(tr);
+      g.save(); g.scale(a, b);
+      const sh = g.createRadialGradient(0, 0, 0.9, 0, 0, 1.3);
+      sh.addColorStop(0, 'rgba(40,20,20,0.22)'); sh.addColorStop(1, 'rgba(40,20,20,0)');
+      g.fillStyle = sh; g.beginPath(); g.arc(0, 0, 1.3, 0, Math.PI * 2); g.fill();
+      g.restore();
+      g.beginPath(); g.ellipse(0, 0, a, b, 0, 0, Math.PI * 2); g.clip();
+      g.save(); g.scale(sx * a / 256, b / 256); g.drawImage(canvas(), -256, -256); g.restore();
+      g.save(); g.scale(a, b);
+      const rg = g.createRadialGradient(-0.1, -0.15, 0.55, 0, 0, 1.02);
+      rg.addColorStop(0, 'rgba(30,20,30,0)'); rg.addColorStop(1, 'rgba(30,20,30,0.22)');
+      g.fillStyle = rg; g.fillRect(-1.1, -1.1, 2.2, 2.2);
+      g.restore();
+      for (const [c, al] of [[c1, 1], [c2, 0.8]]) {
+        const x = c[0] * a, y = c[1] * b, r = c[2] * Math.min(a, b);
+        if (r < 0.6) continue;
+        const cg = g.createRadialGradient(x, y, 0, x, y, r * 1.12);
+        cg.addColorStop(0, `rgba(255,255,255,${al})`); cg.addColorStop(0.82, `rgba(255,255,255,${al})`); cg.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = cg; g.beginPath(); g.arc(x, y, r * 1.12, 0, Math.PI * 2); g.fill();
+      }
+      g.restore();
+    }
+    g.restore();
+  }
   function icons(imgs) {
     const jobs = Object.keys(imgs).filter(k => TABLE[k] && imgs[k]).map(k => new Promise((res) => {
       const im = imgs[k], c = document.createElement('canvas');
@@ -561,6 +596,6 @@ void main() {`;
     return out;
   }
 
-  window.Eyes = { relief, TABLE, draw, canvas, texture, add, sync, setup, shader, icons, icon: (k) => iconURL[k] || null, paint,
+  window.Eyes = { relief, TABLE, draw, canvas, texture, add, sync, setup, shader, icons, icon: (k) => iconURL[k] || null, paint, paintAt,
     catchAt, consts: { GROW, GROW_RING, MAXASP, FWD, GAZE, DOME, SINK, CLEAR, RB, IRIS, PUPIL, L1, L2, R1, R2 } };
 })();

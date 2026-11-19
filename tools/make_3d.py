@@ -60,6 +60,7 @@ GRIP_Z = -0.02                                   # the head's middle (depth) at 
 # distrust of the sheet next to the picture (bake), which would flatten its feathers into one colour
 CONSIST_SKIP = ('turkey',)
 KIND_NOW = ''
+SPIN_NOW = False                                 # (this friend is built from a 360 turntable)
 TURN_NOW = False                                 # (this friend is built from the user's turnaround)
 # two fabrics of one hue told apart by lightness: the turtle's light-green head and darker shell, the fish's pale
 # head and blue body (merged, the head took the shell's green all round)
@@ -504,6 +505,47 @@ def bleed(rgb, m, inset=2):
         inner = m
     _, (iy, ix) = ndi.distance_transform_edt(~inner, return_indices=True)
     return rgb[iy, ix]
+
+
+SPIN_DIR = os.path.join(ROOT, 'design', 'turntable')
+SPIN_FRONT = 13                                  # (the frame that faces the front; frames 15 deg apart, f01 = back)
+SPIN_STEP = 15.0
+
+
+def spin_dirs(i):
+    """frame i (1-based) of a turntable: (view direction toward the camera, image-right direction) in the friend frame"""
+    a = np.radians((i - SPIN_FRONT) * SPIN_STEP)
+    return (-np.sin(a), 0.0, np.cos(a)), (np.cos(a), 0.0, np.sin(a))
+
+
+def spin_views(kind):
+    """{view: (rgb bled past the outline, mask, texture mask)} from a 360 turntable of the friend
+    (design/turntable/<kind>/fNN.png: one rendered model turning, 15 deg a frame, on white) — 24 views of one
+    consistent model (user: "이걸로 더 깔끔하게"): every surface has a view that faces it within ~8 deg"""
+    from scipy import ndimage as ndi
+    d = os.path.join(SPIN_DIR, kind)
+    fs = sorted(f for f in os.listdir(d) if re.match(r'f\d\d\.png$', f)) if os.path.isdir(d) else []
+    if len(fs) < 12:
+        return None
+    out = {}
+    for fname in fs:
+        i = int(fname[1:3])
+        a = np.asarray(Image.open(os.path.join(d, fname)).convert('RGB')).astype(np.float32) / 255
+        bg = (a.min(-1) > 0.94) & (a.max(-1) - a.min(-1) < 0.04)
+        m = ~bg
+        m = ndi.binary_opening(m, iterations=1)
+        lab, n = ndi.label(m)
+        if n > 1:
+            sz = ndi.sum(m, lab, range(1, n + 1)); m = lab == 1 + int(np.argmax(sz))
+        m = ndi.binary_fill_holes(m)
+        ys, xs = np.nonzero(m)
+        sl = (slice(max(0, ys.min() - 2), ys.max() + 3), slice(max(0, xs.min() - 2), xs.max() + 3))
+        m = m[sl]; rgb = a[sl]
+        mt = ndi.binary_erosion(m, iterations=3)
+        name = 'front' if i == SPIN_FRONT else f'g{i:02d}'
+        out[name] = (bleed(rgb, mt), m, mt)
+    print(f'  turntable: {len(out)} frames')
+    return out
 
 
 TURN_DIR = os.path.join(ROOT, 'design', 'turnaround')
@@ -954,6 +996,8 @@ def fit_depth(v, f, views, k, kind, h, dbg=None, which=None, lim_frac=0.1):
     return v
 
 
+SPIN_REACH = float(os.environ.get('TC_SPIN_REACH', 0))   # (x height: how far the shape may grow toward the frames)
+SPIN_GROW = int(os.environ.get('TC_SPIN_GROW', 3))   # (turntable frames grown by this many px before the cut)
 FILL_MAX = float(os.environ.get('TC_FILL', 0))  # (how far, x height, a part grows out toward a drawing's outline)
 
 
@@ -989,7 +1033,9 @@ def hull_carve(v, f, views, k, h, A, fp, kind, res=500, sigma=1.4, grow=2, dbg=N
     import trimesh
     from scipy import ndimage as ndi
     from skimage.measure import marching_cubes
-    if kind in SIDE_ON:
+    if SPIN_NOW:                                       # (every frame of the turntable cuts the shape)
+        sides = [(nm, ) + spin_dirs(int(nm[1:])) for nm in views if nm.startswith('g')]
+    elif kind in SIDE_ON:
         sides = [('head', (-1, 0, 0), (0, 0, 1)), ('tail', (1, 0, 0), (0, 0, -1))]
     else:
         sides = [('side', (1, 0, 0), (0, 0, -1)), ('side2', (-1, 0, 0), (0, 0, 1))]
@@ -1016,7 +1062,7 @@ def hull_carve(v, f, views, k, h, A, fp, kind, res=500, sigma=1.4, grow=2, dbg=N
     ZY = np.zeros((shape[1], shape[2]), bool)
     ZY0 = np.zeros((shape[1], shape[2]), bool)         # (not grown: what to fill toward)
     Z, Y2 = np.meshgrid(cz, cy, indexing='xy')         # (shape: (ny, nz))
-    for name, d, r in sides:
+    for name, d, r in ([] if SPIN_NOW else sides):
         m = views[name][1]
         pl = Plane.around(v, d, r, margin=80)
         S = pl.mask(v, f)
@@ -1057,6 +1103,35 @@ def hull_carve(v, f, views, k, h, A, fp, kind, res=500, sigma=1.4, grow=2, dbg=N
         O[:, ys, zs] = O[:, iy[ys, zs], iz[ys, zs]] & XY[:, ys]
     print(f'  hull: filled {len(ys)} side pixels toward the drawings ({(ZY0 & ~P).sum()} missing)')
     H = XY[:, :, None] & ZY[None, :, :]
+    if SPIN_NOW:
+        # every turntable frame: a voxel stays only inside all of them (each frame placed on the shape's own outline
+        # from its direction, grown a little for registration). A turn about the vertical axis: the frame's row is
+        # the voxel's height, its column depends on x and z only
+        H = np.broadcast_to(XY[:, :, None], O.shape).copy()
+        XX, ZZ = np.meshgrid(cx, cz, indexing='ij')
+        for name, d, r in sides:
+            m = views[name][1]
+            pl = Plane.around(v, d, r, margin=80)
+            S = pl.mask(v, f)
+            qq, ox, oy, sx, sy = place(m, k, S)
+            T = placed(m.astype(np.float32), S.shape, ox, oy, sx, sy, cval=0) > 0.5
+            T = ndi.binary_dilation(T, iterations=SPIN_GROW)
+            col = np.floor((XX * r[0] + ZZ * r[2] - pl.a0) / PX).astype(int)
+            row = np.floor((pl.b1 - cy) / PX).astype(int)
+            okc = (col >= 0) & (col < T.shape[1]); okr = (row >= 0) & (row < T.shape[0])
+            Tc = T[np.clip(row, 0, T.shape[0] - 1)][:, np.clip(col, 0, T.shape[1] - 1).ravel()].reshape(len(cy), *col.shape)
+            Tc &= okr[:, None, None] & okc[None]
+            H &= np.transpose(Tc, (1, 0, 2))
+        print(f'  hull: {len(sides)} turntable frames')
+        if SPIN_REACH > 0:
+            # the turntable's shape is the truth all round: the visual hull of its frames, kept within reach of the
+            # generated shape (its hollows — under the arms, between the legs — stay), so what the generator made too
+            # small (the cap's back, an ear) grows out to the frames' outlines, not only what it made too big is cut
+            reach = max(1, int(round(SPIN_REACH * h / cell)))
+            Od = ndi.binary_dilation(O, iterations=reach)
+            add = H & Od & ~O
+            print(f'  hull: grown {add.sum() / max(O.sum(), 1):.1%} toward the frames (reach {reach} cells)')
+            O = O | add
     cut = O & ~H
     O2 = O & H
     print(f'  hull: cut {cut.sum() / max(O.sum(), 1):.1%} of the volume')
@@ -1094,7 +1169,10 @@ def add_tails(v, f, views, k, h, gy, dbg=None):
     middle, reaching a little into the body (no gap). Wide missing pieces (not a tail) are left alone, and so are pieces
     in front of the body's middle or above the head's middle (a cap's visor, a hat brim's back edge)"""
     from scipy import ndimage as ndi
-    if 'side' in views:
+    if SPIN_NOW:
+        nm = f'g{SPIN_FRONT - 6:02d}'
+        m = views[nm][1]; d, r = spin_dirs(SPIN_FRONT - 6)
+    elif 'side' in views:
         m = views['side'][1]; d, r = (1, 0, 0), (0, 0, -1)
     else:
         m = views['head'][1]; d, r = (-1, 0, 0), (0, 0, 1)
@@ -1328,6 +1406,16 @@ def make_views(kind, v, f, art, views, pic, fp, k, lut, dbg=None):
             dbg['view_' + name] = (T, S, T2, img, u)
         return pl, img, mk, u, valid
 
+    if SPIN_NOW:                                       # (every turntable frame, each on the mesh's own outline)
+        for name in sorted(views):
+            if not name.startswith('g'):
+                continue
+            d, r = spin_dirs(int(name[1:]))
+            pl, img, mk, u, ok = sheet_view(name, d, r)
+            out.append(BakeView(name, d, pl, pl, img, mk, u, power=4.0, valid=ok))
+        for bv in out:
+            bv.prepare(v, f)
+        return out
     if kind in SIDE_ON:
         if TURN_NOW or 'ends' not in SHEET_SKIP.get(kind, ()):
             pl, img, mk, u, ok = sheet_view('head', (-1, 0, 0), (0, 0, 1))
@@ -2497,7 +2585,11 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
     gy = (1 - a['head'][1]) * h
     v, f, c, pic = base_mesh(kind, art, res, shape)
     global TURN_NOW
-    views = turn_views(kind) if not os.environ.get('TC_NO_TURN') else None
+    global SPIN_NOW
+    views = spin_views(kind) if not os.environ.get('TC_NO_SPIN') else None
+    SPIN_NOW = views is not None
+    if views is None:
+        views = turn_views(kind) if not os.environ.get('TC_NO_TURN') else None
     TURN_NOW = views is not None
     if views is None:
         views = sheet_views(kind, sheets, up=not os.environ.get("TC_NO_X4"))
@@ -2537,6 +2629,9 @@ def build(kind, art, res, target, sheets=None, dbg=None, shape='tsg', atlas=1024
             # the turnaround's two side views (mirrored), each warping the depth a good way, then the hull cut
             sv = [('head', (-1, 0, 0), (0, 0, 1)), ('tail', (1, 0, 0), (0, 0, -1))] if kind in SIDE_ON else \
                  [('side', (1, 0, 0), (0, 0, -1)), ('side2', (-1, 0, 0), (0, 0, 1))]
+            if SPIN_NOW:
+                i1, i2 = SPIN_FRONT - 6, SPIN_FRONT + 6
+                sv = [(f'g{i1:02d}',) + spin_dirs(i1), (f'g{i2:02d}',) + spin_dirs(i2)]
             for w_ in sv:
                 if w_[0] in views:
                     v = fit_depth(v, f, views, k, kind, h, dbg, which=w_, lim_frac=0.18)
