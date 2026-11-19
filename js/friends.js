@@ -85,7 +85,7 @@
       }
       geo.userData.one = one;
     }
-    if (window.Eyes) Eyes.add(kind, geo, { w, h, u });   // glossy eyes with whites, in this mesh (js/eyes.js)
+    if (window.Eyes && !D3[kind].noeyes) Eyes.add(kind, geo, { w, h, u });   // (noeyes: a model from a turntable has its own)   // glossy eyes with whites, in this mesh (js/eyes.js)
     geo.computeBoundingSphere();
     return (geoCache['3d' + kind] = geo);
   }

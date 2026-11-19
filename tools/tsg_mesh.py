@@ -30,7 +30,7 @@ OUT = os.path.join(TSG_DIR, 'out')
 def prep(kind, pad=0.1, view=''):
     """the picture as TripoSG's prepare_image makes it: cropped to the alpha box, on white, padded square (view: one of
     the user's turnaround views instead, design/turnaround/<kind>/<view>.png)"""
-    src = os.path.join(ROOT, 'design', 'turnaround', kind, f'{view}.png') if view else \
+    src = view if view.endswith('.png') else os.path.join(ROOT, 'design', 'turnaround', kind, f'{view}.png') if view else \
         os.path.join(ROOT, 'assets', 'img', 'friends', f'{kind}.webp')
     im = np.asarray(Image.open(src).convert('RGBA')).astype(np.float32) / 255
     a = im[..., 3:4]
@@ -70,7 +70,7 @@ def main():
     print(f'loaded in {time.time() - t0:.1f}s on {dev} {o.dtype}', flush=True)
     os.makedirs(o.out, exist_ok=True)
     if o.view:
-        o.tag = o.tag or '_' + o.view
+        o.tag = o.tag or '_' + (os.path.basename(o.view)[:-4] if o.view.endswith('.png') else o.view)
     for kind in o.kinds.split(','):
         if o.view and os.path.exists(os.path.join(o.out, f'{kind}{o.tag}.npz')):
             continue
