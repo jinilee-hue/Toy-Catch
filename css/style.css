@@ -495,5 +495,10 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .lang-tog[data-l="ko"] .knob { transform: translateX(calc(.87 * var(--hb))); }
 .lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); padding-top: calc(.03 * var(--hb)); transition: color .25s; color: #7f95c6; }
 .lang-tog .flag.on { color: #fff; text-shadow: 0 calc(.03 * var(--hb)) 0 #123f8f; }
+/* the language as round flags, like every phonics game (user: "파닉스 게임들 다 국기로 통일하자"); the chosen one full size on
+   the knob, the other smaller and dimmed */
+.lang-tog .flag svg { width: 72%; height: 72%; border-radius: 50%; box-shadow: 0 0 0 calc(.025 * var(--hb)) rgba(255,255,255,.9), 0 calc(.02 * var(--hb)) calc(.04 * var(--hb)) rgba(8,40,120,.3);
+  transition: transform .25s ease, opacity .25s ease, filter .25s ease; }
+.lang-tog .flag:not(.on) svg { transform: scale(.72); opacity: .6; filter: grayscale(.3); }
 .lang-tog:active { transform: scale(.96); }
 #app[data-screen="game"] .lang-tog { display: none; }
