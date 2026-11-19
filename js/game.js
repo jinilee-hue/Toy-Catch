@@ -804,7 +804,7 @@
      enough — the turtle round the top of its shell, just behind its head (picked up by the shell); the fish round its
      back, at the root of its top fin — the tips pressing in (squeeze). The turkey's fan stands round its neck in the
      prongs' plane: its neck's width is taken in front of the fan (r: the neck's half-width, scale 1). */
-  const GRIP_FIX = { turtle: { y: 0.76, squeeze: true }, fish: { y: 0.7, squeeze: true }, turkey: { r: 0.19 } };
+  const GRIP_FIX = { fish: { y: 0.7, squeeze: true }, turkey: { r: 0.19 } };   // (the redrawn turtle stands up: it has a neck)
   function gripOf(p, loose = 0) {
     const fix = GRIP_FIX[p.kind] || {};
     let y = fix.y ? fix.y * p.top : p.neckY, r = 0, a = claw.SHUT, hub = 0;

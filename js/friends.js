@@ -292,6 +292,7 @@ void main() {
      frame index from the camera's direction in the friend's own frame (frame `front` faces it, `step`° apart — the
      turntable turns the friend so that its left side shows next) */
   const tmpS = new T.Vector3(), spinCanvas = {};
+  const LIMB_GAIN_REGION = 1.45;                        // (js/poses.js DATA angles: the monkey's arm up to ~1.65 rad)
   const LIMB_GAIN = 0.95;                               // (the card's arm up high enough to read as a wave)
   /* the turntable atlas with the game's own eyes (whites, glossy iris: js/eyes.js) painted over the frames' eyes */
   function spinEyed(kind) {
@@ -370,7 +371,7 @@ void main() {
       const lg = new T.PlaneGeometry(S.w, S.h);
       lg.translate((0.5 - S.ax) * S.w - px, S.by * S.h - S.h / 2 - py, 0);
       const limb = new T.Mesh(lg, layerMat(limbIm)); limb.raycast = () => {};
-      limbG = new T.Group(); limbG.position.set(px, py, -0.004); limbG.add(limb); limbG.visible = false;   // (behind: the shirt hides its root)
+      limbG = new T.Group(); limbG.position.set(px, py, 0.004); limbG.add(limb); limbG.visible = false;   // (in front; the sleeve layer over its root)
       card.add(limbG);
       const slIm = spinImgs[kind + ':sleeve'];
       if (slIm) {                                        // the sleeve over the limb's root (it comes out of the sleeve)
@@ -401,7 +402,10 @@ void main() {
       SU.uA.value.set(...cell(a)); SU.uB.value.set(...cell(b)); SU.uMix.value = Math.min(1, Math.max(0, (t - 0.3) / 0.4));
       if (limbG) {
         const mx = SU.uMix.value, shown = mx < 0.01 ? a : mx > 0.99 ? b : -1;     // (the one frame up, if one is)
-        const ang = window.__limbAng != null ? window.__limbAng : bone ? bone.rot.z * LIMB_GAIN : 0, on = Math.abs(ang) > 0.02 && shown === S.front;
+        // (the pose's angle: the rig's bone, or — no rig — the region pose's part angle, js/poses.js DATA)
+        const PA = bodyMat.userData.u && bodyMat.userData.u.uPA;
+        const raw = bone ? bone.rot.z * LIMB_GAIN : PA ? PA.value[(S.pose.part || 0) * 4 + 3] * LIMB_GAIN_REGION : 0;
+        const ang = window.__limbAng != null ? window.__limbAng : raw, on = Math.abs(ang) > 0.02 && shown === S.front;
         SU.uUseBody.value = on ? 1 : 0;
         limbG.visible = on;
         if (limbG.userData.sleeve) limbG.userData.sleeve.visible = on;
@@ -445,7 +449,7 @@ void main() {
       };
       im.onerror = () => { console.warn('friend picture failed:', k); res(); };
       im.src = ART[k].src;
-    })))).then(() => (window.Eyes && !FLAT && !PUFFED ? Eyes.icons(imgs) : null));   // (2D icons with the new eyes)
+    })))).then(() => (window.Eyes && !FLAT && !PUFFED ? Eyes.icons(Object.fromEntries(Object.entries(imgs).filter(([k]) => !(D3[k] && D3[k].noeyes)))) : null));   // (2D icons with the new eyes; not for the redrawn friends: they have their own)
   }
 
   let blobTex = null;

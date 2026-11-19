@@ -147,7 +147,10 @@ def build(kind):
     occ_rows = np.nonzero(Hv.any((1, 2)))[0]
     ybot = occ_rows.max() + 1                           # (the ground: the hull's lowest row)
     # TripoSG on the front frame, its box laid on the hull's
-    z_ = np.load(os.path.join(TSG, f'{kind}_spin13.npz'))
+    tsg_path = os.path.join(TSG, f'{kind}_spin13.npz')
+    if not os.path.exists(tsg_path):                  # (no TripoSG run: the hull alone — enough for an invisible body)
+        return finish(kind, Hv, Hv, y0, R, masks, axis, D, E, sign, t0)
+    z_ = np.load(tsg_path)
     tv, tf = z_['v'].astype(np.float64), z_['f'].astype(np.int64)
     parts = trimesh.Trimesh(tv, tf, process=True).split(only_watertight=False)
     big = max(len(p.faces) for p in parts)
@@ -189,6 +192,12 @@ def build(kind):
     thin = Hv & ~ndi.binary_opening(Hv, structure=ball)   # (the soft hull's thin bits were fins all round)
     F = (Hv & ndi.binary_dilation(O, iterations=r)) | thin
     print(f'  TripoSG {O.sum()} voxels, hull {Hv.sum()}, kept {F.sum()} ({F.sum() / max(1, Hv.sum()):.0%} of the hull), reach {r}')
+    return finish(kind, F, Hv, y0, R, masks, axis, D, E, sign, t0)
+
+
+def finish(kind, F, Hv, y0, R, masks, axis, D, E, sign, t0):
+    import trimesh
+    from skimage.measure import marching_cubes
     occ = ndi.gaussian_filter(F.astype(np.float32), 1.3)
     vv, ff, _, _ = marching_cubes(np.pad(occ, 2), 0.5)
     vv -= 2
@@ -203,16 +212,21 @@ def build(kind):
 
     # grid -> game units (the friend's picture height; x = 0 on the axis, y = 0 on the ground, z toward the camera)
     art = M.load_art()[kind]
-    h = art['h'] * M.PX
-    k = h / (ybot - hy.min())                           # (game units per hull px)
-    P = np.stack([(v[:, 1] - R) * k, (ybot - v[:, 0]) * k, (v[:, 2] - R) * k], 1)
+    h, w, u = art['h'] * M.PX, art['w'] * M.PX, art['head'][0]
+    # (the game picture is the front frame cropped to its box: the same height, ground and x as the picture)
+    fy, fx = np.nonzero(masks[FRONT - 1])
+    top, bot, left, right = fy.min(), fy.max() + 1, fx.min(), fx.max() + 1
+    k = h / (bot - top)                                 # (game units per hull px)
+    ax_x = ((axis - left) / (right - left) - u) * w      # (the turn axis in the friend's frame)
+    ybot = bot - y0
+    P = np.stack([(v[:, 1] - R) * k + ax_x, (ybot - v[:, 0]) * k, (v[:, 2] - R) * k], 1)
     nP = np.asarray(trimesh.Trimesh(P, f, process=False).vertex_normals)
     if ((P - P.mean(0)) * nP).sum(1).mean() < 0:
         f = f[:, ::-1].copy()                          # (outward)
     # z: the grid's z runs toward the front camera if sign·(the projection) says so — checked by the front frame:
     # the side seen in frame FRONT is +z
     print(f'  mesh {len(v)} verts {len(f)} tris, {time.time() - t0:.0f}s')
-    return P, f, dict(axis=axis, sign=sign, y0=y0, ybot=ybot, k=k, R=R, D=D, E=E)
+    return P, f, dict(axis=axis, sign=sign, y0=y0, ybot=ybot, k=k, R=R, D=D, E=E, ax_x=ax_x)
 
 
 def bake(kind, P, f, cam):
@@ -285,10 +299,17 @@ def main():
     s = open(path, encoding='utf-8').read()
     head = s[:s.index('window.CLAW_FRIENDS_3D')]
     data = json.loads(re.search(r'=\s*(\{.*\});?\s*$', s, re.S).group(1))
-    for kind in sys.argv[1:]:
+    body = '--body' in sys.argv                         # (the shape only: shown as its turntable card, js/friends-spin.js)
+    global TRIS
+    if body:
+        TRIS = 12000
+    for kind in [a for a in sys.argv[1:] if not a.startswith('--')]:
         P, f, cam = build(kind)
-        vmap, idx, uv, img = bake(kind, P, f, cam)
-        r = {'v': P[vmap], 'f': idx.astype(np.int64), 'fw': np.zeros(len(vmap)), 'uv': uv, 'tex': img}
+        if body:
+            r = {'v': P, 'f': f.astype(np.int64), 'fw': np.zeros(len(P)), 'c': np.full((len(P), 3), 150, np.uint8)}
+        else:
+            vmap, idx, uv, img = bake(kind, P - np.array([cam['ax_x'], 0, 0]), f, cam)
+            r = {'v': P[vmap], 'f': idx.astype(np.int64), 'fw': np.zeros(len(vmap)), 'uv': uv, 'tex': img}
         e = M.pack(r)
         e['noeyes'] = 1
         data[kind] = e

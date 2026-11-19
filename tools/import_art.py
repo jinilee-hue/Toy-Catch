@@ -32,6 +32,17 @@ OUT = ROOT / 'assets' / 'img'
 FRIENDS = ['monkey', 'mouse', 'ant', 'seal', 'turkey', 'turtle', 'cat', 'cow', 'dog', 'fish', 'duck']
 # friends with no drawn game picture: cut from their character sheet by tools/sheet_front.py (not from ~/Downloads)
 SRC = {'duck': ROOT / 'design' / 'art' / 'duck_front.png'}
+# --spin: the friends redrawn as 360° turntables (user, 2026-11-19: design/turntable/<kind>.gif, frames in
+# design/turntable/<kind>/fNN.png, f13 = the front): their game picture is the turntable's front frame
+SPIN_SRC = ROOT / 'design' / 'turntable'
+# heads of the turntable friends where the measurement can't work (the fish is side-on; the turkey's fan is wider than
+# its head; the seal's head and body are one shape)
+SPIN_HEAD_FIX = {
+    'seal': (0.5, 0.22, 0.3, 0.22),        # (the head above the shirt's collar)
+    'turkey': (0.5, 0.2, 0.19, 0.13),      # (the head, not the fan behind it)
+    'turtle': (0.5, 0.21, 0.36, 0.21),     # (the head above the shell)
+    'fish': (0.42, 0.45, 0.33, 0.36),      # (side-on: held round its back)
+}
 MAX_H = 600
 # (u, v, rx, ry) as fractions of the picture (u, rx of its width; v, ry of its height) where the measurement can't
 # work: side-on friends (no head on top) are held round the top of the shell / body
@@ -122,7 +133,7 @@ def bleed(im):
     return Image.fromarray(arr, 'RGBA')
 
 
-def friends(check=None, only=None):
+def friends(check=None, only=None, spin=False):
     (OUT / 'friends').mkdir(parents=True, exist_ok=True)
     art, tiles = {}, []
     if only:                                             # keep the friends not imported this time
@@ -131,20 +142,25 @@ def friends(check=None, only=None):
     for kind in FRIENDS:
         if only and kind not in only:
             continue
-        im = Image.open(SRC.get(kind) or DL / f'toycatch_{kind}.png').convert('RGBA')
+        sp = SPIN_SRC / kind / 'f13.png'
+        im = Image.open(sp if spin and sp.exists() else SRC.get(kind) or DL / f'toycatch_{kind}.png').convert('RGBA')
         a = np.asarray(im)[..., 3]
         ys, xs = np.nonzero(a > 8)
         im = im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
         if im.height > MAX_H:
             im = im.resize((round(im.width * MAX_H / im.height), MAX_H), Image.LANCZOS)
-        head = HEAD_FIX.get(kind) or head_of(np.asarray(im)[..., 3])
+        if spin and sp.exists():
+            head = SPIN_HEAD_FIX.get(kind) or head_of(np.asarray(im)[..., 3])
+        else:
+            head = HEAD_FIX.get(kind) or head_of(np.asarray(im)[..., 3])
         im = bleed(im)
         buf = io.BytesIO()
         im.save(buf, 'WEBP', quality=88, method=6, exact=True)
         (OUT / 'friends' / f'{kind}.webp').write_bytes(buf.getvalue())
         art[kind] = {'w': im.width, 'h': im.height, 'head': head,
                      'src': 'data:image/webp;base64,' + base64.b64encode(buf.getvalue()).decode()}
-        print(f'{kind:7s} {im.size}  {len(buf.getvalue()) // 1024:3d} KB  head {head}{"  (fixed)" if kind in HEAD_FIX else ""}')
+        fx = SPIN_HEAD_FIX if spin and sp.exists() else HEAD_FIX
+        print(f'{kind:7s} {im.size}  {len(buf.getvalue()) // 1024:3d} KB  head {head}{"  (fixed)" if kind in fx else ""}')
         if check:
             t = Image.new('RGB', im.size, (120, 130, 150))
             t.paste(im, (0, 0), im)
@@ -179,6 +195,7 @@ if __name__ == '__main__':
     ap.add_argument('--notes', action='store_true')
     ap.add_argument('--check')
     ap.add_argument('--only', default='')
+    ap.add_argument('--spin', action='store_true', help='turntable friends: the front frame is the picture')
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     if not a.bg and not a.logo and not a.friends and not a.notes:
@@ -190,4 +207,4 @@ if __name__ == '__main__':
     if a.notes:
         notes()
     if a.friends:
-        friends(a.check, [k for k in a.only.split(',') if k])
+        friends(a.check, [k for k in a.only.split(',') if k], a.spin)

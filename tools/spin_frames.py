@@ -30,18 +30,30 @@ FRONT, STEP, COLS, CELL = 13, 15.0, 6, 440
 
 
 def cut(path):
-    a = np.asarray(Image.open(path).convert('RGB')).astype(np.float32) / 255
-    bg = (a.min(-1) > 0.94) & (a.max(-1) - a.min(-1) < 0.04)
-    m = ndi.binary_opening(~bg, iterations=1)
-    lab, n = ndi.label(m)
-    if n > 1:
-        m = lab == 1 + int(np.argmax(ndi.sum(m, lab, range(1, n + 1))))
-    m = ndi.binary_fill_holes(m)
+    a4 = np.asarray(Image.open(path).convert('RGBA')).astype(np.float32) / 255
+    a = a4[..., :3]
+    if a4[..., 3].min() < 0.5:
+        # (frames with alpha: the friend is what is opaque — the gaps between an arm, the body and the tail stay open;
+        # filled, they showed as white patches)
+        m = ndi.binary_opening(a4[..., 3] > 0.5, iterations=1)
+        lab, n = ndi.label(m)
+        if n > 1:
+            sz = ndi.sum(m, lab, range(1, n + 1))
+            m = np.isin(lab, 1 + np.nonzero(sz >= 0.002 * sz.max())[0])
+        al_src = a4[..., 3]
+    else:
+        bg = (a.min(-1) > 0.94) & (a.max(-1) - a.min(-1) < 0.04)
+        m = ndi.binary_opening(~bg, iterations=1)
+        lab, n = ndi.label(m)
+        if n > 1:
+            m = lab == 1 + int(np.argmax(ndi.sum(m, lab, range(1, n + 1))))
+        m = ndi.binary_fill_holes(m)
+        al_src = None
     # colours bled past the edge (the anti-aliased rim is mixed with the white: replaced by the inside's colours)
     core = ndi.binary_erosion(m, iterations=2)
     _, (iy, ix) = ndi.distance_transform_edt(~core, return_indices=True)
     rgb = a[iy, ix]
-    al = ndi.gaussian_filter(m.astype(np.float32), 0.8)
+    al = ndi.gaussian_filter(m.astype(np.float32), 0.8) if al_src is None else al_src * m
     return rgb, np.clip(al, 0, 1), m
 
 
@@ -89,6 +101,7 @@ def find_eyes(rgb, m, i):
 # it about its joint while the friend does its pose (the monkey waves), the rest of the front frame with the limb
 # taken off underneath
 POSE_LIMB = {'monkey': 'arm_r'}
+EYES_PAINT = ()                      # (kinds whose frames get the game's eyes)
 LIMB_IN = 0.05                       # (how far past the limb's top, x box height, its joint sits under the shirt)
 
 
@@ -113,8 +126,31 @@ def limb_layers(kind, rgb, al, m, x0, y0, bw, bh, s, axis, bottom):
     limb &= m
     # the body: the frame without the limb (it hangs beside the body: what was behind it is background). The limb
     # layer is drawn just behind the body, so turning up it comes out of the sleeve
-    gone = ndi.binary_dilation(limb, iterations=1)
+    gone = ndi.binary_dilation(limb, iterations=4)       # (its soft rim and the paw's last pixels too)
     brgb, bal = rgb, np.where(gone, 0.0, al)
+    # what the limb hid (the tail passing behind the new monkey's paw, the body's edge): where the rest closes over the
+    # gap, filled from round it — else raising the arm cut the tail in two
+    rr0 = max(3, int(0.05 * bh))
+    yd0, xd0 = np.mgrid[-rr0:rr0 + 1, -rr0:rr0 + 1]
+    rest0 = m & ~gone
+    # (only thin parts are bridged — the tail's two ends either side of the paw; the body is thick and stays out, else
+    # the whole arm's place was filled with a smear)
+    rt = max(3, int(0.025 * bh))
+    ydt, xdt = np.mgrid[-rt:rt + 1, -rt:rt + 1]
+    thin = rest0 & ~ndi.binary_opening(rest0, structure=(xdt * xdt + ydt * ydt) <= rt * rt)
+    gy_ = np.nonzero(gone.any(1))[0]
+    thin[:gy_.min() + int(0.55 * (gy_.max() - gy_.min()))] = False   # (the paw's end only: the sleeve's edge is up top)
+    closed = ndi.binary_closing(thin, structure=(xd0 * xd0 + yd0 * yd0) <= rr0 * rr0, iterations=1)
+    hole = closed & gone
+    if hole.any():
+        _, (iyt, ixt) = ndi.distance_transform_edt(~(thin & ~gone), return_indices=True)
+        fillc = (np.clip(rgb[iyt, ixt], 0, 1) * 255).astype(np.uint8)          # (the tail's own nearest fur)
+        fillc = np.stack([ndi.gaussian_filter(fillc[..., c_].astype(np.float32), 2.0) for c_ in range(3)], -1)
+        brgb = np.where(hole[..., None], fillc.astype(np.float32) / 255, rgb)
+        bal = np.where(hole, ndi.gaussian_filter(closed.astype(np.float32), 0.8), bal)
+    # (stray slivers left round the cut: off)
+    keep_b = ndi.binary_opening(bal > 0.5, iterations=2) | ~ndi.binary_dilation(gone, iterations=3)
+    bal = np.where(keep_b, bal, 0.0)
     # its joint: the limb's top end (along its long axis, the end that is higher — the paw hangs low), then on in
     # under the shirt to the shoulder. The limb is carried on up to there as a rounded stump of its own fur (the cut
     # where SAM parted it from the sleeve was a straight edge: raised, it looked chopped off) and drawn BEHIND the
@@ -150,9 +186,19 @@ def limb_layers(kind, rgb, al, m, x0, y0, bw, bh, s, axis, bottom):
     soft = np.stack([ndi.gaussian_filter(near_c[..., c], 2.0) for c in range(3)], -1)
     lrgb = np.where((ext & ~keep)[..., None], soft, rgb)
     lal = ndi.gaussian_filter(ext.astype(np.float32), 0.7)
-    print(f'  pose layer {name}: {limb.sum()} px (+ stump {stump.sum()} px), half width {half:.0f}, pivot {pivot[0]:.0f},{pivot[1]:.0f}')
+    # the sleeve over the limb's root (the shirt round the shoulder: drawn in front of the raised limb, which is drawn
+    # in front of the rest — so the limb comes out of the sleeve and passes in front of the tail)
+    hsv = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.int32)
+    red = ((hsv[..., 0] <= 6) | (hsv[..., 0] >= 172)) & (hsv[..., 1] > 150) & (hsv[..., 2] > 120) & m & ~gone   # (the shirt's red, not the dark fur under the chin)
+    # (the whole shirt — its own outline is the seam: a cut across it showed as a faint circle)
+    lab_r, n_r = ndi.label(ndi.binary_opening(red, iterations=1))
+    near_id = lab_r[int(np.clip(pivot[1], 0, bh - 1)), int(np.clip(pivot[0] - 0.03 * bh, 0, bw - 1))]
+    sleeve = lab_r == near_id if near_id else ndi.binary_opening(red, iterations=1)
+    sal = ndi.gaussian_filter(sleeve.astype(np.float32), 0.7) * (bal > 0.5)
+    print(f'  pose layer {name}: {limb.sum()} px (+ stump {stump.sum()} px), sleeve {sleeve.sum()} px, pivot {pivot[0]:.0f},{pivot[1]:.0f}')
     return (np.concatenate([brgb, np.clip(bal, 0, 1)[..., None]], -1),
-            np.concatenate([lrgb, np.clip(lal, 0, 1)[..., None]], -1), tuple(pivot), None)
+            np.concatenate([lrgb, np.clip(lal, 0, 1)[..., None]], -1), tuple(pivot),
+            np.concatenate([brgb, np.clip(sal, 0, 1)[..., None]], -1))
 
 
 def webp_url(rgba, size):
@@ -166,7 +212,9 @@ def pack(kind):
     fs = sorted(f for f in os.listdir(d) if re.match(r'f\d\d\.png$', f))
     frames = [cut(os.path.join(d, f)) for f in fs]
     raw = [np.asarray(Image.open(os.path.join(d, f)).convert('RGB')).astype(np.float32) / 255 for f in fs]
-    eyes = [find_eyes(raw[i], frames[i][2], int(fs[i][1:3])) for i in range(len(fs))]
+    # (the game's own eyes painted over the frames' — only for turntables whose eyes have no whites: the first monkey's;
+    # the redrawn friends (2026-11-19) have their own)
+    eyes = [find_eyes(raw[i], frames[i][2], int(fs[i][1:3])) if kind in EYES_PAINT else [] for i in range(len(fs))]
     # one pair of eyes all round: the same height in every frame (turning doesn't change it), and seen from the
     # front (within one step) the same size both — a slightly lighter painted eye came out smaller
     fr = [fe for i, fe in enumerate(eyes) if abs(int(fs[i][1:3]) - FRONT) <= 1 and len(fe) == 2]
@@ -213,8 +261,9 @@ def pack(kind):
     rgbF, alF, mF = frames[FRONT - 1]
     L = limb_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, s, axis, bottom)
     if L:
-        body, limb, pv, _ = L
+        body, limb, pv, sleeve = L
         pose = {'bone': POSE_LIMB[kind], 'body': webp_url(body, (cw, ch)), 'limb': webp_url(limb, (cw, ch)),
+                'sleeve': webp_url(sleeve, (cw, ch)), 'part': 0,
                 'pivot': [round(pv[0] / bw, 4), round(pv[1] / bh, 4)]}
         if os.environ.get('SPIN_DBG'):
             Image.fromarray((np.clip(body, 0, 1) * 255).astype(np.uint8), 'RGBA').save(os.path.expanduser(f'~/.cache/agent-scratch/tc/{kind}_body.png'))
