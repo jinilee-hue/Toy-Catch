@@ -292,6 +292,7 @@ void main() {
      frame index from the camera's direction in the friend's own frame (frame `front` faces it, `step`° apart — the
      turntable turns the friend so that its left side shows next) */
   const tmpS = new T.Vector3(), spinCanvas = {};
+  const LIMB_GAIN = 1.25;                               // (the card's arm up high enough to read as a wave)
   /* the turntable atlas with the game's own eyes (whites, glossy iris: js/eyes.js) painted over the frames' eyes */
   function spinEyed(kind) {
     const S = SPIN[kind], im = spinImgs[kind];
@@ -311,12 +312,28 @@ void main() {
     });
     return (spinCanvas[kind] = c);
   }
+  /* the front frame without the pose's limb (its own layer turns about the joint), with the game's eyes */
+  function spinBody(kind) {
+    const S = SPIN[kind], im = spinImgs[kind + ':body'];
+    if (!im) return null;
+    const c = document.createElement('canvas');
+    c.width = im.naturalWidth || im.width; c.height = im.naturalHeight || im.height;
+    const g = c.getContext('2d');
+    g.drawImage(im, 0, 0);
+    const list = (S.eyes && S.eyes[S.front]) || [];
+    if (window.Eyes && Eyes.paintAt && list.length)
+      Eyes.paintAt(g, list.map(([x, y, rx, ry, t, sx]) => [x * c.width, y * c.height, rx * c.width, ry * c.height, t, sx]));
+    return c;
+  }
   function spinCard(P, kind, bodyMat) {
     const S = SPIN[kind];
     const at = new T.Texture(spinEyed(kind));
     at.colorSpace = T.SRGBColorSpace; at.anisotropy = 8; at.needsUpdate = true;
     const SU = { uA: { value: new T.Vector2() }, uB: { value: new T.Vector2() }, uMix: { value: 0 },
-      uCell: { value: new T.Vector2(1 / S.cols, 1 / S.rows) } };
+      uCell: { value: new T.Vector2(1 / S.cols, 1 / S.rows) }, uBody: { value: null }, uUseBody: { value: 0 } };
+    const bodyC = S.pose && spinBody(kind), limbIm = S.pose && spinImgs[kind + ':limb'];
+    const tex = (im) => { const t = new T.Texture(im); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true; return t; };
+    if (bodyC) SU.uBody.value = tex(bodyC);
     const geo = new T.PlaneGeometry(S.w, S.h);
     geo.translate((0.5 - S.ax) * S.w, S.by * S.h - S.h / 2, 0);
     const mat = new T.MeshBasicMaterial({ map: at, alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
@@ -325,32 +342,73 @@ void main() {
       Object.assign(sh.uniforms, SU);
       sh.uniforms.uLit = mat.userData.uLit;
       sh.fragmentShader = sh.fragmentShader
-        .replace('void main() {', 'uniform vec2 uA, uB, uCell;\nuniform float uMix, uLit;\nvoid main() {')
+        .replace('void main() {', 'uniform vec2 uA, uB, uCell;\nuniform float uMix, uLit, uUseBody;\nuniform sampler2D uBody;\nvoid main() {')
         .replace('#include <map_fragment>', `
           vec4 ta = texture2D(map, uA + vMapUv * uCell), tb = texture2D(map, uB + vMapUv * uCell);
-          diffuseColor *= mix(ta, tb, uMix);
+          vec4 tx = mix(ta, tb, uMix);
+          if (uUseBody > 0.5) tx = texture2D(uBody, vMapUv);
+          diffuseColor *= tx;
           diffuseColor.rgb *= 1.0 + 0.22 * uLit;`)
         .replace('#include <colorspace_fragment>', SAT_GLSL);
     };
     const card = new T.Mesh(geo, mat);
     card.raycast = () => {};                             // (taps hit the body)
+    // the signature pose's limb (the monkey's waving arm): its own layer just behind the front frame, turned about its
+    // joint by the pose's bone (js/poses.js BONES via js/rig.js) — shown only while the pose moves it and the front
+    // frame is up
+    let limbG = null, bone = null;
+    if (bodyC && limbIm) {
+      const layerMat = (im) => {
+        const lm = new T.MeshBasicMaterial({ map: tex(im), alphaTest: 0.5, alphaToCoverage: true, toneMapped: false });
+        lm.onBeforeCompile = (sh) => { sh.uniforms.uLit = mat.userData.uLit;
+          sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float uLit;\nvoid main() {')
+            .replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.rgb *= 1.0 + 0.22 * uLit;')
+            .replace('#include <colorspace_fragment>', SAT_GLSL); };
+        return lm;
+      };
+      const px = (S.pose.pivot[0] - S.ax) * S.w, py = (S.by - S.pose.pivot[1]) * S.h;
+      const lg = new T.PlaneGeometry(S.w, S.h);
+      lg.translate((0.5 - S.ax) * S.w - px, S.by * S.h - S.h / 2 - py, 0);
+      const limb = new T.Mesh(lg, layerMat(limbIm)); limb.raycast = () => {};
+      limbG = new T.Group(); limbG.position.set(px, py, 0.004); limbG.add(limb); limbG.visible = false;   // (in front)
+      card.add(limbG);
+      const slIm = spinImgs[kind + ':sleeve'];
+      if (slIm) {                                        // the sleeve over the limb's root (it comes out of the sleeve)
+        const sg = new T.PlaneGeometry(S.w, S.h); sg.translate((0.5 - S.ax) * S.w, S.by * S.h - S.h / 2, 0.008);
+        const sl = new T.Mesh(sg, layerMat(slIm)); sl.raycast = () => {};
+        limbG.userData.sleeve = sl; sl.visible = false; card.add(sl);
+      }
+    }
     const cell = (i) => { const r = Math.floor(i / S.cols), c = i % S.cols; return [c / S.cols, 1 - (r + 1) / S.rows]; };
     card.onBeforeRender = (renderer, scene, camera) => {
+      const par = card.parent;
       tmpS.setFromMatrixPosition(camera.matrixWorld);
-      P.face.worldToLocal(tmpS);
+      par.worldToLocal(tmpS);
       const phi = Math.atan2(tmpS.x, tmpS.z);
       card.rotation.y = phi;
-      card.updateMatrix(); card.matrixWorld.multiplyMatrices(P.face.matrixWorld, card.matrix);
+      card.updateMatrix(); card.matrixWorld.multiplyMatrices(par.matrixWorld, card.matrix);
       card.modelViewMatrix.multiplyMatrices(camera.matrixWorldInverse, card.matrixWorld);
       card.normalMatrix.getNormalMatrix(card.modelViewMatrix);
+      if (limbG) {
+        card.updateMatrixWorld(true);                    // (the limb layer follows the turned card this frame)
+        if (!bone && P.rig) bone = P.rig.bones.find(b => b.name === S.pose.bone) || null;
+      }
       let f = S.front - phi * 180 / Math.PI / S.step;
       f = ((f % S.n) + S.n) % S.n;
       const a = Math.floor(f), b = (a + 1) % S.n, t = f - a;
       // (each frame shown whole, a short cross-fade only right at the hand-over: half-and-half mixes of two frames
       // were double letters and ghost eyes while it spun)
-      SU.uA.value.set(...cell(a)); SU.uB.value.set(...cell(b)); SU.uMix.value = Math.min(1, Math.max(0, (t - 0.42) / 0.16));
+      SU.uA.value.set(...cell(a)); SU.uB.value.set(...cell(b)); SU.uMix.value = Math.min(1, Math.max(0, (t - 0.3) / 0.4));
+      if (limbG) {
+        const mx = SU.uMix.value, shown = mx < 0.01 ? a : mx > 0.99 ? b : -1;     // (the one frame up, if one is)
+        const ang = window.__limbAng != null ? window.__limbAng : bone ? bone.rot.z * LIMB_GAIN : 0, on = Math.abs(ang) > 0.02 && shown === S.front;
+        SU.uUseBody.value = on ? 1 : 0;
+        limbG.visible = on;
+        if (limbG.userData.sleeve) limbG.userData.sleeve.visible = on;
+        if (on) { limbG.rotation.z = ang; limbG.updateMatrixWorld(true); }
+      }
     };
-    P.face.add(card); P.card = card;
+    P.pic.add(card); P.card = card;                     // (under the body: it hops / leans / turns with the pose)
     // the body stays for the claw, the shadow and taps — not drawn
     bodyMat.colorWrite = false; bodyMat.depthWrite = false;
   }
@@ -363,12 +421,16 @@ void main() {
       im.onerror = () => { console.warn('friend atlas failed:', k); res(); };
       im.src = D3[k].tex;
     }));
-    const spn = Object.keys(SPIN).filter(k => KINDS.includes(k)).map(k => new Promise((res) => {
+    const img = (src, put) => new Promise((res) => {
       const im = new Image();
-      im.onload = () => { spinImgs[k] = im; res(); };
-      im.onerror = () => { console.warn('friend turntable failed:', k); res(); };
-      im.src = SPIN[k].src;
-    }));
+      im.onload = () => { put(im); res(); };
+      im.onerror = () => { console.warn('friend turntable failed:', src.slice(0, 40)); res(); };
+      im.src = src;
+    });
+    const spn = Object.keys(SPIN).filter(k => KINDS.includes(k)).flatMap(k => [img(SPIN[k].src, (im) => { spinImgs[k] = im; })]
+      .concat(SPIN[k].pose ? [img(SPIN[k].pose.body, (im) => { spinImgs[k + ':body'] = im; }),
+        img(SPIN[k].pose.limb, (im) => { spinImgs[k + ':limb'] = im; }),
+        img(SPIN[k].pose.sleeve, (im) => { spinImgs[k + ':sleeve'] = im; })] : []));
     return Promise.all(atl.concat(spn, KINDS.map(k => new Promise((res) => {
       const im = new Image();
       im.onload = () => {
@@ -547,7 +609,7 @@ void main() {
         // (a slow idle turn either way, a little one while it hangs from the claw — so the volume shows; wider for
         // the 3D friends, which have real sides. Held by the neck it can't twist far: ±5° — at ±15° its ears and
         // cheeks swung through the prongs)
-        const amp = FLAT ? 0 : is3d ? 0.24 : PUFF.sway;
+        const amp = FLAT || P.card ? 0 : is3d ? 0.24 : PUFF.sway;   // (a turntable card: no idle turn — it jumped between frames)
         const sway = amp * (Math.sin(t * 0.8 + ph) * sit + Math.sin(t * 2.1 + ph) * 0.35 * s.hk);
         P.face.rotation.y = want - tmpE.y + sway;
       }

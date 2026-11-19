@@ -85,6 +85,68 @@ def find_eyes(rgb, m, i):
     return eyes
 
 
+# the signature pose's moving limb (js/poses.js BONES), cut out of the front frame as a layer of its own: the game turns
+# it about its joint while the friend does its pose (the monkey waves), the rest of the front frame with the limb
+# taken off underneath
+POSE_LIMB = {'monkey': 'arm_r'}
+
+
+def limb_layers(kind, rgb, al, m, x0, y0, bw, bh, s, axis, bottom):
+    """(body RGBA, limb RGBA, pivot (x, y) in box px) for the front frame, or None"""
+    import cv2
+    name = POSE_LIMB.get(kind)
+    pj_path = os.path.join(ROOT, 'design', 'parts', 'parts.json')
+    if not name or not os.path.exists(pj_path):
+        return None
+    pj = json.load(open(pj_path))[kind]
+    part = [q for q in pj['parts'] if q['name'] == name][0]
+    lab = np.asarray(Image.open(os.path.join(ROOT, 'design', 'parts', f'{kind}.png')))
+    art = json.loads(re.search(r'=\s*(\{.*\});?\s*$', open(os.path.join(ROOT, 'js', 'friends-art.js')).read(), re.S).group(1))[kind]
+    W, H, u = art['w'], art['h'], art['head'][0]
+    w = W * PX
+    rgb, al, m = rgb[y0:y0 + bh, x0:x0 + bw], al[y0:y0 + bh, x0:x0 + bw], m[y0:y0 + bh, x0:x0 + bw]
+    mpath = os.path.join(SRC, kind, f'limb_{name}.png')         # (SAM 2 on the front frame: tools/turntable_limb.py)
+    if not os.path.exists(mpath):
+        return None
+    limb = np.asarray(Image.open(mpath).convert('L'))[y0:y0 + bh, x0:x0 + bw] > 127
+    limb &= m
+    # the body: the frame without the limb (it hangs beside the body: what was behind it is background). The limb
+    # layer is drawn just behind the body, so turning up it comes out of the sleeve
+    gone = ndi.binary_dilation(limb, iterations=1)
+    brgb, bal = rgb, np.where(gone, 0.0, al)
+    lal = ndi.gaussian_filter(limb.astype(np.float32), 0.7) * al
+    # its joint: the limb's end toward the shoulder — along its long axis, the end that is higher (the paw hangs
+    # low), a little in from that end (the touching edge along the shirt ran half its length: the arm turned about
+    # its middle)
+    hsv = cv2.cvtColor((np.clip(rgb, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2HSV).astype(np.int32)
+    red = ((hsv[..., 0] <= 8) | (hsv[..., 0] >= 170)) & (hsv[..., 1] > 120) & m
+    ly, lx = np.nonzero(limb)
+    c0 = np.array([lx.mean(), ly.mean()])
+    ev, evec = np.linalg.eigh(np.cov(np.stack([lx - c0[0], ly - c0[1]])))
+    ax_ = evec[:, 1]
+    if ax_[1] > 0:
+        ax_ = -ax_                                     # (pointing up the arm)
+    t = (lx - c0[0]) * ax_[0] + (ly - c0[1]) * ax_[1]
+    t_top = np.percentile(t, 97)
+    pivot = tuple(c0 + ax_ * (t_top - 0.16 * (t_top - np.percentile(t, 3))))
+    # the sleeve round the joint (the shirt within reach of it): drawn over the raised limb, so it comes out of the
+    # sleeve, in front of the body
+    yy, xx = np.mgrid[0:bh, 0:bw]
+    near = np.hypot(xx - pivot[0], yy - pivot[1]) < 0.045 * bh
+    sleeve = red & near & ~limb
+    sal = ndi.gaussian_filter(sleeve.astype(np.float32), 0.8) * al
+    print(f'  pose layer {name}: {limb.sum()} px, sleeve {sleeve.sum()} px, pivot {pivot[0]:.0f},{pivot[1]:.0f}')
+    return (np.concatenate([brgb, np.clip(bal, 0, 1)[..., None]], -1),
+            np.concatenate([rgb, np.clip(lal, 0, 1)[..., None]], -1), pivot,
+            np.concatenate([rgb, np.clip(sal, 0, 1)[..., None]], -1))
+
+
+def webp_url(rgba, size):
+    im = Image.fromarray((np.clip(rgba, 0, 1) * 255 + 0.5).astype(np.uint8), 'RGBA').resize(size, Image.LANCZOS)
+    buf = io.BytesIO(); im.save(buf, 'WEBP', quality=88, method=6)
+    return 'data:image/webp;base64,' + base64.b64encode(buf.getvalue()).decode()
+
+
 def pack(kind):
     d = os.path.join(SRC, kind)
     fs = sorted(f for f in os.listdir(d) if re.match(r'f\d\d\.png$', f))
@@ -133,10 +195,21 @@ def pack(kind):
     url = 'data:image/webp;base64,' + base64.b64encode(buf.getvalue()).decode()
     print(f'{kind}: {n} frames, cell {cw}x{ch}, atlas {COLS * cw}x{rows * ch}, {len(buf.getvalue()) // 1024} KB, '
           f'scale {s:.5f}/px, axis {axis:.1f}, bottom {bottom:.1f} (box {bw}x{bh})')
+    pose = None
+    rgbF, alF, mF = frames[FRONT - 1]
+    L = limb_layers(kind, rgbF, alF, mF, x0, y0, bw, bh, s, axis, bottom)
+    if L:
+        body, limb, pv, sleeve = L
+        pose = {'bone': POSE_LIMB[kind], 'body': webp_url(body, (cw, ch)), 'limb': webp_url(limb, (cw, ch)),
+                'sleeve': webp_url(sleeve, (cw, ch)),
+                'pivot': [round(pv[0] / bw, 4), round(pv[1] / bh, 4)]}
+        if os.environ.get('SPIN_DBG'):
+            Image.fromarray((np.clip(body, 0, 1) * 255).astype(np.uint8), 'RGBA').save(os.path.expanduser(f'~/.cache/agent-scratch/tc/{kind}_body.png'))
+            Image.fromarray((np.clip(limb, 0, 1) * 255).astype(np.uint8), 'RGBA').save(os.path.expanduser(f'~/.cache/agent-scratch/tc/{kind}_limb.png'))
     eyes_c = [[[round((e[0] - x0) / bw, 4), round((e[1] - y0) / bh, 4), round(e[2] / bw, 4), round(e[3] / bh, 4),
                 round(e[4], 1), e[5]] for e in fe] for fe in eyes]
     print('  eyes per frame:', [len(fe) for fe in eyes])
-    return {'n': n, 'cols': COLS, 'rows': rows, 'front': FRONT - 1, 'step': STEP, 'eyes': eyes_c,
+    return {'n': n, 'cols': COLS, 'rows': rows, 'front': FRONT - 1, 'step': STEP, 'eyes': eyes_c, 'pose': pose,
             'w': round(bw * s, 5), 'h': round(bh * s, 5),                  # the card, world units
             'ax': round(axis / bw, 5), 'by': round(bottom / bh, 5),         # axis / ground in card fractions
             'src': url}
