@@ -120,11 +120,9 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 #app[data-screen="game"] .hud { opacity: 1; }
 .hud .lbl { color: #ffe14a; }
 .hud-l { position: absolute; left: calc(4.5 * var(--u)); top: calc(9.6 * var(--u) - var(--hb) / 2); display: flex; align-items: center; gap: calc(1.6 * var(--u)); }
-/* the coins left, right of the target — where the round clock was (no clock any more: user "코인 횟수만큼 진행"; ?sec=N
-   brings the clock back for tests, game.js TIMER). Its right edge is where the time pill's was, left of sound / exit */
-.hud-r { position: absolute; right: calc(6.9 * var(--u) + 2.17 * var(--hb)); top: calc(9.6 * var(--u) - var(--hb) / 2); display: flex; align-items: center; }
+/* (no round clock any more: user "코인 횟수만큼 진행"; ?sec=N brings it back for tests, game.js TIMER. The coins stay
+   top left, as before — user: "코인 위치는 왼쪽이 맞는데..기존처럼") */
 #app:not(.timer) .time { display: none; }
-#app.timer .hud-r { right: calc(6.9 * var(--u) + 2.17 * var(--hb) + 3.6 * var(--hb)); }
 .score {
   position: relative; height: var(--hb); padding: 0 calc(.34 * var(--hb)) 0 calc(.06 * var(--hb));
   display: flex; align-items: center; gap: calc(.11 * var(--hb));
@@ -134,8 +132,8 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
   transform-origin: 30% 50%;
 }
 .score b { min-width: 1.5em; text-align: center; }
-.hud-r .score { padding-right: calc(.26 * var(--hb)); }
-.hud-r .score b { min-width: 1.1em; }                   /* (coins now: one or two digits) */
+.hud-l .score { padding-right: calc(.26 * var(--hb)); }
+.hud-l .score b { min-width: 1.1em; }                   /* (coins now: one or two digits) */
 /* the score's icon = a gold coin with the star raised on it (user: "이 별도 동전안에 별로 들어가게"), like the coin that goes
    in the slot — drawn in index.html as an SVG with no outlines (rim and face are only light and shade, the star has a soft
    shadow under it). Round with the pill's end. A shine sweeps over it now and then; it flips twice when points come in.
