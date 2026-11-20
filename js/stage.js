@@ -100,8 +100,43 @@
     const yTop = (1 - a.y) / 2;                                  // where the marquee top lands now
     cam.setViewOffset(w, h, 0, (yTop - f.top * (1 - 0.22 * f.push)) * h, w, h);
     cam.updateProjectionMatrix();
+    S.base = { pos: cam.position.clone(), quat: cam.quaternion.clone(), offY: cam.view.offsetY };
+    if (S.shotK > 0) applyShot();
     S.dist = d;
     if (S.onResize) S.onResize(w, h);
+  };
+
+  /* camera shots (user: the camera moves only when the scene changes — going down to the prize door, the coin slot):
+     S.shotTo({ pos, look }, ms) blends from the framed view (S.base) to that pose and holds it; S.shotTo(null, ms) goes
+     back. The HTML layout keeps the framed view (layout() isn't re-run), so shots run while the input is locked. */
+  S.shotK = 0; S.shotPose = null;
+  const shotO = new T.PerspectiveCamera();             // (a camera: its lookAt aims -z, an Object3D's aims +z)
+  function applyShot() {
+    const cam = S.camera, b = S.base, k = S.shotK, P = S.shotPose;
+    if (!b) return;
+    cam.position.copy(b.pos); cam.quaternion.copy(b.quat);
+    let off = b.offY;
+    if (P && k > 0) {
+      shotO.position.copy(P.pos); shotO.lookAt(P.look);
+      cam.position.lerp(P.pos, k); cam.quaternion.slerp(shotO.quaternion, k);
+      off = b.offY * (1 - k);
+    }
+    if (cam.view) cam.view.offsetY = off;
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+  }
+  S.shotTo = function (pose, ms = 700, tok) {
+    if (pose) S.shotPose = pose;
+    const from = S.shotK, to = pose ? 1 : 0;
+    return S.tween(ms, k => { S.shotK = from + (to - from) * k; applyShot(); }, 'inOut', tok)
+      .then(r => { if (!pose && S.shotK === 0) S.shotPose = null; return r; });
+  };
+  S.shotReset = function () { S.shotK = 0; S.shotPose = null; applyShot(); };
+  /* a camera at the framed view (for placing things where they'll be once a shot is over) */
+  S.baseCam = function () {
+    const c = S.camera.clone(), b = S.base;
+    c.position.copy(b.pos); c.quaternion.copy(b.quat); if (c.view) c.view.offsetY = b.offY;
+    c.updateProjectionMatrix(); c.updateMatrixWorld();
+    return c;
   };
 
   S.project = function (v) {

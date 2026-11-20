@@ -1009,6 +1009,7 @@
     if (G.screen === 'game') return;
     const tok = ++G.tok;
     G.busy = true;
+    S.shotReset(); machine.prizeDoor.flap = 0; machine.prizeDoor.lit = false; app.classList.remove('shot');
     A.unlock(); A.startBgm();
     A.stopVoice();
     if (again) { setScreen('title'); await sleep(250); setupPlushes(); claw.set(claw.x, claw.HOME_Y, claw.z); }
@@ -1246,9 +1247,29 @@
       p.root.position.x = Math.max(lerp(xr0, ch.x, k), inGlass(s));                 // (into the middle of the chute as it shrinks)
     }, 'in', tok);
     A.sfxPlay('chute');
-    machine.group.remove(p.root);
+    // down to the prize door (user: "인형 뽑았을때 기계아래로 떨어지고 통에서 주워 올리는 효과"): the camera goes down to it
+    // while the friend falls through the cabinet (inside it, out of sight), lands in the bin behind the flap and the flap
+    // rattles; then the flap swings open and the friend comes up out of the bin to the player (prize). The camera moves
+    // only here, between scenes — never while aiming.
+    const pd = machine.prizeDoor;
+    pd.lit = true; app.classList.add('shot');
+    await S.shotTo(doorShot(), 650, tok);
+    if (tok !== G.tok) return;
+    const sIn = Math.min(PS * 0.62, pd.H * 0.82 / p.top, 1.15 / p.width);
+    p.root.rotation.y = 0; p.root.scale.setScalar(sIn);
+    p.root.position.set(pd.top.x, pd.top.y + 0.2, pd.z);                        // (behind the frame's top bar)
+    await S.tween(360, k => { p.root.position.y = lerp(pd.top.y + 0.2, pd.floor, k); }, 'in', tok);
+    if (tok !== G.tok) return;
+    p.bump(0.7); pd.knock = 1; A.sfxPlay('thud');
+    { const q = S.project(p.root.getWorldPosition(V(0, 0, 0))); FX.sparkle(q.x, q.y, 10, 3); }
+    await S.wait(520);
+    if (tok !== G.tok) return;
+    pd.flap = 1; A.sfxPlay('open');                                             // taken out: the flap swings up
+    await S.wait(220);
+    if (tok !== G.tok) return;
     G.caught.push(p.kind);
-    await prize(p, tok);
+    await prize(p, tok, true);
+    pd.flap = 0; pd.lit = false;
     if (tok !== G.tok) return;
     G.aimX = 0;
     A.motor(true, 1);
@@ -1259,23 +1280,39 @@
     nextRound(tok);
   }
   /* the prize pops out in front of the machine, big, with its word; then it flies into the tray */
-  async function prize(p, tok) {
-    const cam = S.camera;
+  /* the camera's pose for the prize door: a little above and to the right of it, close enough that the door, the panel's
+     edge over it and the chute's corner fill the screen */
+  function doorShot() {
+    const look = machine.group.localToWorld(machine.prizeDoor.look.clone());
+    const el = 10 * Math.PI / 180, yaw = 9 * Math.PI / 180, dist = 3.5 / (2 * Math.tan(S.camera.fov * Math.PI / 360));
+    const pos = look.clone().add(V(Math.sin(yaw) * Math.cos(el), Math.sin(el), Math.cos(yaw) * Math.cos(el)).multiplyScalar(dist));
+    return { pos, look };
+  }
+  /* fromDoor: it comes up out of the prize door's bin while the camera goes back up to the machine (S.shotTo(null)) —
+     where it lands is worked out from the framed view (S.baseCam), not from the moving camera */
+  async function prize(p, tok, fromDoor) {
+    const cam = fromDoor ? S.baseCam() : S.camera;
     const at = (fx, fy, dist) => { const v = V(fx * 2 - 1, -(fy * 2 - 1), 0.5).unproject(cam); return cam.position.clone().add(v.sub(cam.position).normalize().multiplyScalar(dist)); };
-    S.scene.add(p.root);
+    const s0 = fromDoor ? p.root.scale.x : 0.5;
+    if (fromDoor) S.scene.attach(p.root); else S.scene.add(p.root);
     p.root.rotation.set(0, 0, 0); p.hold(false); p.cheer(3.5);
-    const start = machine.group.localToWorld(V(machine.chute.x, -0.6, machine.D / 2 + 1.2));
+    const start = fromDoor ? p.root.position.clone() : machine.group.localToWorld(V(machine.chute.x, -0.6, machine.D / 2 + 1.2));
     const end = at(0.5, 0.56, 7.5);
     end.y -= 0.75;
     A.sfxPlay('prize');
+    if (fromDoor) { S.shotTo(null, 850, tok); setTimeout(() => app.classList.remove('shot'), 450); }
     // a 3D friend spins once on the way out (its cap stays under the TARGET banner); a flat picture doesn't (its edge)
     const spin = p.is3d; if (spin) { p.faceCam = false; p.face.rotation.y = 0; }
     const face0 = Math.atan2(cam.position.x - end.x, cam.position.z - end.z);
-    await S.tween(800, k => {
-      const pos = start.clone().lerp(end, k); pos.y += Math.sin(k * Math.PI) * 1.4;
-      p.root.position.copy(pos); p.root.scale.setScalar(lerp(0.5, 1.4, k));
+    // (from the door: out toward the player first, under the panel's ledge, then up — a straight line went up through it)
+    const ctrl = fromDoor ? machine.group.localToWorld(machine.group.worldToLocal(start.clone()).add(V(0, -0.3, 3.0))) : null;
+    await S.tween(fromDoor ? 950 : 800, k => {
+      let pos;
+      if (fromDoor) { const u = 1 - k; pos = start.clone().multiplyScalar(u * u).addScaledVector(ctrl, 2 * u * k).addScaledVector(end, k * k); }
+      else { pos = start.clone().lerp(end, k); pos.y += Math.sin(k * Math.PI) * 1.4; }
+      p.root.position.copy(pos); p.root.scale.setScalar(lerp(s0, 1.4, fromDoor ? k * k : k));
       if (spin) p.root.rotation.y = face0 - (1 - k) * Math.PI * 2;
-    }, 'out', tok);
+    }, fromDoor ? 'sine' : 'out', tok);
     p.root.lookAt(cam.position.x, p.root.position.y, cam.position.z);
     if (spin) { p.faceCam = true; p.bump(0.55); }    // lands in front of you: a squash
     if (p.pose) p.pose(1);                           // and does its signature pose, big (js/poses.js)
@@ -1395,6 +1432,7 @@
 
   function goTitle() {
     G.tok++; S.killTweens(); A.stopVoice(); A.motor(false);
+    S.shotReset(); machine.prizeDoor.flap = 0; machine.prizeDoor.lit = false; app.classList.remove('shot');
     G.busy = false; G.timerOn = false; stopHint();
     $('#prize').classList.remove('show'); burst.visible = false; burst.userData.disc.material.opacity = 0;
     for (const p of Object.values(G.all)) { if (p.root.parent) p.root.parent.remove(p.root); }

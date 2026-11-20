@@ -81,6 +81,11 @@
 
     // cabinet under the prize floor, posts, rails round the glass, the band and roof on top
     mesh(rbox(W + 0.72, 2.4, D + 0.72, 0.2), blue, group, [0, -1.2, 0]);
+    // its lower front (seen when the camera goes down to the prize door): a raised lighter panel with a pink trim, and a
+    // deeper plinth with a lip, so it reads as a solid piece standing on the ground
+    mesh(rbox(W + 0.3, 1.78, 0.1, 0.08), M.plastic('#a8def7', { rough: 0.42, clear: 0.5 }), group, [0, -1.33, D / 2 + 0.37]);
+    mesh(rbox(W + 0.42, 0.07, 0.07, 0.035), M.plastic('#ff8fd0', { rough: 0.2, clear: 0.9, emissive: '#ff5fc0', ei: 0.35 }), group, [0, -2.24, D / 2 + 0.43], { cast: false });
+    mesh(rbox(W + 0.96, 0.34, D + 0.96, 0.12), blueDeep, group, [0, -2.43, 0]);
     mesh(rbox(W + 0.5, 0.06, D + 0.5, 0.02), M.plastic('#f2e9ff', { rough: 0.7, clear: 0 }), group, [0, -0.02, 0], { cast: false });
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) mesh(rbox(0.34, H + 0.3, 0.34, 0.12), blue, group, [sx * (W / 2 + 0.17), H / 2, sz * (D / 2 + 0.17)], { cast: false });
     mesh(rbox(W + 0.62, 0.26, 0.32, 0.1), blue, group, [0, 0.06, D / 2 + 0.17]);
@@ -133,6 +138,34 @@
     const rim = M.plastic('#ffd23f', { rough: 0.3, clear: 0.8 });
     mesh(rbox(0.09, 0.09, CH.z1 - CH.z0 + 0.04, 0.04), rim, group, [CH.x1, CH.h, (CH.z0 + CH.z1) / 2]);
     mesh(rbox(CH.x1 - CH.x0 + 0.04, 0.09, 0.09, 0.04), rim, group, [chute.x, CH.h, CH.z0]);
+
+    // the prize door under the chute, on the cabinet's front (user: "인형 뽑았을때 기계아래로 떨어지고 통에서 주워 올리는
+    // 효과"): a yellow candy frame standing out of the front, a deep lilac bin behind it with a ledge the friend lands on,
+    // and a see-through flap hinged at the top that swings out when the friend is taken. Below the panel ledge, so the
+    // game's camera only sees it when it goes down to it (game.js correct: S.shot).
+    const FZ = D / 2 + 0.42, DW = 1.34, DH = 1.12, DY = -1.32;                 // the raised panel's front, opening size, middle
+    const door = grp(group, chute.x + 0.05, DY, FZ);
+    const frameM = M.candy('#ffd23f', { rough: 0.3 });
+    mesh(rbox(DW + 0.26, 0.16, 0.22, 0.07), frameM, door, [0, DH / 2 + 0.06, 0.08]);
+    mesh(rbox(DW + 0.26, 0.16, 0.22, 0.07), frameM, door, [0, -DH / 2 - 0.06, 0.08]);
+    for (const sx of [-1, 1]) mesh(rbox(0.16, DH + 0.28, 0.22, 0.07), frameM, door, [sx * (DW / 2 + 0.06), 0, 0.08]);
+    const binM = M.plastic('#5b4a9a', { rough: 0.85, clear: 0 });
+    mesh(new T.PlaneGeometry(DW, DH), binM, door, [0, 0, 0.012], { cast: false });              // the bin's back (dark)
+    mesh(rbox(DW, 0.1, 0.62, 0.04), M.plastic('#b9a2ef', { rough: 0.6, clear: 0.2 }), door, [0, -DH / 2 + 0.05, 0.2]);   // the ledge
+    const flapPivot = grp(door, 0, DH / 2, 0.2);
+    const flapM = new T.MeshPhysicalMaterial({ color: '#d8f0ff', transparent: true, opacity: 0.3, roughness: 0.08, clearcoat: 1, depthWrite: false, side: T.DoubleSide });
+    const flap = mesh(new T.PlaneGeometry(DW - 0.04, DH - 0.04), flapM, flapPivot, [0, -DH / 2, 0], { cast: false, recv: false });
+    flap.renderOrder = 9;
+    mesh(new T.PlaneGeometry(DW * 0.12, DH * 0.85), new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.35, depthWrite: false }), flapPivot, [-DW * 0.28, -DH / 2, 0.004], { rot: [0, 0, -0.35], cast: false, recv: false }).renderOrder = 10;
+    // a small light inside the bin, so it isn't lost in the ledge's shadow
+    const binLight = new T.PointLight('#fff1dc', 0, 2.6, 1.6); binLight.position.set(0, 0.2, 0.75); door.add(binLight);
+    const prizeDoor = {
+      group: door,
+      /* in the machine group: where the friend drops in (top of the bin), lands (on the ledge), and the shot's aim */
+      top: V(door.position.x, DY + DH / 2 - 0.1, FZ + 0.22), floor: DY - DH / 2 + 0.1, z: FZ + 0.22,
+      look: V(door.position.x + 0.45, DY + 0.3, FZ + 0.3), H: DH,
+      flap: 0, knock: 0, light: binLight,
+    };
 
     // ball pit: glossy candy balls (one instanced mesh) — more saturated than the first pastels (user: "공들도 컬러를 좀더
     // 채도가 높게")
@@ -416,8 +449,14 @@
 
     // ── per-frame: bulbs chase, the claw sways after moves, the stick eases back ────────────────────
     let chaseFast = 0, joyTarget = 0, joyK = 0, lastX = 0, lastZ = 0;
+    let flapK = 0, flapV = 0;
     function tick(dt, t) {
       ballClock += dt; ballU.uTime.value = ballClock;
+      // the prize door's flap: springs toward open (prizeDoor.flap 0..1); a knock (prizeDoor.knock) kicks it outward
+      if (prizeDoor.knock) { flapV += prizeDoor.knock * 6; prizeDoor.knock = 0; }
+      flapV += ((prizeDoor.flap - flapK) * 90 - flapV * 9) * dt; flapK += flapV * dt;
+      flapPivot.rotation.x = -Math.max(0, flapK) * 1.35;
+      binLight.intensity += ((prizeDoor.lit ? 3 : 0) - binLight.intensity) * Math.min(1, dt * 6);
       const speed = chaseFast > 0 ? 14 : 4;
       chaseFast = Math.max(0, chaseFast - dt);
       bulbs.forEach((b, i) => {
@@ -464,6 +503,7 @@
 
     const api = {
       group, W, D, H, SHELF_Y, claw, chute, bulbs, coin, coinPlate, joy, stick, panel, btnRed, btnYel, btnRed2, glassF, back, ceil, lamp,
+      prizeDoor,
       /* six seats in a zig-zag (back row on the shelf, front row in the balls): every back seat sits in the gap between
          two front ones, so all six letters show; neighbours are ~1.1 apart along x */
       slots: [
