@@ -44,6 +44,10 @@ SPIN_HEAD_FIX = {
     'fish': (0.42, 0.45, 0.33, 0.36),      # (side-on: held round its back)
 }
 MAX_H = 600
+# the turntable pictures all fill their frames, so at MAX_H every friend came out the same height — the long, flat fish
+# was huge next to the others (user: "물고기는 왜케 크게 들어가?"). Heights for the spin pictures of friends drawn smaller:
+# the fish about as wide as its old picture (598 px)
+SPIN_H = {'fish': 440}
 # (u, v, rx, ry) as fractions of the picture (u, rx of its width; v, ry of its height) where the measurement can't
 # work: side-on friends (no head on top) are held round the top of the shell / body
 HEAD_FIX = {
@@ -147,8 +151,9 @@ def friends(check=None, only=None, spin=False):
         a = np.asarray(im)[..., 3]
         ys, xs = np.nonzero(a > 8)
         im = im.crop((xs.min(), ys.min(), xs.max() + 1, ys.max() + 1))
-        if im.height > MAX_H:
-            im = im.resize((round(im.width * MAX_H / im.height), MAX_H), Image.LANCZOS)
+        mh = SPIN_H.get(kind, MAX_H) if spin and sp.exists() else MAX_H
+        if im.height > mh:
+            im = im.resize((round(im.width * mh / im.height), mh), Image.LANCZOS)
         if spin and sp.exists():
             head = SPIN_HEAD_FIX.get(kind) or head_of(np.asarray(im)[..., 3])
         else:
