@@ -482,32 +482,23 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 }
 
 /* voice language toggle (EN / 한): the instructions are spoken in English or Korean; letter sounds and words stay English.
-   Same height (--hb) and candy look as the sound / exit jellies next to it: a white plate with the same side
-   thickness, a groove pressed into it, and the knob = the same blue jelly sliding in the groove. */
+   Round flags only, like every phonics game (user: "파닉스 게임들 다 국기로 통일하자", "국기랑 기존에 버튼이랑 겹쳐서 나오는데
+   국기로 통일해" — the blue jelly knob showed as a ring round the flag): a white plate with the sound / exit jellies' side
+   thickness and a groove pressed into it; the chosen flag fills a white knob (a thin white rim), the other small and dimmed. */
 .lang-tog { --e: calc(.09 * var(--hb));
   position: relative; display: flex; align-items: center; gap: calc(.03 * var(--hb)); height: var(--hb); padding: 0 calc(.08 * var(--hb));
   border: 0; border-radius: 999px; translate: 0 calc(-.5 * var(--e));
   background: radial-gradient(130% 80% at 50% -6%, rgba(255,255,255,.9) 0 40%, rgba(255,255,255,0) 52%), linear-gradient(#ffffff, #e4eefb);
   box-shadow: inset 0 0 calc(.05 * var(--hb)) #c9daf0, 0 var(--e) 0 0 #b9cde9, 0 calc(var(--e) + .06 * var(--hb)) calc(.15 * var(--hb)) rgba(8,40,120,.3);
-  cursor: pointer; font: 800 calc(.333 * var(--hb))/1 'Baloo 2', system-ui, sans-serif; color: #2f5fb3; -webkit-tap-highlight-color: transparent; }
+  cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .lang-tog::before { content: ''; position: absolute; inset: calc(.07 * var(--hb)); border-radius: 999px; pointer-events: none;
   background: linear-gradient(#d3e2f6, #e6effb); box-shadow: inset 0 calc(.05 * var(--hb)) calc(.08 * var(--hb)) rgba(30,70,150,.28); }
-.lang-tog .knob { --e2: calc(.05 * var(--hb));
-  position: absolute; top: calc(.075 * var(--hb)); left: calc(.1 * var(--hb)); width: calc(.8 * var(--hb)); height: calc(.8 * var(--hb)); border-radius: 50%;
-  background:
-    radial-gradient(130% 80% at 50% -6%, rgba(255,255,255,.5) 0 40%, rgba(255,255,255,.28) 47%, rgba(255,255,255,0) 52%),
-    radial-gradient(circle at 50% 118%, #9fe0ff 0, rgba(255,255,255,0) 46%),
-    linear-gradient(#6cc4ff, #2b8ff0 50%, #1d6fd8);
-  box-shadow: inset 0 0 calc(.06 * var(--hb)) #1a63c8, 0 var(--e2) 0 0 #1650aa, 0 calc(var(--e2) + .03 * var(--hb)) calc(.08 * var(--hb)) rgba(8,40,120,.35);
+.lang-tog .knob { position: absolute; top: calc(.1 * var(--hb)); left: calc(.1 * var(--hb)); width: calc(.8 * var(--hb)); height: calc(.8 * var(--hb)); border-radius: 50%;
+  background: #fff; box-shadow: 0 calc(.03 * var(--hb)) calc(.07 * var(--hb)) rgba(8,40,120,.32);
   transition: transform .25s cubic-bezier(.3,1.4,.5,1); }
-.lang-tog .knob::before { content: ''; position: absolute; left: 21%; top: 16%; width: 15%; height: 9%; border-radius: 50%; background: rgba(255,255,255,.92); rotate: -32deg; }
 .lang-tog[data-l="ko"] .knob { transform: translateX(calc(.87 * var(--hb))); }
-.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); padding-top: calc(.03 * var(--hb)); transition: color .25s; color: #7f95c6; }
-.lang-tog .flag.on { color: #fff; text-shadow: 0 calc(.03 * var(--hb)) 0 #123f8f; }
-/* the language as round flags, like every phonics game (user: "파닉스 게임들 다 국기로 통일하자"); the chosen one full size on
-   the knob, the other smaller and dimmed */
-.lang-tog .flag svg { width: 72%; height: 72%; border-radius: 50%; box-shadow: 0 0 0 calc(.025 * var(--hb)) rgba(255,255,255,.9), 0 calc(.02 * var(--hb)) calc(.04 * var(--hb)) rgba(8,40,120,.3);
-  transition: transform .25s ease, opacity .25s ease, filter .25s ease; }
-.lang-tog .flag:not(.on) svg { transform: scale(.72); opacity: .6; filter: grayscale(.3); }
+.lang-tog .flag { position: relative; z-index: 1; display: grid; place-items: center; width: calc(.84 * var(--hb)); height: calc(.84 * var(--hb)); }
+.lang-tog .flag svg { width: 86%; height: 86%; border-radius: 50%; transition: transform .25s ease, opacity .25s ease, filter .25s ease; }
+.lang-tog .flag:not(.on) svg { transform: scale(.68); opacity: .6; filter: grayscale(.3); }
 .lang-tog:active { transform: scale(.96); }
 #app[data-screen="game"] .lang-tog { display: none; }
