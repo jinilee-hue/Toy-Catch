@@ -115,9 +115,16 @@
       const sg = mesh(new T.PlaneGeometry(D, H), M.glass(0.12), group, [sx * W / 2, H / 2, 0], { rot: [0, Math.PI / 2, 0], cast: false, recv: false });
       sg.renderOrder = 9; sg.userData.glass = true;
     }
-    const glintM = new T.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.22, depthWrite: false });
-    for (const [x, w, o] of [[-2.2, 0.36, 0.2], [-1.75, 0.12, 0.16], [2.6, 0.28, 0.14]]) {
-      const gl = mesh(new T.PlaneGeometry(w, H * 1.1), glintM.clone(), group, [x, H / 2 + 0.1, D / 2 + 0.03], { rot: [0, 0, -0.42], cast: false, recv: false });
+    // the glass's diagonal glints: short, only in the band above the friends' heads, fading at both ends — full-height
+    // ones ran across the friends (user: "유리창에 사선으로 빛 효과 들어가는게 자꾸 캐릭터를 가려서 빼는게 나을까?")
+    const glintTex = M.tex(4, 128, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, 0, h);
+      gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.3, 'rgba(255,255,255,1)'); gr.addColorStop(0.7, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    const glintM = new T.MeshBasicMaterial({ map: glintTex, transparent: true, opacity: 0.22, depthWrite: false });
+    for (const [x, w, o] of [[-2.55, 0.36, 0.22], [-2.1, 0.12, 0.18], [2.75, 0.28, 0.16]]) {
+      const gl = mesh(new T.PlaneGeometry(w, 1.35), glintM.clone(), group, [x, H - 0.72, D / 2 + 0.03], { rot: [0, 0, -0.42], cast: false, recv: false });
       gl.material.opacity = o; gl.renderOrder = 11; gl.userData.glass = true;
     }
 
