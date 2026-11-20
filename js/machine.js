@@ -376,7 +376,9 @@
       g.userData.cap = cap; return g;
     };
     // (spaced out from the middle, where START / the DOWN button sit — user: "간격을 벌려달라는거지")
-    const btnRed = btn(-3.42, 0.12, '#f0423c'), btnYel = btn(2.6, 0.2, '#ffcf2e', 0.17), btnRed2 = btn(3.04, -0.05, '#f0423c', 0.17);
+    // (the second small red button by the coin slot is gone: the slot moved left into its place — at the panel's end it had
+    // no room on its right, user: "코인 동전 넣는곳이 우측 여백이 없으니까 옆에 빨간색 버튼 하나 삭제하고 동전투입구는 왼쪽으로")
+    const btnRed = btn(-3.42, 0.12, '#f0423c'), btnYel = btn(2.6, 0.2, '#ffcf2e', 0.17);
     // the big DOWN button: lies on the panel like the other buttons (user: "각도는 맞추고 크기를 지금처럼 크게"), with the
     // look the flat HTML one had: a glossy green dome with a white arrow, a white bezel, a grey outer ring. The dome's
     // texture is mapped straight down from above, so the arrow points at the player (= down on the screen). Hidden on
@@ -443,11 +445,11 @@
     // coin slot
     // (the slit runs across, so a coin going in shows its face to the player; a candy rim round it lights up as a coin
     // goes in — slotFlash)
-    const coinPlate = grp(panel, 3.55, 0.02, 0.1);
-    mesh(rbox(0.62, 0.06, 0.44, 0.05), M.chrome(), coinPlate, [0, 0.03, 0]);
+    const coinPlate = grp(panel, 3.24, 0.02, 0.06);
+    mesh(rbox(0.56, 0.06, 0.42, 0.05), M.chrome(), coinPlate, [0, 0.03, 0]);
     const slotRimM = M.candy('#ffd23f', { rough: 0.3, emissive: '#ffb300', ei: 0 });
-    mesh(rbox(0.5, 0.03, 0.18, 0.05), slotRimM, coinPlate, [0, 0.06, 0], { cast: false });
-    mesh(rbox(0.4, 0.02, 0.07, 0.01), new T.MeshBasicMaterial({ color: '#111111' }), coinPlate, [0, 0.076, 0], { cast: false });
+    mesh(rbox(0.45, 0.03, 0.17, 0.05), slotRimM, coinPlate, [0, 0.06, 0], { cast: false });
+    mesh(rbox(0.36, 0.02, 0.07, 0.01), new T.MeshBasicMaterial({ color: '#111111' }), coinPlate, [0, 0.076, 0], { cast: false });
     const coin = mesh(new T.CylinderGeometry(0.17, 0.17, 0.04, 40), [M.plastic('#e8a816', { rough: 0.25, clear: 1 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 })], group, [0, 0, 0], { cast: false });
     coin.visible = false;
 
@@ -506,7 +508,7 @@
     }
 
     const api = {
-      group, W, D, H, SHELF_Y, claw, chute, bulbs, coin, coinPlate, joy, stick, panel, btnRed, btnYel, btnRed2, glassF, back, ceil, lamp,
+      group, W, D, H, SHELF_Y, claw, chute, bulbs, coin, coinPlate, joy, stick, panel, btnRed, btnYel, glassF, back, ceil, lamp,
       prizeDoor,
       /* six seats in a zig-zag (back row on the shelf, front row in the balls): every back seat sits in the gap between
          two front ones, so all six letters show; neighbours are ~1.1 apart along x */
