@@ -63,6 +63,7 @@
     for (const k of Friends.KINDS) { G.all[k] = Friends.build(k); G.icons[k] = G.all[k].icon; }
     setBar(85);
     spot = makeSpot(); machine.group.add(spot.group);
+    skinCoin();
     burst = makeBurst(); S.scene.add(burst);
     S.onResize = layout;
     S.resize();
@@ -79,6 +80,26 @@
     window.__ready = true;
   }
 
+  /* the 3D coin (START and every go) = the HUD coin (user: "코인은 이 코인으로 만들어 넣어줘", "지금 코인은 너무 어두워"):
+     its faces are the HUD coin's SVG (rim, recessed face, raised star, gloss — without its painted edge band, the 3D coin
+     has a real one), drawn unlit and not tone-mapped so it's as bright as the HUD's; the edge in the SVG's edge gold. */
+  function skinCoin() {
+    const svg = $('.score .score-coin svg').cloneNode(true);
+    svg.querySelector('circle').remove();                // (the first circle = the painted edge band under the coin)
+    svg.setAttribute('viewBox', '5 5 90 90'); svg.setAttribute('width', 256); svg.setAttribute('height', 256);
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      c.getContext('2d').drawImage(img, 0, 0, 256, 256);
+      const tex = new T.CanvasTexture(c); tex.colorSpace = T.SRGBColorSpace; tex.anisotropy = 4;
+      tex.center.set(0.5, 0.5); tex.rotation = COIN_ROT;   // (a cylinder cap's uv runs round the axis: turn it upright)
+      const face = new T.MeshBasicMaterial({ map: tex, toneMapped: false });
+      const edge = new T.MeshBasicMaterial({ color: '#f0a51a', toneMapped: false });
+      machine.coin.material = [edge, face, face];
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+  }
+  const COIN_ROT = +(qs.get('coinrot') || -Math.PI / 2);
   /* the soft guide light from the claw down to the plush it would grab */
   /* the selection light: it comes out of the round lamp on the claw's trolley (the yellow circle on the purple box above
      the claw) and spreads down onto the friend under the claw (user: "집게 위에 가운데 원 거기서부터 나오게 해서 퍼지게") —
@@ -1024,7 +1045,7 @@
     coin.visible = true;
     await S.tween(900, k => {
       const y = local.y + 1.4 * (1 - k) + 0.12, z = local.z + 0.35 * (1 - k);
-      coin.position.set(local.x, y, z); coin.rotation.set(Math.PI / 2, 0, k * Math.PI * 5); coin.scale.setScalar(1.6 - 0.6 * k);
+      coin.position.set(local.x, y, z); coin.rotation.set(Math.PI / 2, 0, k * Math.PI * 6); coin.scale.setScalar(1.6 - 0.6 * k);
       if (Math.random() < 0.5) { const p = S.project(machine.group.localToWorld(coin.position.clone())); FX.sparkle(p.x, p.y, 1, 2); }
     }, 'in', tok);
     if (tok !== G.tok) return;
