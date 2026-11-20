@@ -441,9 +441,13 @@
     mesh(rbox(1.15, 0.56, 0.12, 0.06), M.plastic('#c49af0', { rough: 0.35 }), sg, [0, 0.28, 0]);
     mesh(new T.PlaneGeometry(1.0, 0.44), new T.MeshBasicMaterial({ map: scrTex, toneMapped: false }), sg, [0, 0.28, 0.063], { cast: false });
     // coin slot
+    // (the slit runs across, so a coin going in shows its face to the player; a candy rim round it lights up as a coin
+    // goes in — slotFlash)
     const coinPlate = grp(panel, 3.55, 0.02, 0.1);
-    mesh(rbox(0.42, 0.06, 0.62, 0.05), M.chrome(), coinPlate, [0, 0.03, 0]);
-    mesh(rbox(0.06, 0.02, 0.32, 0.01), new T.MeshBasicMaterial({ color: '#111111' }), coinPlate, [0, 0.065, 0], { cast: false });
+    mesh(rbox(0.62, 0.06, 0.44, 0.05), M.chrome(), coinPlate, [0, 0.03, 0]);
+    const slotRimM = M.candy('#ffd23f', { rough: 0.3, emissive: '#ffb300', ei: 0 });
+    mesh(rbox(0.5, 0.03, 0.18, 0.05), slotRimM, coinPlate, [0, 0.06, 0], { cast: false });
+    mesh(rbox(0.4, 0.02, 0.07, 0.01), new T.MeshBasicMaterial({ color: '#111111' }), coinPlate, [0, 0.076, 0], { cast: false });
     const coin = mesh(new T.CylinderGeometry(0.17, 0.17, 0.04, 40), [M.plastic('#e8a816', { rough: 0.25, clear: 1 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 }), new T.MeshStandardMaterial({ map: coinTex(), roughness: 0.3, metalness: 0.4 })], group, [0, 0, 0], { cast: false });
     coin.visible = false;
 
@@ -538,6 +542,8 @@
       dropPoint: () => panel.localToWorld(V(0, 0.05, 0.1)),
       joyPoint: () => joy.localToWorld(V(0, 0.45, 0)),
       slotPoint: () => coinPlate.localToWorld(V(0, 0.1, 0)),
+      /* the slot's rim glows (0..1) */
+      slotFlash(k) { slotRimM.emissiveIntensity = 1.6 * k; },
       /* the claw's x range and the depth it rides at */
       X_MIN: -W / 2 + 0.55, X_MAX: W / 2 - 0.55,
     };

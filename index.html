@@ -75,8 +75,18 @@
 
   <!-- game HUD (score · target · time), like the game mockup -->
   <div class="hud" aria-live="polite">
-    <!-- one row, no word labels: score + the caught-friends tray (left), the target letter (middle), time (right) -->
+    <!-- one row, no word labels: the caught-friends tray (left), the target letter (middle), the coins left (right) -->
     <div class="hud-l">
+      <div class="tray" id="tray"></div>
+    </div>
+    <div class="target" id="target">
+      <div class="tg-main">
+        <b class="tg-letter" id="tgLetter">M</b>
+        <button class="tg-snd" id="tgSnd" aria-label="Listen again"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.6L12 18.6V5.4L7.6 9.5z" fill="currentColor"/><path d="M15.4 8.6a4.6 4.6 0 0 1 0 6.8M17.9 6.2a8 8 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+    <!-- the coins left (user: "코인주고 코인 횟수만큼 진행"): where the round clock was -->
+    <div class="hud-r">
       <div class="score"><i class="score-coin" aria-hidden="true"><svg viewBox="0 0 100 100">
         <defs>
           <linearGradient id="scEdge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e39b10"/><stop offset="1" stop-color="#b56c06"/></linearGradient>
@@ -95,14 +105,7 @@
           <ellipse cx="45" cy="40" rx="7" ry="3.4" fill="url(#scGloss)" transform="rotate(-28 45 40)"/>
         </g>
         <ellipse cx="33" cy="21" rx="13" ry="5.5" fill="url(#scGloss)" transform="rotate(-32 33 21)"/>
-      </svg></i><b id="score" aria-label="Score">0</b></div>
-      <div class="tray" id="tray"></div>
-    </div>
-    <div class="target" id="target">
-      <div class="tg-main">
-        <b class="tg-letter" id="tgLetter">M</b>
-        <button class="tg-snd" id="tgSnd" aria-label="Listen again"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.6L12 18.6V5.4L7.6 9.5z" fill="currentColor"/><path d="M15.4 8.6a4.6 4.6 0 0 1 0 6.8M17.9 6.2a8 8 0 0 1 0 11.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
-      </div>
+      </svg></i><b id="score" aria-label="Coins">0</b></div>
     </div>
     <div class="time" id="timeBox">
       <i class="watch" aria-hidden="true"><svg viewBox="0 0 64 64">

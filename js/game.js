@@ -25,12 +25,12 @@
      ≤ hold: a sure catch · ≤ weak: a loose grip that may slip out on the way up · ≤ reach: a prong knocks the friend,
      nothing caught · further: nothing under the claw. Two misses in a row in a round and a loose grip holds. */
   const AIM = { hold: 0.2, weak: 0.4, reach: 0.62 };
-  /* coins (user: "못 잡으면 동전 점수가 깍이고 한번 게임을 할때마다 점수가 차감되게해줘. 물론 맞추면 … 지금처럼 늘어나는거"):
-     the score is your coins. You start with COINS.start; every go of the claw costs COINS.play (a coin drops into the
-     machine's slot); a go that doesn't bring up the target friend (nothing caught, it slipped out, the
-     wrong friend) costs COINS.miss more; the right friend pays 100 (+50 at the first try), as before. Never below 0 —
-     with no coins left the claw still plays (it's a learning game). */
-  const COINS = { start: 100, play: 10, miss: 20 };
+  /* coins = goes (user: "코인주고 코인 횟수만큼 진행", the recommended rules): you get COINS.start coins, every go of the claw
+     takes one — it goes into the machine's slot by the DOWN button, big, before the claw moves — the right friend gives
+     COINS.win back (it flies out of the friend into your coins), a miss or the wrong friend costs nothing more. No coins
+     left after a go: the game ends (NO COINS! → results). No round clock any more (?sec=N brings it back, for tests). */
+  const COINS = { start: 8, win: 1 };
+  const TIMER = qs.has('sec');
   const G = {
     screen: 'title', all: {}, inMachine: [], targets: [], round: -1, target: null, score: 0, caught: [], tries: 0,
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
@@ -53,6 +53,7 @@
     setBar(30);
     buildStart();
     S.init($('#stage'), { preserve: qs.has('preserve') });
+    app.classList.toggle('timer', TIMER);               // (the round clock only with ?sec=N)
     machine = Machine.build(); claw = machine.claw;
     S.machine = machine; S.scene.add(machine.group);
     FX.init($('#fx'));
@@ -1014,7 +1015,10 @@
     A.stopVoice();
     if (again) { setScreen('title'); await sleep(250); setupPlushes(); claw.set(claw.x, claw.HOME_Y, claw.z); }
     app.classList.add('inserting');                     // (not 'coin': that's the intro coins' class — it shrank the whole app into a coin)
-    // the coin flips in and drops into the slot
+    // the camera comes in to the coin slot while the coin flips in and drops into it, then goes back (user: the camera
+    // moves only between scenes — this, the prize door, the prize; never while aiming)
+    app.classList.add('shot');
+    S.shotTo(slotShot(), 750, tok);
     const slot = machine.slotPoint(), coin = machine.coin;
     const sp = slot.clone(), local = machine.group.worldToLocal(sp.clone());
     coin.visible = true;
@@ -1033,6 +1037,7 @@
     A.say('t:ready');
     await sleep(500);
     if (tok !== G.tok) return;
+    S.shotTo(null, 800, tok); setTimeout(() => app.classList.remove('shot'), 450);
     app.classList.remove('inserting');
     setScreen('game');
     G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
@@ -1060,7 +1065,7 @@
     A.sfxPlay('pop');
     await announce(G.target);
     if (tok !== G.tok) return;
-    G.busy = false; G.timerOn = true; G.idle = 0; setDrop(true);
+    G.busy = false; G.timerOn = TIMER; G.idle = 0; setDrop(true);
     if (G.round === 0 && !G.interacted && !qs.has('nohint')) runHint(tok);
   }
   function setTarget(L) {
@@ -1089,7 +1094,8 @@
     $('#timeBox').classList.add('paused');
     const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150); machine.pressDown();
     A.sfxPlay('tap');
-    payCoin(tok);                                        // a go costs a coin
+    await insertCoin(tok);                               // a go costs a coin: it goes into the slot, then the claw moves
+    if (tok !== G.tok) return;
     const cand = candidate();
     const zone = cand ? aimZone(cand) : 'none';
     const off = cand ? claw.x - cand.x : 0;              // the claw's offset from the head's middle
@@ -1166,7 +1172,6 @@
     if (tok !== G.tok) return;
     if (!held || slips) {
       G.miss++;
-      loseCoins(tok, 250);                              // nothing brought up: coins off
       if (!cand) { A.sfxPlay('whiff'); await A.say('t:miss'); }
       else if (zone === 'knock') { A.sfxPlay('whiff'); await A.say('t:center'); }
       else await A.say('t:slip');
@@ -1207,7 +1212,8 @@
   function detach(p) { machine.group.attach(p.root); p.hold(false); claw.setHolding(false); }
   function resume(tok) {
     if (tok !== G.tok) return;
-    G.busy = false; G.timerOn = G.time > 0; G.idle = 0; setDrop(true);
+    if (G.score <= 0) return outOfCoins(tok);          // that was the last coin
+    G.busy = false; G.timerOn = TIMER && G.time > 0; G.idle = 0; setDrop(true);
     $('#timeBox').classList.remove('paused');
     G.aimX = claw.x;
   }
@@ -1219,8 +1225,7 @@
     A.sfxPlay('fanfare'); machine.chase(3.5);
     for (const o of G.inMachine) o.cheer(2.6);
     p.cheer(3);
-    const gain = 100 + (G.tries === 0 ? 50 : 0);
-    addScore(gain, sp);                                  // the coins pop out of the friend and fly into the HUD coin
+    addScore(COINS.win, sp);                             // a coin back: it pops out of the friend and flies into your coins
     const fw = () => { const r = S.project(V(lerp(-3, 3, Math.random()), lerp(2.4, 3.8, Math.random()), 0)); FX.firework(r.x, r.y); A.sfxPlay('pop'); };
     fw(); setTimeout(fw, 350); setTimeout(fw, 700);
     await A.say('t:great3');
@@ -1280,6 +1285,13 @@
     nextRound(tok);
   }
   /* the prize pops out in front of the machine, big, with its word; then it flies into the tray */
+  /* the camera's pose for the coin slot (bottom right of the panel): a little above it and from the left, close */
+  function slotShot() {
+    const look = machine.slotPoint().add(V(-0.35, 0.5, 0));
+    const el = 16 * Math.PI / 180, yaw = -12 * Math.PI / 180, dist = 2.6 / (2 * Math.tan(S.camera.fov * Math.PI / 360));
+    const pos = look.clone().add(V(Math.sin(yaw) * Math.cos(el), Math.sin(el), Math.cos(yaw) * Math.cos(el)).multiplyScalar(dist));
+    return { pos, look };
+  }
   /* the camera's pose for the prize door: a little above and to the right of it, close enough that the door, the panel's
      edge over it and the chute's corner fill the screen */
   function doorShot() {
@@ -1357,7 +1369,6 @@
 
   async function wrong(p, tok) {
     A.sfxPlay('uhoh'); p.nope(1.4);
-    loseCoins(tok, 450);                                // the wrong friend: coins off
     const x0 = claw.x;
     S.tween(600, k => claw.set(x0 + Math.sin(k * Math.PI * 6) * 0.06 * (1 - k), claw.y, claw.z), 'linear');
     await A.say('t:uhoh');
@@ -1415,7 +1426,7 @@
     $('#resTitle').replaceChildren(titleCv); $('#resTitle').setAttribute('aria-label', title);
     // the score under the coins counts up once they've popped in
     const fs = $('#finalScore'), total = G.score;
-    fs.textContent = '0';
+    fs.textContent = '0'; fs.hidden = total <= 0;        // (the coins left: none after NO COINS — no big 0)
     setTimeout(() => { if (tok === G.tok) S.tween(900, k => { if (tok === G.tok) fs.textContent = Math.round(total * k); }, 'out'); }, 700);
     // (the word under each friend in navy, its first letter in that letter's jelly colour — the HUD target's)
     $('#caught').innerHTML = G.targets.map((L, i) => {
@@ -1512,7 +1523,7 @@
   }
   const spin = (k, turns, ph = 0) => 0.18 + 0.82 * Math.abs(Math.cos((1 - k) * Math.PI * turns + ph));   // face-on at k = 1
   function coinsIn(d, from) {
-    const tok = G.tok, H = hudCoin(), sz = H.s, n = Math.max(1, Math.min(12, Math.round(d / 12.5)));
+    const tok = G.tok, H = hudCoin(), sz = H.s, n = Math.max(1, Math.min(12, d));
     shown.pend += d;
     let left = d, landed = 0;
     for (let i = 0; i < n; i++) {
@@ -1561,28 +1572,45 @@
       el.animate(keys, { duration: T, delay: i * 120, easing: 'linear', fill: 'forwards' }).onfinish = () => el.remove();
     }
   }
-  /* a go of the claw costs a coin: a coin pops out of the HUD coin (−10) and a coin drops into the machine's slot by the
-     DOWN button (the START coin, shorter) — no coin flying across from the score: it cut across the glass and the claw on
-     its way down */
-  function payCoin(tok) {
-    if (!addScore(-COINS.play)) return;                 // no coins left: the go is free
-    A.sfxPlay('coin');                                  // (its clink, half a second in, is the coin going in)
+  /* a go of the claw costs a coin (user: "코인넣은 효과"): your coins go down by one, and a big gold coin pops up over the
+     machine's slot by the DOWN button, spins, comes down face-on and drops in — clink, the slot's rim lights up, sparkles,
+     INSERTED! on the panel's screen — then the claw moves. Kept at the slot: a coin flying over from your coins crossed
+     the glass and the claw. */
+  async function insertCoin(tok) {
+    if (G.score > 0) { G.score--; scoreBox('minus'); scoreTag(-1); countTo(300); }
     const coin = machine.coin, local = machine.group.worldToLocal(machine.slotPoint());
+    const e = new T.Euler(0, 0, 0, 'YXZ');
+    // (it pops up and to the LEFT of the slot: straight up it hid behind the letter coins down the right side)
+    const put = (y, z, s, turn, dx = 0) => {             // face-on to the player at turn = 0, 1, 2 …
+      coin.position.set(local.x + dx, y, z); coin.scale.setScalar(s);
+      e.set(Math.PI / 2, turn * Math.PI, 0); coin.quaternion.setFromEuler(e);
+    };
     coin.visible = true;
-    S.tween(420, k => {
-      coin.position.set(local.x, local.y + 0.12 + 0.8 * (1 - k), local.z + 0.22 * (1 - k));
-      coin.rotation.set(Math.PI / 2, 0, k * Math.PI * 3); coin.scale.setScalar(1.35 - 0.35 * k);
-    }, 'in', tok)
-      .then(() => S.tween(170, k => { coin.position.y = local.y + 0.12 - 0.2 * k; coin.scale.setScalar(1 - 0.4 * k); }, 'in', tok))
-      .then(() => {
-        coin.visible = false;
-        if (tok !== G.tok) return;
-        const q = S.project(machine.slotPoint()); FX.sparkle(q.x, q.y, 8, 3);
-      });
+    A.sfxPlay('coin');
+    // up it pops, spinning
+    await S.tween(380, k => put(local.y + 0.25 + 0.95 * k, local.z + 0.3, 0.2 + 1.9 * S.EASE.back(k), 2.5 * k, -0.9 * Math.sin(k * Math.PI / 2)), 'linear', tok);
+    if (tok !== G.tok) { coin.visible = false; return; }
+    // down, slowing its spin to face-on, smaller as it lines up with the slot
+    await S.tween(330, k => put(local.y + 1.2 - 1.02 * k * k, local.z + 0.3 - 0.3 * k, 2.1 - 1.0 * k, 2.5 + 1.5 * (1 - (1 - k) * (1 - k)), -0.9 * (1 - k * k)), 'linear', tok);
+    if (tok !== G.tok) { coin.visible = false; return; }
+    // in it goes
+    A.sfxPlay('chink');
+    const q = S.project(machine.slotPoint()); FX.sparkle(q.x, q.y, 14, 4); FX.stars(q.x, q.y, 6, 0.5);
+    machine.setScreen(['INSERTED!', `COINS ${G.score}`], '#ffd23f'); machine.chase(0.8);
+    S.tween(700, k => machine.slotFlash(Math.sin(Math.PI * k)), 'linear');
+    await S.tween(170, k => put(local.y + 0.18 - 0.26 * k, local.z, 1.1 - 0.5 * k, 4), 'in', tok);
+    coin.visible = false;
+    setTimeout(() => { if (tok === G.tok && G.target) machine.setScreen(['FIND', G.target.toUpperCase() + ' ' + G.target], '#ff8fd0'); }, 900);
   }
-  /* a go that didn't bring up the target friend: coins off (after a beat, so it lands with the "oh no") */
-  function loseCoins(tok, delay = 0) {
-    setTimeout(() => { if (tok === G.tok && addScore(-COINS.miss)) A.sfxPlay('lose'); }, delay);
+  /* no coins left after a go: the game ends */
+  async function outOfCoins(tok) {
+    G.busy = true; G.timerOn = false; setDrop(false);
+    A.sfxPlay('buzz');
+    showPrompt($('#bigMsg'), 'NO COINS!', 'pink', 10.5);
+    machine.setScreen(['NO COINS', 'GAME OVER'], '#ff8fd0');
+    await sleep(1700);
+    if (tok !== G.tok) return;
+    finish(tok);
   }
   function countScore(a, b) {
     const el = $('#score'), box = el.parentElement;

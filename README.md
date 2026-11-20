@@ -5,8 +5,8 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 
 ## 흐름
 1. **타이틀**: TOY CATCH 로고 · 기계 · START. 첫 터치에 배경음악 + "Hi, friends! Welcome to Toy Catch! … Press start to play!"
-2. **START** → 동전이 투입구로 들어가고 기계 화면에 `INSERTED! / READY TO PLAY!` → "Ready? Let's play!" → 카메라가 기계 쪽으로 다가간다.
-3. **4라운드**(m/a/s/t 무작위 순서, 라운드당 45초): 위 배너 `TARGET: Mm` + `CATCH THE 'M'!`, "Catch a friend that starts with /m/ … /m/".
+2. **START** → 카메라가 투입구로 다가가 동전이 들어가는 걸 보여 주고(`S.shotTo` + `slotShot`) 기계 화면에 `INSERTED! / READY TO PLAY!` → "Ready? Let's play!" → 카메라가 돌아와 기계 쪽으로 다가간다. 코인 8개가 위에서 쏟아져 오른쪽 위 코인 칸에 들어온다.
+3. **4라운드**(m/a/s/t 무작위 순서, 시간 제한 없음 — 코인 수만큼): 위 배너 `TARGET: Mm` + `CATCH THE 'M'!`, "Catch a friend that starts with /m/ … /m/".
    - 집게 이동: 조이스틱 드래그 · 기계 안 드래그 · 인형 탭(그 위로 이동) · ← →.  내리기: 초록 DOWN 버튼 · Space/Enter/↓.
    - 집게는 조준한 자리에 **그대로** 내려간다(친구 쪽으로 저절로 붙지 않음). 머리 가운데와의 거리(`AIM` in game.js)로 결과가 갈린다:
      ≤0.2 확실히 잡음 · ≤0.4 헐겁게 잡혀 올라가다 기울어 **미끄러질 수 있음**(가운데서 멀수록 35→85%, "Oh no, it slipped! So close!")
@@ -77,9 +77,17 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 - 시그니처 포즈: `js/poses.js` — 친구마다 귀·꼬리·팔·더듬이·지느러미 등 최대 4부위를 그림 비율 좌표로 정의해 셰이더에서
   움직임(그림자도 같이). 집게가 바로 위에 있으면 잔잔한 반복(내려가기 시작하면 멈춤), 상품으로 나올 때 크게 1번, 탭하면 1번,
   대기 중 5~8초마다 랜덤 1명. 확인: `dev/friends3d.html?pose` · `?pose=loop` · `&weights`(부위 색 표시) · `&ang=0,40&zoom=1.6`.
-- 동전(점수): 시작 100, 집게를 한 번 내릴 때마다 −10(DOWN 옆 동전 투입구로 동전이 쏙 들어감), 목표 친구를 못 뽑으면
-  (빈손·놓침·다른 친구) −20 더, 맞히면 지금처럼 +100(그 라운드 첫 시도면 +150). 0 아래로는 안 내려가고 0이어도 계속 할 수
-  있다. 값은 `game.js`의 `COINS`.
+- 코인 = 기회(2026-11-20, 사용자: "코인주고 코인 횟수만큼 진행", 권장안): 시작 8개, 집게를 한 번 내릴 때마다 1개. 내리면 먼저
+  큰 금화가 투입구 왼쪽 위로 튀어 올라 돌다가 정면으로 내려와 쏙 들어가고(짤랑, 투입구 테가 빛남, 반짝이, 기계 화면
+  `INSERTED! / COINS n`) 그다음 집게가 움직인다(`insertCoin`). 상단 코인에서 투입구로 날아가는 방식은 유리·집게를 가로질러
+  안 쓴다. 맞히면 1개를 돌려받고(친구에게서 금화가 튀어나와 코인 칸으로), 놓치거나 다른 친구면 더 빼지 않는다. 한 번 한 뒤
+  코인이 0이면 `NO COINS!` → 결과(결과의 큰 숫자 = 남은 코인, 0이면 숨김). 라운드 시계는 없앴고 그 자리에 코인 칸
+  (`.hud-r`). `?sec=N`이면 예전 시계가 돌아온다(테스트용). 값은 `game.js`의 `COINS`.
+- 경품 통(2026-11-20, 사용자: "기계아래로 떨어지고 통에서 주워 올리는 효과"): 기계 아래 몸체 앞면(밝은 판·분홍 띠·받침)에
+  노란 테 경품 문(`machine.prizeDoor`: 보라 통, 받침, 위 경첩 투명 덮개, 통 조명). 맞힌 친구가 구멍에 들어가면 카메라가 문으로
+  내려가고(`doorShot`), 친구가 통에 툭 떨어져 덮개가 흔들린 뒤 덮개가 열리고, 친구가 앞으로 나와(선반 밑으로) 위로 올라가
+  상품 자리로 오는 동안 카메라가 돌아간다(`prize(p, tok, true)`, 착지점은 `S.baseCam()` 기준). 카메라는 장면이 바뀔 때만
+  움직인다(시작 코인·경품 통·상품) — 조준 중엔 고정. 샷 동안 양옆 글자 코인·음표·로고는 숨김(`#app.shot`).
 - 동전 모션(`game.js` coinsIn / coinsOut, 그림은 상단 점수 동전 SVG 그대로): 들어올 때는 금화가 날아와 점수 동전에 하나씩 들어가고
   들어갈 때마다 숫자가 올라간다(시작 +100은 화면 위에서 쏟아짐, 정답은 잡힌 친구에게서 튀어나와 날아감, 꽃가루 위에 그림).
   나갈 때는 점수 동전에서 금화가 튀어나와 왼쪽 가장자리로 떨어지며 사라진다(뽑기 −10은 1개, 못 잡음 −20은 2개, 유리·집게를
@@ -170,7 +178,7 @@ python3 tools/serve.py 5231                    # http://127.0.0.1:5231/  (그냥
 zsh -ic '/Users/jini/.hermes/bin/uv run --with numpy python tools/build_voice.py'
 /Users/jini/.hermes/bin/uv run --with numpy --with scipy python tools/make_bgm.py
 ```
-URL 옵션: `?sec=10`(라운드 시간) · `?order=m,a,s,t` · `?kinds=cat,seal,ant,turtle,monkey,dog`(뒷줄 3 → 앞줄 3, 자리 고정) · `?nohint`.
+URL 옵션: `?sec=10`(라운드 시계를 다시 켬, 테스트용) · `?order=m,a,s,t` · `?kinds=cat,seal,ant,turtle,monkey,dog`(뒷줄 3 → 앞줄 3, 자리 고정) · `?nohint`.
 
 3D 인형 다시 만들기 — 형상 TripoSG(`~/dev/tools/TripoSG`, 자체 venv, `tools/tsg_mesh.py`), 색 배치 MV-Adapter
 (`~/dev/tools/MV-Adapter`, 자체 venv: torch · diffusers 0.32.2 · transformers 4.48.3 · peft 0.14 · trimesh, 가중치 SDXL fp16 +
