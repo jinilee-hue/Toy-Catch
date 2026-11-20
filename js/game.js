@@ -155,11 +155,13 @@
     });
     const flare = new T.Sprite(new T.SpriteMaterial({ map: flareTex, transparent: true, depthWrite: false, depthTest: false, blending: T.AdditiveBlending, opacity: 0, toneMapped: false }));
     flare.renderOrder = 12; group.add(flare);
-    // glitter: candy-coloured twinkles drifting down the beam on its sides and back (never across the friend's face),
-    // and a ring of them circling the friend's feet. Soft filled sparkles — no lines (user: "별 파티클에 흰색 라인들 주지말라니까")
+    // glitter: sparkles in the light's colour drifting down the beam and circling the friend's feet (never over a friend).
+    // The star is filled with its own colour, a little lighter than the glow round it — no white in it (user: "하얀색 별에
+    // 테두리를 같은 테두리 컬러로 채우면 안돼? 테두리보다 조금 밝은 컬러로 … 흰색이 어색해!"; an additive white core
+    // made it a white star with a coloured edge). The texture is grey-scale: the vertex colour paints it.
     const sparkTex = Mats.tex(64, 64, (g, w, h) => {
       const c = w / 2, glow = g.createRadialGradient(c, c, 0, c, c, c);
-      glow.addColorStop(0, 'rgba(255,255,255,0.9)'); glow.addColorStop(0.25, 'rgba(255,255,255,0.35)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+      glow.addColorStop(0, 'rgba(205,205,205,0.75)'); glow.addColorStop(0.3, 'rgba(205,205,205,0.3)'); glow.addColorStop(1, 'rgba(205,205,205,0)');
       g.fillStyle = glow; g.fillRect(0, 0, w, h);
       g.fillStyle = '#ffffff'; g.beginPath();                            // a plump four-point sparkle, filled
       for (let i = 0; i < 4; i++) {
@@ -171,15 +173,13 @@
     });
     const PAL = ['#ffd23f', '#ff6fb5', '#4fc3ff', '#b07cff', '#5ee0a0', '#ff9a3c'].map(h => new T.Color(h));
     const NB = 30, NR = 10, NS = NB + NR;
-    const spPos = new T.BufferAttribute(new Float32Array(NS * 3), 3), spCol = new Float32Array(NS * 4), coreCol = new Float32Array(NS * 3);
-    const spGeo = new T.BufferGeometry(), coreGeo = new T.BufferGeometry();
+    const spPos = new T.BufferAttribute(new Float32Array(NS * 3), 3), spCol = new Float32Array(NS * 4);
+    const spGeo = new T.BufferGeometry();
     spGeo.setAttribute('position', spPos); spGeo.setAttribute('color', new T.BufferAttribute(spCol, 4));
-    coreGeo.setAttribute('position', spPos); coreGeo.setAttribute('color', new T.BufferAttribute(coreCol, 3));
     const spMat = new T.PointsMaterial({ map: sparkTex, size: 1.0, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, opacity: 0, toneMapped: false });
-    const coreMat = new T.PointsMaterial({ map: sparkTex, size: 0.42, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: T.AdditiveBlending, opacity: 0, toneMapped: false });
-    const sparks = new T.Points(spGeo, spMat), cores = new T.Points(coreGeo, coreMat);
-    for (const o of [sparks, cores]) { o.frustumCulled = false; o.raycast = () => {}; group.add(o); }
-    sparks.renderOrder = 7; cores.renderOrder = 8;
+    const sparks = new T.Points(spGeo, spMat);
+    sparks.frustumCulled = false; sparks.raycast = () => {}; group.add(sparks); sparks.renderOrder = 7;
+    const light2 = new T.Color();                         // (the star's fill: the light's colour, a little lighter)
     const SP = Array.from({ length: NS }, (_, i) => ({ a: Math.random() * 6.283, rf: 0.15 + 0.85 * Math.sqrt(Math.random()),
       ph: Math.random(), sp: 0.16 + 0.14 * Math.random(), tw: Math.random() * 6.283, c: PAL[i % PAL.length] }));
     // a soft pool of light round the friend's feet
@@ -229,7 +229,8 @@
         pool.visible = pool.material.opacity > 0.003;
         // glitter: the full show only right over the friend (k ≈ 1); a little off, only a few faint ones
         const gk = Math.max(0, (k - 0.25) / 0.75) * (tune.glit ?? 1);
-        spMat.opacity = coreMat.opacity = Math.min(1, gk * 1.2); sparks.visible = cores.visible = spMat.opacity > 0.01;
+        spMat.opacity = Math.min(1, gk * 1.2); sparks.visible = spMat.opacity > 0.01;
+        light2.copy(col).lerp(white, 0.32);
         if (sparks.visible) {
           eu.crossVectors(dir, V(0, 0, 1)).normalize(); ew.crossVectors(eu, dir).normalize();
           // every friend's box on screen: no glitter over any friend (the beam to a front-row friend passes the back row)
@@ -260,10 +261,9 @@
               if (sp.y > r[2] - 0.15 * r[1] && sp.y < r[3]) fade *= Math.min(1, Math.max(0, (dx - 0.9) / 0.3));
             }
             const b = (0.25 + 0.75 * tw) * fade;
-            spCol[i * 4] = col.r; spCol[i * 4 + 1] = col.g; spCol[i * 4 + 2] = col.b; spCol[i * 4 + 3] = b;
-            coreCol[i * 3] = coreCol[i * 3 + 1] = coreCol[i * 3 + 2] = 0.6 * b * b;
+            spCol[i * 4] = light2.r; spCol[i * 4 + 1] = light2.g; spCol[i * 4 + 2] = light2.b; spCol[i * 4 + 3] = b;
           }
-          spPos.needsUpdate = true; spGeo.attributes.color.needsUpdate = true; coreGeo.attributes.color.needsUpdate = true;
+          spPos.needsUpdate = true; spGeo.attributes.color.needsUpdate = true;
         }
       },
     };
