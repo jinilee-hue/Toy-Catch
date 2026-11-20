@@ -90,15 +90,27 @@
     group.add(light, light.target);
     const tex = Mats.tex(8, 256, (g, w, h) => {
       const gr = g.createLinearGradient(0, 0, 0, h);
-      gr.addColorStop(0, 'rgba(255,244,214,1)'); gr.addColorStop(0.3, 'rgba(255,244,214,0.6)');
-      gr.addColorStop(0.85, 'rgba(255,244,214,0.24)'); gr.addColorStop(1, 'rgba(255,244,214,0)');
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,0.8)');
+      gr.addColorStop(0.85, 'rgba(255,255,255,0.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = gr; g.fillRect(0, 0, w, h);
     });
-    const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.BackSide, opacity: 0, toneMapped: false });
+    // (normal blending: a coloured light has to show on the machine's pale back wall, where additive light vanished)
+    const mat = new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: T.BackSide, opacity: 0, toneMapped: false });
+    const U = { uTime: { value: 0 }, uCol: { value: new T.Color('#ff4fa3') } };
     mat.onBeforeCompile = (sh) => {           // fades as the wall turns side-on to the camera: soft sides, no outline
-      sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying float vFace;\nvoid main() {\n  { vec4 mvp = modelViewMatrix * vec4(position, 1.0); vFace = abs(dot(normalize(normalMatrix * normal), normalize(-mvp.xyz))); }');
-      sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying float vFace;\nvoid main() {')
-        .replace('#include <map_fragment>', '#include <map_fragment>\n  diffuseColor.a *= vFace;');
+      sh.uniforms.uTime = U.uTime; sh.uniforms.uCol = U.uCol;
+      sh.vertexShader = sh.vertexShader.replace('void main() {', 'varying float vFace;\nvarying vec2 vRing;\nvoid main() {\n  vRing = position.xz;\n  { vec4 mvp = modelViewMatrix * vec4(position, 1.0); vFace = abs(dot(normalize(normalMatrix * normal), normalize(-mvp.xyz))); }');
+      // a stage light (user: "선택됐을때 좀더 화려한 조명", "무대 조명처럼 여러색이 번갈아서 번쩍번쩍"): the whole beam in one
+      // candy colour at a time (no white inside — "빛이 안에가 흰색이면 안될거 같은데"), flashing as it changes (uCol
+      // carries the flash); soft shafts sweep round it for texture (the angle from the interpolated ring position, not
+      // a per-vertex angle — that would jump across the ±π seam)
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying float vFace;\nvarying vec2 vRing;\nuniform float uTime;\nuniform vec3 uCol;\nvoid main() {')
+        .replace('#include <map_fragment>', `#include <map_fragment>
+  float ang = atan(vRing.y, vRing.x);
+  float s1 = pow(0.5 + 0.5 * sin(ang * 6.0 + uTime * 1.3), 3.0);
+  float s2 = pow(0.5 + 0.5 * sin(ang * 12.0 - uTime * 2.1 + 1.7), 6.0);
+  diffuseColor.rgb = uCol * (0.92 + 0.2 * s1);
+  diffuseColor.a = min(1.0, diffuseColor.a * vFace * (0.8 + 0.55 * s1 + 0.35 * s2));`);
     };
     const geo = new T.CylinderGeometry(0.08, 1, 1, 48, 1, true); geo.translate(0, -0.5, 0);   // top at 0, 1 long, downward
     const cone = new T.Mesh(geo, mat); cone.renderOrder = 5; cone.raycast = () => {};
@@ -121,32 +133,116 @@
     });
     const flare = new T.Sprite(new T.SpriteMaterial({ map: flareTex, transparent: true, depthWrite: false, depthTest: false, blending: T.AdditiveBlending, opacity: 0, toneMapped: false }));
     flare.renderOrder = 12; group.add(flare);
-    const lampMat = machine.lamp.material, lampE = lampMat.emissiveIntensity;
-    const src = V(0, 0, 0), dst = V(0, 0, 0), dir = V(0, 0, 0), DOWN = V(0, -1, 0);
-    let k = 0, lit = null;
+    // glitter: candy-coloured twinkles drifting down the beam on its sides and back (never across the friend's face),
+    // and a ring of them circling the friend's feet. Soft filled sparkles — no lines (user: "별 파티클에 흰색 라인들 주지말라니까")
+    const sparkTex = Mats.tex(64, 64, (g, w, h) => {
+      const c = w / 2, glow = g.createRadialGradient(c, c, 0, c, c, c);
+      glow.addColorStop(0, 'rgba(255,255,255,0.9)'); glow.addColorStop(0.25, 'rgba(255,255,255,0.35)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = glow; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#ffffff'; g.beginPath();                            // a plump four-point sparkle, filled
+      for (let i = 0; i < 4; i++) {
+        const a = i * Math.PI / 2, b = a + Math.PI / 4;
+        g[i ? 'lineTo' : 'moveTo'](c + Math.cos(a) * c * 0.82, c + Math.sin(a) * c * 0.82);
+        g.quadraticCurveTo(c + Math.cos(b) * c * 0.1, c + Math.sin(b) * c * 0.1, c + Math.cos(a + Math.PI / 2) * c * 0.82, c + Math.sin(a + Math.PI / 2) * c * 0.82);
+      }
+      g.fill();
+    });
+    const PAL = ['#ffd23f', '#ff6fb5', '#4fc3ff', '#b07cff', '#5ee0a0', '#ff9a3c'].map(h => new T.Color(h));
+    const NB = 30, NR = 10, NS = NB + NR;
+    const spPos = new T.BufferAttribute(new Float32Array(NS * 3), 3), spCol = new Float32Array(NS * 4), coreCol = new Float32Array(NS * 3);
+    const spGeo = new T.BufferGeometry(), coreGeo = new T.BufferGeometry();
+    spGeo.setAttribute('position', spPos); spGeo.setAttribute('color', new T.BufferAttribute(spCol, 4));
+    coreGeo.setAttribute('position', spPos); coreGeo.setAttribute('color', new T.BufferAttribute(coreCol, 3));
+    const spMat = new T.PointsMaterial({ map: sparkTex, size: 1.0, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, opacity: 0, toneMapped: false });
+    const coreMat = new T.PointsMaterial({ map: sparkTex, size: 0.42, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: T.AdditiveBlending, opacity: 0, toneMapped: false });
+    const sparks = new T.Points(spGeo, spMat), cores = new T.Points(coreGeo, coreMat);
+    for (const o of [sparks, cores]) { o.frustumCulled = false; o.raycast = () => {}; group.add(o); }
+    sparks.renderOrder = 7; cores.renderOrder = 8;
+    const SP = Array.from({ length: NS }, (_, i) => ({ a: Math.random() * 6.283, rf: 0.15 + 0.85 * Math.sqrt(Math.random()),
+      ph: Math.random(), sp: 0.16 + 0.14 * Math.random(), tw: Math.random() * 6.283, c: PAL[i % PAL.length] }));
+    // a soft pool of light round the friend's feet
+    const poolTex = Mats.tex(128, 128, (g, w, h) => {
+      const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+      gr.addColorStop(0, 'rgba(255,240,200,0.9)'); gr.addColorStop(0.5, 'rgba(255,232,180,0.4)'); gr.addColorStop(1, 'rgba(255,230,170,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    const pool = new T.Mesh(new T.PlaneGeometry(2, 2), new T.MeshBasicMaterial({ map: poolTex, transparent: true, depthWrite: false, blending: T.AdditiveBlending, opacity: 0, toneMapped: false }));
+    pool.rotation.x = -Math.PI / 2; pool.renderOrder = 4; pool.raycast = () => {}; group.add(pool);
+    const lampMat = machine.lamp.material, lampE = lampMat.emissiveIntensity, lampC = lampMat.emissive.clone();
+    // the stage colours, in turn: each change is a flash that settles (STEP s each)
+    const STAGE = ['#ff4fa3', '#ffd21f', '#3fb8ff', '#a86bff', '#3fe0a0', '#ff8a2a'].map(h => new T.Color(h)), STEP = 0.42;
+    const col = new T.Color(), white = new T.Color('#ffffff'), rects = [], wq = V(0, 0, 0);
+    const src = V(0, 0, 0), dst = V(0, 0, 0), dir = V(0, 0, 0), DOWN = V(0, -1, 0), eu = V(0, 0, 0), ew = V(0, 0, 0), q = V(0, 0, 0);
+    let k = 0, lit = null, time = 0, len = 1, rr = 1;
     return {
       group,
       /* at = { x, z, floorY, r, level 0..1, friend } or null */
       update(dt, at) {
         k = lerp(k, at ? at.level : 0, Math.min(1, dt * (at ? 6 : 9)));
+        time += dt; U.uTime.value = time;
+        const step = Math.floor(time / STEP), f = (time % STEP) / STEP, flash = 0.5 + 0.5 * Math.exp(-f * 6);
+        col.copy(STAGE[step % STAGE.length]); U.uCol.value.copy(col);
         machine.lamp.getWorldPosition(src); group.worldToLocal(src);
         flare.position.copy(src);
         if (at) {
-          dst.set(at.x, at.floorY, at.z);
-          dir.subVectors(dst, src); const len = dir.length(); dir.divideScalar(len);
+          dst.set(at.x, at.floorY, at.z); rr = at.r;
+          dir.subVectors(dst, src); len = dir.length(); dir.divideScalar(len);
           cone.position.copy(src); cone.quaternion.setFromUnitVectors(DOWN, dir); cone.scale.set(at.r, len, at.r);
           light.position.copy(src); light.target.position.copy(dst); light.angle = Math.atan(at.r / len);
           if (lit !== at.friend) { if (lit) lit.lit(0); lit = at.friend; }
+          pool.position.set(dst.x, dst.y + 0.04, dst.z); pool.scale.setScalar(at.r * 0.95);
         }
-        const tune = G.spotTune || {};                       // (QA: __claw.spotTune = { I, cone, lit, flare })
+        const tune = G.spotTune || {};                       // (QA: __claw.spotTune = { I, cone, lit, flare, glit })
         if (lit) lit.lit(at ? Math.min(1.5, k * (tune.lit ?? 1.2)) : 0);
         if (!at && k < 0.02 && lit) { lit.lit(0); lit = null; }
-        light.intensity = (tune.I ?? 24) * k;
-        mat.opacity = matN.opacity = (tune.cone ?? 0.36) * k;
+        light.intensity = (tune.I ?? 30) * k * flash; light.color.copy(col).lerp(white, 0.35);
+        mat.opacity = matN.opacity = (tune.cone ?? 0.85) * k * flash;
         cone.visible = mat.opacity > 0.003;
-        flare.material.opacity = (tune.flare ?? 0.55) * k; flare.scale.setScalar(0.2);
+        // the lamp pulses a little while it shines
+        flare.material.opacity = (tune.flare ?? 0.6) * k; flare.scale.setScalar(0.2 + 0.035 * k * (0.5 + 0.5 * Math.sin(time * 5)));
         flare.visible = flare.material.opacity > 0.003;
-        lampMat.emissiveIntensity = lampE + 2.4 * k;
+        lampMat.emissiveIntensity = lampE + 2.4 * k * flash;
+        lampMat.emissive.copy(lampC).lerp(col, Math.min(1, k * 1.5));     // the lamp shines in the light's colour too
+        pool.material.opacity = 0.6 * k * flash; pool.material.color.copy(col).lerp(white, 0.3);
+        pool.visible = pool.material.opacity > 0.003;
+        // glitter: the full show only right over the friend (k ≈ 1); a little off, only a few faint ones
+        const gk = Math.max(0, (k - 0.25) / 0.75) * (tune.glit ?? 1);
+        spMat.opacity = coreMat.opacity = Math.min(1, gk * 1.2); sparks.visible = cores.visible = spMat.opacity > 0.01;
+        if (sparks.visible) {
+          eu.crossVectors(dir, V(0, 0, 1)).normalize(); ew.crossVectors(eu, dir).normalize();
+          // every friend's box on screen: no glitter over any friend (the beam to a front-row friend passes the back row)
+          rects.length = 0;
+          for (const p of G.inMachine) {
+            const r0 = p.root.position, hw = p.width * p.root.scale.x / 2, top = r0.y + p.top * p.root.scale.y;
+            const A = S.project(group.localToWorld(wq.set(r0.x - hw, top, r0.z))), B = S.project(group.localToWorld(wq.set(r0.x + hw, r0.y, r0.z)));
+            rects.push([(A.x + B.x) / 2, (B.x - A.x) / 2, A.y, B.y]);
+          }
+          for (let i = 0; i < NS; i++) {
+            const s = SP[i], tw = Math.pow(0.5 + 0.5 * Math.sin(time * 6.5 + s.tw), 2.5);
+            let fade;
+            if (i < NB) {                                    // down the beam's sides and back
+              const t = (s.ph + time * s.sp) % 1, along = 0.1 + 0.78 * t;
+              const a = s.a + 0.5 * time * (i % 2 ? 1 : -1), rad = lerp(0.08, 1, along) * rr * s.rf;
+              q.copy(src).addScaledVector(dir, len * along).addScaledVector(eu, Math.cos(a) * rad).addScaledVector(ew, Math.sin(a) * rad);
+              fade = Math.min(1, t / 0.12) * Math.min(1, (1 - t) / 0.25);
+
+            } else {                                         // circling the feet
+              const a = (i - NB) / NR * 6.283 + time * 0.9, rad = rr * 0.78;
+              q.set(dst.x + Math.cos(a) * rad, dst.y + 0.12 + 0.05 * Math.sin(time * 3 + i), dst.z + Math.sin(a) * rad * 0.8);
+              fade = 1;
+            }
+            spPos.setXYZ(i, q.x, q.y, q.z);
+            const sp = S.project(group.localToWorld(wq.copy(q)));
+            for (const r of rects) {                         // fades out over a friend (a little margin round its box)
+              const dx = Math.abs(sp.x - r[0]) / r[1];
+              if (sp.y > r[2] - 0.15 * r[1] && sp.y < r[3]) fade *= Math.min(1, Math.max(0, (dx - 0.9) / 0.3));
+            }
+            const b = (0.25 + 0.75 * tw) * fade;
+            spCol[i * 4] = col.r; spCol[i * 4 + 1] = col.g; spCol[i * 4 + 2] = col.b; spCol[i * 4 + 3] = b;
+            coreCol[i * 3] = coreCol[i * 3 + 1] = coreCol[i * 3 + 2] = 0.6 * b * b;
+          }
+          spPos.needsUpdate = true; spGeo.attributes.color.needsUpdate = true; coreGeo.attributes.color.needsUpdate = true;
+        }
       },
     };
   }
