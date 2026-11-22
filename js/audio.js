@@ -43,7 +43,7 @@
       const src = A.ctx.createBufferSource(); src.buffer = buf;
       const g = A.ctx.createGain(); g.gain.value = gain * (opts.gain || 1);
       src.connect(g); g.connect(A.voice);
-      const item = { src, res };
+      const item = { src, res, key };
       A.playing.add(item); talk(+1);
       src.onended = () => { if (A.playing.delete(item)) { talk(-1); res(true); } };
       src.start(0, start, Math.max(0.05, dur));
@@ -60,10 +60,16 @@
     }
     return true;
   };
-  A.stopVoice = function () {
-    A.stopped = true; setTimeout(() => (A.stopped = false), 0);
-    for (const it of A.playing) { try { it.src.onended = null; it.src.stop(); } catch (e) { /* stopped */ } talk(-1); it.res(false); }
-    A.playing.clear();
+  /* stop every voice clip — or only one line (key, e.g. 't:howto' when SKIP cuts the guide: the target sound the child
+     may have asked for again keeps playing) */
+  A.stopVoice = function (only) {
+    const k = only ? A.voiceKey(only) : null;
+    if (!k) { A.stopped = true; setTimeout(() => (A.stopped = false), 0); }
+    for (const it of A.playing) {
+      if (k && it.key !== k) continue;
+      try { it.src.onended = null; it.src.stop(); } catch (e) { /* stopped */ }
+      A.playing.delete(it); talk(-1); it.res(false);
+    }
   };
   function talk(d) { A.talking = Math.max(0, A.talking + d); duck(); }
   function duck() {

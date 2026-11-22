@@ -24,6 +24,11 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
    이어진다(`index.html` SVG `#rbTail`·`#rbFold`). 예전엔 띠 끝을 V자로 바로 잘라 '딱 잘린' 느낌이었다.
 
 첫 라운드에 아무것도 안 만지면 장갑 손이 조이스틱 → DOWN 순서로 시범("Move the claw, then press the button!").
+  시범(안내 음성 + 장갑 손)이 도는 동안에만 위 줄 소리 버튼 왼쪽에 흰 **SKIP** 판(phonics-kit 공통 규칙 1). 누르면 안내 음성만 바로 끊고
+  (다시 듣기로 튼 목표 음가는 계속), 장갑·조이스틱 흔들기를 멈춘 뒤 그대로 진행 — 집게는 시범 중에도 움직일 수 있다(`skipGuide`, `#app.guide`).
+판이 끝나면(결과 화면) 공통 진도 `phonics.progress`에 기록만 남긴다(`js/phonics-progress.js` = phonics-kit 사본, 레벨 고르기 없음):
+`PhonicsProgress.played('toy-catch', { stars, words(맞힌 친구 = 깬 라운드), rounds, won, score(남은 코인), goes, wrong, misses, outOfCoins, time })`.
+  중간에 나가기로 나간 판은 기록하지 않는다.
 오른쪽 위 EN/한 토글: 안내 음성만 한국어로 바뀐다(음가·단어는 영어 그대로). `localStorage` `claw-lang`, 음소거 `claw-muted`.
 
 ## 친구들 (seats 6)

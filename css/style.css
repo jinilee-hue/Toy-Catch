@@ -275,6 +275,20 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
 .sysbtn .off { display: none; }
 #app.muted #btnSound .on { display: none; } #app.muted #btnSound .off { display: inline; }
 #app.muted #btnSound { --jt: #c3cfe0; --jm: #98a9c2; --jl: #8193b0; --jg: #dde6f2; --jb: #73859f; --js: #64758f; --jd: #4d5c75; }
+/* SKIP (phonics-kit common rule: every explanation a child has to sit through can be skipped): only while the first
+   round's how-to-play guide runs (voice + glove, #app.guide). Bottom right, a quiet white see-through glass pill with
+   the word in white (user 2026-11-22: "Toy-Catch skip 버튼은 흰색 배경에 투명하게 해서 우측 하단으로 옮기고") — the
+   other games' SKIP look; the top-bar button's height (7.6 u), 3 u in from the corner like the top bar. */
+.skip { position: absolute; z-index: 40; right: calc(3 * var(--u)); bottom: calc(3 * var(--u)); height: var(--hb);
+  padding: calc(.05 * var(--hb)) calc(.4 * var(--hb)) 0; display: grid; place-items: center; white-space: nowrap; border-radius: 999px;
+  font: 800 calc(.44 * var(--hb)) / 1 var(--font); letter-spacing: .08em; color: #fff; text-shadow: 0 calc(.03 * var(--hb)) calc(.08 * var(--hb)) rgba(90,70,120,.45);
+  background: linear-gradient(180deg, rgba(255,255,255,.58), rgba(255,255,255,.3));
+  -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 calc(.1 * var(--hb)) calc(.22 * var(--hb)) rgba(60,40,80,.18);
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .25s, visibility 0s .25s; }
+#app.guide[data-screen="game"] .skip { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .3s, visibility 0s; }
+.skip:active { scale: .94; }
+.skip::after { content: ''; position: absolute; inset: calc(-.08 * var(--hb)); border-radius: 999px; }   /* (a slightly bigger tap area) */
 
 /* ── controls ── */
 /* the tap area of the 3D DOWN button (machine.js draws it; game.js layout() measures its box on screen) */

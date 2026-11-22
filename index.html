@@ -149,6 +149,9 @@
     <button class="sysbtn" id="btnExit" aria-label="Exit"><svg viewBox="0 0 24 24"><path d="M10 4H6.5A2.5 2.5 0 0 0 4 6.5v11A2.5 2.5 0 0 0 6.5 20H10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M14 8l4 4-4 4M18 12H9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
 
+  <!-- SKIP: bottom right, only while the how-to-play guide (voice + glove) runs -->
+  <button class="skip" id="btnSkip" aria-label="Skip">SKIP</button>
+
   <!-- controls: the joystick's grab area (over the 3D stick) and the tap area of the 3D DOWN button -->
   <div class="joy-hit" id="joyHit" aria-label="Move the claw"></div>
   <button class="drop" id="drop" aria-label="Down"></button>   <!-- invisible: over the 3D DOWN button on the panel -->
@@ -244,6 +247,7 @@
 <script src="js/machine.js"></script>
 <script src="js/stage.js"></script>
 <script src="js/fx.js"></script>
+<script src="js/phonics-progress.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

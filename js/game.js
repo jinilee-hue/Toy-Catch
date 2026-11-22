@@ -35,6 +35,7 @@
     screen: 'title', all: {}, inMachine: [], targets: [], round: -1, target: null, score: 0, caught: [], tries: 0,
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
     icons: {}, shownSec: -1, miss: 0, rand: Math.random,
+    stats: null,                                        // this game's counts for the shared progress record (saveProgress)
   };
   let machine, claw, spot, burst;
   window.__claw = G;
@@ -966,6 +967,7 @@
     lt.addEventListener('click', () => { A.setLang(A.lang === 'ko' ? 'en' : 'ko'); showLang(); A.sfxPlay('tap'); A.stopVoice(); A.say('t:pressstart'); });
     $('#start').addEventListener('click', () => { A.unlock(); startGame(); });
     $('#drop').addEventListener('click', () => drop());
+    $('#btnSkip').addEventListener('click', () => skipGuide());
     $('#tgSnd').addEventListener('click', () => { if (G.screen === 'game' && G.target) { $('#tgSnd').classList.remove('play'); void $('#tgSnd').offsetWidth; $('#tgSnd').classList.add('play'); announce(G.target, true); } });
     $('#btnSound').addEventListener('click', () => { A.setMuted(!A.muted); app.classList.toggle('muted', A.muted); });
     app.classList.toggle('muted', A.muted);
@@ -1062,6 +1064,7 @@
     app.classList.remove('inserting');
     setScreen('game');
     G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
+    G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false };
     resetScore();
     setTimeout(() => { if (tok === G.tok) addScore(COINS.start); }, 500);   // this game's coins come in as the HUD shows
     buildTray();
@@ -1112,6 +1115,7 @@
     if (G.screen !== 'game' || G.busy) return;
     const tok = G.tok;
     G.busy = true; G.timerOn = false; interact(); setDrop(false);
+    if (G.stats) G.stats.goes++;
     $('#timeBox').classList.add('paused');
     const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150); machine.pressDown();
     A.sfxPlay('tap');
@@ -1192,7 +1196,7 @@
     if (slipping) await slipping;
     if (tok !== G.tok) return;
     if (!held || slips) {
-      G.miss++;
+      G.miss++; if (G.stats) G.stats.misses++;
       if (!cand) { A.sfxPlay('whiff'); await A.say('t:miss'); }
       else if (zone === 'knock') { A.sfxPlay('whiff'); await A.say('t:center'); }
       else await A.say('t:slip');
@@ -1202,7 +1206,7 @@
     }
     G.miss = 0;                                       // a good grab: the next loose grip takes its chances again
     if (cand.sound === G.target) await correct(cand, tok);
-    else await wrong(cand, tok);
+    else { if (G.stats) G.stats.wrong++; await wrong(cand, tok); }
   }
   /* it slips out of a loose grip: tips over, drops back onto its seat with a bounce, and wobbles */
   async function slip(p, side, tok) {
@@ -1437,12 +1441,13 @@
     G.busy = true; G.timerOn = false; setDrop(false);
     const n = G.caught.length;
     const all = n >= LETTERS.length;
+    const stars = all ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0;
+    saveProgress(tok, n, all, stars);                    // (the game is over now, even if Exit comes during the dolly)
     const title = all ? 'PERFECT!' : n >= 2 ? 'GREAT JOB!' : 'NICE TRY!';
     const titleCv = resultTitle(title);                  // (drawn now, the first time, while nothing moves yet)
     await dolly(0, 900);
     if (tok !== G.tok) return;
     setScreen('result');
-    const stars = all ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0;
     [...$('#stars').children].forEach((s, i) => s.classList.toggle('on', i < stars));
     $('#resTitle').replaceChildren(titleCv); $('#resTitle').setAttribute('aria-label', title);
     // the score under the coins counts up once they've popped in
@@ -1460,6 +1465,28 @@
     if (tok !== G.tok) return;
     await A.say('t:playagain');
     if (tok === G.tok) G.busy = false;                  // (PLAY AGAIN pressed during that line: the new game owns busy)
+  }
+
+  /* the shared progress record (phonics-kit phonics-progress.js, localStorage 'phonics.progress'): one entry per finished
+     game — records only, Toy Catch has no levels to pick (user: "기록 저장만"). A game left with Exit isn't recorded. */
+  function saveProgress(tok, n, all, stars) {
+    const s = G.stats;
+    if (!s || s.saved || tok !== G.tok || !window.PhonicsProgress) return;
+    s.saved = true;
+    try {
+      PhonicsProgress.played('toy-catch', {
+        stars,                                           // 0–3, as on the result card
+        words: n,                                        // friends caught with the right sound = rounds cleared
+        rounds: G.targets.length,
+        won: all,
+        score: G.score,                                  // coins left (the result card's number)
+        goes: s.goes,                                    // claw goes = coins spent
+        wrong: s.wrong,                                  // a friend with another first sound caught
+        misses: s.misses,                                // goes that came up empty (nothing, a knock, a slip)
+        outOfCoins: G.score <= 0,
+        time: Math.round((performance.now() - s.t0) / 100) / 10,   // seconds, from the coins coming in to the end
+      });
+    } catch (e) { console.warn('progress', e); }
   }
 
   function goTitle() {
@@ -1644,7 +1671,7 @@
   async function runHint(tok) {
     const hand = $('#hand');
     await sleep(900);
-    if (tok === G.tok && !G.interacted) A.say('t:howto');
+    if (tok === G.tok && !G.interacted) { app.classList.add('guide'); A.say('t:howto'); }   // (SKIP shows while it runs)
     while (tok === G.tok && !G.interacted && G.screen === 'game') {
       const mu = parseFloat(app.style.getPropertyValue('--mu')) || 8;
       const jx = parseFloat(app.style.getPropertyValue('--joyX')), jy = parseFloat(app.style.getPropertyValue('--joyY'));
@@ -1673,13 +1700,22 @@
     }
     stopHint();
   }
+  /* SKIP (phonics-kit common rule 1): the guide line stops at once, the glove fades and the stick settles, and the round
+     goes on as if the showing had ended — the claw was free all along (G.busy is false while the guide runs) */
+  function skipGuide() {
+    if (!app.classList.contains('guide')) return;
+    A.stopVoice('t:howto');                              // (only the guide: a target sound asked for again plays on)
+    A.sfxPlay('tap');
+    interact();                                          // interacted: the guide loop ends; stopHint() hides glove + SKIP
+  }
   function stopHint() {
     const h = $('#hand'), a = hintAnim; hintAnim = null;
+    app.classList.remove('guide');
     h.classList.remove('on'); $('#joyHit').classList.remove('hint');
     machine.joyHint(false); if (!G.joy) machine.setJoy(0);
     if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 
-  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
+  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, skipGuide, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
   boot().catch(e => { console.error(e); const l = $('#loading'); if (l) l.innerHTML = '<p style="font:700 20px sans-serif;color:#234">Could not start: ' + e.message + '</p>'; });
 })();
