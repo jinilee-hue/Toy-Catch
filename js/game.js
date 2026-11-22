@@ -31,6 +31,7 @@
      left after a go: the game ends (NO COINS! → results). No round clock any more (?sec=N brings it back, for tests). */
   const COINS = { start: 8, win: 1 };
   const TIMER = qs.has('sec');
+  const IDLE = { after: 8, every: 15 }, NOHINT = qs.has('nohint');   // the idle help (idleHelp): s of nothing, s between
   const G = {
     screen: 'title', all: {}, inMachine: [], targets: [], round: -1, target: null, score: 0, caught: [], tries: 0,
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
@@ -881,6 +882,7 @@
     // user: "이것도 빼줘")
     if (G.screen === 'game' && !G.busy) {
       G.idle += dt;
+      if (G.interacted && G.target && G.idle >= IDLE.after && t - idleT >= IDLE.every && !NOHINT) { idleT = t; idleHelp(); }
       $('#drop').classList.toggle('ready', zone === 'hold'); machine.setDown({ ready: zone === 'hold' });
     }
     // the round's clock
@@ -968,7 +970,7 @@
     $('#start').addEventListener('click', () => { A.unlock(); startGame(); });
     $('#drop').addEventListener('click', () => drop());
     $('#btnSkip').addEventListener('click', () => skipGuide());
-    $('#tgSnd').addEventListener('click', () => { if (G.screen === 'game' && G.target) { $('#tgSnd').classList.remove('play'); void $('#tgSnd').offsetWidth; $('#tgSnd').classList.add('play'); announce(G.target, true); } });
+    $('#tgSnd').addEventListener('click', () => { if (G.screen === 'game' && G.target) { G.idle = 0; sayTarget(); } });
     $('#btnSound').addEventListener('click', () => { A.setMuted(!A.muted); app.classList.toggle('muted', A.muted); });
     app.classList.toggle('muted', A.muted);
     $('#btnExit').addEventListener('click', () => {
@@ -1036,8 +1038,8 @@
     S.shotReset(); machine.prizeDoor.flap = 0; machine.prizeDoor.lit = false; app.classList.remove('shot');
     A.unlock(); A.startBgm();
     A.stopVoice();
-    if (again) { setScreen('title'); await sleep(250); setupPlushes(); claw.set(claw.x, claw.HOME_Y, claw.z); }
     app.classList.add('inserting');                     // (not 'coin': that's the intro coins' class — it shrank the whole app into a coin)
+    if (again) { setScreen('title'); await sleep(250); setupPlushes(); claw.set(claw.x, claw.HOME_Y, claw.z); }   // (already 'inserting': no START / EN-한 toggle blink)
     // the camera comes in to the coin slot while the coin flips in and drops into it, then goes back (user: the camera
     // moves only between scenes — this, the prize door, the prize; never while aiming)
     app.classList.add('shot');
@@ -1063,7 +1065,7 @@
     S.shotTo(null, 800, tok); setTimeout(() => app.classList.remove('shot'), 450);
     app.classList.remove('inserting');
     setScreen('game');
-    G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0;
+    G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0; G.interacted = false;   // (the round-1 guide again)
     G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false };
     resetScore();
     setTimeout(() => { if (tok === G.tok) addScore(COINS.start); }, 500);   // this game's coins come in as the HUD shows
@@ -1090,7 +1092,7 @@
     await announce(G.target);
     if (tok !== G.tok) return;
     G.busy = false; G.timerOn = TIMER; G.idle = 0; setDrop(true);
-    if (G.round === 0 && !G.interacted && !qs.has('nohint')) runHint(tok);
+    if (G.round === 0 && !G.interacted && !NOHINT) runHint(tok);
   }
   function setTarget(L) {
     const up = L.toUpperCase();
@@ -1103,6 +1105,11 @@
     ['--jt', '--jm', '--jl', '--jb', '--js', '--jd', '--jg'].forEach((k, i) => $('#target').style.setProperty(k, pal[i]));
     const tg = $('#target'); tg.classList.remove('swap'); void tg.offsetWidth; tg.classList.add('swap');
     const le = $('#tgLetter'); le.classList.remove('pop'); void le.offsetWidth; le.classList.add('pop');
+  }
+  /* the speaker button: it bounces and the round's sound plays again */
+  function sayTarget() {
+    const b = $('#tgSnd'); b.classList.remove('play'); void b.offsetWidth; b.classList.add('play');
+    return announce(G.target, true);
   }
   /* "Catch a friend that starts with /m/" (Korean: "/m/ 소리로 시작하는 친구를 뽑아 봐!") */
   async function announce(L, again) {
@@ -1673,25 +1680,7 @@
     await sleep(900);
     if (tok === G.tok && !G.interacted) { app.classList.add('guide'); A.say('t:howto'); }   // (SKIP shows while it runs)
     while (tok === G.tok && !G.interacted && G.screen === 'game') {
-      const mu = parseFloat(app.style.getPropertyValue('--mu')) || 8;
-      const jx = parseFloat(app.style.getPropertyValue('--joyX')), jy = parseFloat(app.style.getPropertyValue('--joyY'));
-      const dx = parseFloat(app.style.getPropertyValue('--downX')), dy = parseFloat(app.style.getPropertyValue('--downY'));
-      const W2 = hand.offsetWidth * 0.38;
-      if (hintAnim) hintAnim.cancel();
-      $('#joyHit').classList.add('hint');
-      if (JOY_HINT === 'wiggle') machine.joyHint(true);
-      hintAnim = hand.animate([
-        { transform: `translate(${jx - W2}px, ${jy}px)` },
-        { transform: `translate(${jx - W2 - 6 * mu}px, ${jy}px)`, offset: 0.2 },
-        { transform: `translate(${jx - W2 + 6 * mu}px, ${jy}px)`, offset: 0.4 },
-        { transform: `translate(${jx - W2}px, ${jy}px)`, offset: 0.5 },
-        { transform: `translate(${dx - W2}px, ${dy}px)`, offset: 0.72 },
-        { transform: `translate(${dx - W2}px, ${dy + 1.6 * mu}px) scale(.94)`, offset: 0.8 },
-        { transform: `translate(${dx - W2}px, ${dy}px)`, offset: 0.88 },
-        { transform: `translate(${dx - W2}px, ${dy}px)` },
-      ], { duration: 3600, easing: 'ease-in-out', fill: 'forwards' });
-      hand.classList.add('on');
-      await hintAnim.finished.catch(() => {});
+      await showGlove();
       if (tok !== G.tok || G.interacted) break;
       // between two showings it fades out where it ended (on DOWN). Without the fill it jumped back to its resting place
       // — the screen's top-left corner, over the score — and waited there (user: "상단에 화살표 왜 가있는거야?")
@@ -1699,6 +1688,38 @@
       await sleep(1600);
     }
     stopHint();
+  }
+  /* every round after the first touch (user 2026-11-22): IDLE.after s with nothing done → the round's sound again (as the
+     speaker button) and one showing of the glove; again every IDLE.every s at the most while the child waits. Any touch
+     stops it (interact → stopHint; the stick, a drag, the keys zero G.idle). No new lines: the round's own prompt. */
+  let idleT = -1e9;
+  function idleHelp() {
+    sayTarget();                                         // (voice and glove together, like the round-1 guide)
+    const shown = showGlove(), mine = hintAnim;
+    shown.then(() => { if (hintAnim === mine) stopHint(); });   // (a touch already hid it / a new game's guide owns it)
+  }
+  /* one showing of the glove: the stick left and right, then DOWN pressed */
+  function showGlove() {
+    const hand = $('#hand');
+    const mu = parseFloat(app.style.getPropertyValue('--mu')) || 8;
+    const jx = parseFloat(app.style.getPropertyValue('--joyX')), jy = parseFloat(app.style.getPropertyValue('--joyY'));
+    const dx = parseFloat(app.style.getPropertyValue('--downX')), dy = parseFloat(app.style.getPropertyValue('--downY'));
+    const W2 = hand.offsetWidth * 0.38;
+    if (hintAnim) hintAnim.cancel();
+    $('#joyHit').classList.add('hint');
+    if (JOY_HINT === 'wiggle') machine.joyHint(true);
+    hintAnim = hand.animate([
+      { transform: `translate(${jx - W2}px, ${jy}px)` },
+      { transform: `translate(${jx - W2 - 6 * mu}px, ${jy}px)`, offset: 0.2 },
+      { transform: `translate(${jx - W2 + 6 * mu}px, ${jy}px)`, offset: 0.4 },
+      { transform: `translate(${jx - W2}px, ${jy}px)`, offset: 0.5 },
+      { transform: `translate(${dx - W2}px, ${dy}px)`, offset: 0.72 },
+      { transform: `translate(${dx - W2}px, ${dy + 1.6 * mu}px) scale(.94)`, offset: 0.8 },
+      { transform: `translate(${dx - W2}px, ${dy}px)`, offset: 0.88 },
+      { transform: `translate(${dx - W2}px, ${dy}px)` },
+    ], { duration: 3600, easing: 'ease-in-out', fill: 'forwards' });
+    hand.classList.add('on');
+    return hintAnim.finished.catch(() => {});
   }
   /* SKIP (phonics-kit common rule 1): the guide line stops at once, the glove fades and the stick settles, and the round
      goes on as if the showing had ended — the claw was free all along (G.busy is false while the guide runs) */

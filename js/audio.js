@@ -5,10 +5,11 @@
 (function () {
   'use strict';
   const V = window.CLAW_VOICE || { clips: {} }, VD = window.CLAW_VOICE_DATA || {};
-  const A = { ctx: null, master: null, sfx: null, voice: null, bgm: null, muted: false, buffers: {}, playing: new Set(), talking: 0, bgmOn: false, bgmLevel: 0.27, lang: 'en' };
+  const A = { ctx: null, master: null, sfx: null, voice: null, bgm: null, muted: false, buffers: {}, playing: new Set(), talking: 0, bgmOn: false, bgmLevel: 0.27, lang: 'ko' };
   // bgmLevel × MUSIC_GAIN 0.56: 0.11 left Toy Catch among the quietest phonics games (-39.4 LUFS heard, ~7 dB under Eye
   // Catch / Puzzle; user 2026-11-22 asked for Croco's and this one up together) — 0.27 ≈ -31.6, with Eye Catch / Puzzle
-  try { A.muted = localStorage.getItem('claw-muted') === '1'; A.lang = localStorage.getItem('claw-lang') === 'ko' ? 'ko' : 'en'; } catch (e) { /* private mode */ }
+  // Korean unless English was chosen (a first visit — nothing stored — starts in Korean; user 2026-11-22)
+  try { A.muted = localStorage.getItem('claw-muted') === '1'; A.lang = localStorage.getItem('claw-lang') === 'en' ? 'en' : 'ko'; } catch (e) { /* private mode */ }
   A.setLang = function (l) { A.lang = l === 'ko' ? 'ko' : 'en'; try { localStorage.setItem('claw-lang', A.lang); } catch (e) { /* ignore */ } };
   A.has = key => !!V.clips[A.voiceKey(key)];
   /* 't:x' plays the Korean take 'k:x' in Korean when there is one */
@@ -47,8 +48,13 @@
       src.connect(g); g.connect(A.voice);
       const item = { src, res, key };
       A.playing.add(item); talk(+1);
-      src.onended = () => { if (A.playing.delete(item)) { talk(-1); res(true); } };
+      const end = () => { if (A.playing.delete(item)) { talk(-1); res(true); } };
+      src.onended = end;
       src.start(0, start, Math.max(0.05, dur));
+      // safety net (Eye Catch's): a suspended context or a broken clip never fires onended — the game would wait with
+      // G.busy = true for ever. The clip's length + 0.8 s; 6 s when the length is unknown.
+      const len = Math.min(dur, buf.duration - start);
+      setTimeout(end, ((len > 0 ? len : 6) + 0.8) * 1000);
     });
   };
   /* several clips in a row (a gap between) */
