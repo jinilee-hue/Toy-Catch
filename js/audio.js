@@ -5,7 +5,9 @@
 (function () {
   'use strict';
   const V = window.CLAW_VOICE || { clips: {} }, VD = window.CLAW_VOICE_DATA || {};
-  const A = { ctx: null, master: null, sfx: null, voice: null, bgm: null, muted: false, buffers: {}, playing: new Set(), talking: 0, bgmOn: false, bgmLevel: 0.11, lang: 'en' };
+  const A = { ctx: null, master: null, sfx: null, voice: null, bgm: null, muted: false, buffers: {}, playing: new Set(), talking: 0, bgmOn: false, bgmLevel: 0.27, lang: 'en' };
+  // bgmLevel × MUSIC_GAIN 0.56: 0.11 left Toy Catch among the quietest phonics games (-39.4 LUFS heard, ~7 dB under Eye
+  // Catch / Puzzle; user 2026-11-22 asked for Croco's and this one up together) — 0.27 ≈ -31.6, with Eye Catch / Puzzle
   try { A.muted = localStorage.getItem('claw-muted') === '1'; A.lang = localStorage.getItem('claw-lang') === 'ko' ? 'ko' : 'en'; } catch (e) { /* private mode */ }
   A.setLang = function (l) { A.lang = l === 'ko' ? 'ko' : 'en'; try { localStorage.setItem('claw-lang', A.lang); } catch (e) { /* ignore */ } };
   A.has = key => !!V.clips[A.voiceKey(key)];
