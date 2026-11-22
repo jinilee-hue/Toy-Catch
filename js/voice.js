@@ -199,6 +199,18 @@ window.CLAW_VOICE = {
 1.289,
 2.04
 ],
+"t:tryit": [
+"t_tryit.mp3",
+0.0,
+0.893,
+1.19
+],
+"k:tryit": [
+"k_tryit.mp3",
+0.0,
+1.303,
+1.15
+],
 "w:turkey": [
 "w_turkey.mp3",
 0.42,
@@ -322,6 +334,7 @@ window.CLAW_VOICE = {
 "again": "Try again! Listen.",
 "playagain": "Let's play again!",
 "ready": "Ready? Let's play!",
+"tryit": "Now you try!",
 "hello": "Hi, friends! Welcome to Toy Catch!",
 "find": "Catch a friend that starts with",
 "howto": "Move the claw, then press the button!",
@@ -340,6 +353,7 @@ window.CLAW_VOICE = {
 "again": "다시 해 보자! 잘 들어 봐.",
 "playagain": "한 번 더 하자!",
 "ready": "준비됐니? 시작하자!",
+"tryit": "이제 혼자 해 봐!",
 "hello": "안녕, 친구들! 토이 캐치에 온 걸 환영해!",
 "find": "소리로 시작하는 친구를 뽑아 봐!",
 "howto": "집게를 움직이고, 버튼을 눌러 봐!",

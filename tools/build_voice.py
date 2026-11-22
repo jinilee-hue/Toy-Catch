@@ -5,7 +5,8 @@
   already trimmed and levelled from Phonics Match (public/voice, src/data/voice.json); turkey (not in Phonics Match)
   from Phonics Island's copy of the FPR K Unit 1 Lesson 4 file, trimmed and levelled here the same way.
 - SHARED LINES: Magic Block's (Phonics-Jenga) takes of the company-TTS boy voice ('aiden', cheerful 7-year-old boy),
-  English t:* and Korean k:*; "Ready? Let's play!" is Croco Phonics' tut8.
+  English t:* and Korean k:*; "Ready? Let's play!" is Croco Phonics' tut8; "Now you try!" (the end of the first game's
+  how-to demo) is Phonics Puzzle's tryit — the same tutor voice, read back there.
 - NEW lines (NEW / NEW_KO below) from the company TTS (company network / VPN; TTS_BASE_URL + LLM_API_KEY come from
   ~/.zshrc and are never printed). Takes are cached in ~/.cache/toy-catch/voice_qwen; without the server the new lines
   are skipped and the game plays without them (it checks CLAW_VOICE.clips before playing).
@@ -33,6 +34,7 @@ OUT = ROOT / 'assets' / 'voice'
 JS = ROOT / 'js' / 'voice.js'
 PH = pathlib.Path.home() / 'Documents/Jini/2026/Phonics'
 MATCH, JENGA, CROCO = PH / 'Phonics-Match', PH / 'Phonics-Jenga', PH / 'Croco-Phonics'
+PUZZLE = PH / 'Phonics-Puzzle'
 ISLAND = PH / 'Phonics_island/phonics-island-3d/public'
 CACHE = pathlib.Path.home() / '.cache' / 'toy-catch' / 'voice_qwen'
 SR = 24000
@@ -81,6 +83,7 @@ clips, lines, lines_ko = {}, {}, {}
 mv = json.loads((MATCH / 'src/data/voice.json').read_text(encoding='utf-8'))
 jv = json.loads((JENGA / 'src/data/voice.json').read_text(encoding='utf-8'))
 cv = json.loads((CROCO / 'js/voice.js').read_text(encoding='utf-8').split('=', 1)[1].rstrip().rstrip(';'))
+pv = json.loads((PUZZLE / 'js/voice.js').read_text(encoding='utf-8').split('=', 1)[1].rstrip().rstrip(';'))
 
 
 def take(src_dir, table, key, as_key=None):
@@ -103,6 +106,8 @@ for k in REUSE_JENGA:
         take(JENGA / 'public/voice', jv, f'k:{k}'); lines_ko[k] = jv['lines_ko'][k]
 take(CROCO / 'assets/voice', cv, 't:tut8', 't:ready'); lines['ready'] = "Ready? Let's play!"
 take(CROCO / 'assets/voice', cv, 'k:tut8', 'k:ready'); lines_ko['ready'] = '준비됐니? 시작하자!'
+for pre, out, table in (('t', lines, 'lines'), ('k', lines_ko, 'lines_ko')):     # Phonics Puzzle's "Now you try!"
+    take(PUZZLE / 'assets/voice', pv, f'{pre}:tryit'); out['tryit'] = pv[table]['tryit']
 
 # ── trimming / levelling (as Croco Phonics' build_voice) ────────────────────────────────────────────────
 LEAD, TAIL = .10, .25

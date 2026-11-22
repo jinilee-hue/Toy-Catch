@@ -1,5 +1,6 @@
 /* Toy Catch (phonics claw machine) — game flow.
- * Title (logo, START) → coin goes in ("INSERTED! READY TO PLAY!") → 4 rounds, one per sound m a s t in random order:
+ * Title (logo, START) → coin goes in ("INSERTED! READY TO PLAY!") → (the first game of a visit: the glove plays one go
+ * first — teachDemo) → 4 rounds, one per sound m a s t in random order:
  * "Catch a friend that starts with /m/" → move the claw (joystick, drag, tap a plush, ← →) → DOWN → the claw drops,
  * grabs the plush under it and lifts it. Right sound: confetti, the others cheer, "/m/ /m/ monkey", it goes down the
  * chute and pops out as a prize. Wrong sound: "Uh-oh! turtle. It starts with /t/", it slips back. No round clock:
@@ -38,6 +39,7 @@
     time: ROUND_SEC, timerOn: false, busy: true, tok: 0, aimX: 0, joy: 0, keys: { l: 0, r: 0 }, idle: 0, interacted: false,
     icons: {}, shownSec: -1, miss: 0, rand: Math.random,
     stats: null,                                        // this game's counts for the shared progress record (saveProgress)
+    taught: false, demo: null,                          // the how-to demo: shown this visit · running ({ seats }) (teachDemo)
   };
   let machine, claw, spot, burst;
   window.__claw = G;
@@ -955,6 +957,9 @@
 
   /* ── input ──────────────────────────────────────────────────────────────────────────────────────── */
   function bindInput() {
+    // the how-to demo plays by itself: meanwhile only SKIP (and sound / exit) answer — a touch would steer its claw
+    const demoOnly = e => { if (G.demo && !(e.target.closest && e.target.closest('#btnSkip, #btnSound, #btnExit'))) e.stopPropagation(); };
+    for (const t of ['pointerdown', 'click', 'keydown']) window.addEventListener(t, demoOnly, true);
     // the first touch on the title: music + "Hi, friends! Welcome to Toy Catch! … Press start to play!"
     let greeted = false;
     const firstTouch = (e) => {
@@ -1071,7 +1076,7 @@
     S.shotTo(null, 800, tok); setTimeout(() => app.classList.remove('shot'), 450);
     app.classList.remove('inserting');
     setScreen('game');
-    G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0; G.interacted = false;   // (the round-1 guide again)
+    G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0; G.interacted = false; G.demoRan = false;   // (the round-1 guide again)
     G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false };
     resetScore();
     setTimeout(() => { if (tok === G.tok) addScore(COINS.start); }, 500);   // this game's coins come in as the HUD shows
@@ -1081,6 +1086,7 @@
     G.aimX = 0;
     await dolly(1, 1000);
     if (tok !== G.tok) return;
+    if (!G.taught && !NOHINT) return teachDemo(tok);     // the first game of a visit: the glove plays one go first, then round 1
     nextRound(tok);
   }
 
@@ -1098,7 +1104,7 @@
     await announce(G.target);
     if (tok !== G.tok) return;
     G.busy = false; G.timerOn = TIMER; G.idle = 0; setDrop(true);
-    if (G.round === 0 && !G.interacted && !NOHINT) runHint(tok);
+    if (G.round === 0 && !G.interacted && !NOHINT && !G.demoRan) runHint(tok);   // (not right after the how-to demo: it just showed this)
   }
   function setTarget(L) {
     const up = L.toUpperCase();
@@ -1127,7 +1133,7 @@
   async function drop() {
     if (G.screen !== 'game' || G.busy) return;
     const tok = G.tok;
-    G.busy = true; G.timerOn = false; interact(); setDrop(false);
+    G.busy = true; G.timerOn = false; if (!G.demo) interact(); setDrop(false);   // (the demo's go isn't the child's touch)
     if (G.stats) G.stats.goes++;
     $('#timeBox').classList.add('paused');
     const btn = $('#drop'); btn.classList.add('press'); setTimeout(() => btn.classList.remove('press'), 150); machine.pressDown();
@@ -1185,9 +1191,11 @@
       await S.tween(360, k => { claw.setGrip(lerp(claw.OPEN, shut, k)); if (cand) cand.root.position.x = lerp(x1, x2, k); }, 'out', tok);
       if (!cand) claw.wobble(0.3, claw.x > 0 ? -1 : 1, 1);                               // shut on nothing: a rattle
     }
+    if (tok !== G.tok) return;
     const held = cand && zone !== 'knock' ? cand : null;
     if (held) attach(held);
     await sleep(120);
+    if (tok !== G.tok) return;
     // a loose grip: it tips toward the open side on the way up and, unless the luck (or two misses in a row) holds it,
     // slips out part way
     const loose = zone === 'weak';
@@ -1208,6 +1216,7 @@
     if (held && !slips) held.tilt = 0;
     if (slipping) await slipping;
     if (tok !== G.tok) return;
+    if (G.demo) return slips ? null : held;              // the how-to demo takes it from here (teachDemo): no reward, no record
     if (!held || slips) {
       G.miss++; if (G.stats) G.stats.misses++;
       if (!cand) { A.sfxPlay('whiff'); await A.say('t:miss'); }
@@ -1414,7 +1423,17 @@
     if (tok !== G.tok) return;
     await A.seq(['t:startswith', `s:${p.sound}`]);   // ko: "첫소리는 /t/"
     if (tok !== G.tok) return;
-    // it slips out of the claw and drops back onto its seat
+    await putBack(p, tok);                               // it slips out of the claw and drops back onto its seat
+    G.tries++;
+    if (tok !== G.tok) return;
+    await A.say('t:again');
+    if (tok !== G.tok) return;
+    await A.say(`s:${G.target}`);
+    claw.setGrip(claw.OPEN * 0.55);
+    resume(tok);
+  }
+  /* the friend in the claw slips out and drops back onto its seat (a wrong friend; the how-to demo's friend) */
+  async function putBack(p, tok) {
     A.sfxPlay('open');
     const g0 = claw.grip;
     S.tween(250, k => claw.setGrip(lerp(g0, claw.OPEN * 0.6, k)), 'out');
@@ -1424,16 +1443,10 @@
       p.root.position.set(lerp(from.x, p.home.x, k), lerp(from.y, p.home.y, S.EASE.bounce(k)), lerp(from.z, p.home.z, k));
       p.root.quaternion.slerpQuaternions(q0, qh, Math.min(1, k * 1.5));
     }, 'linear', tok);
+    if (tok !== G.tok) return;                           // (SKIP / Exit has put everyone back already)
     A.sfxPlay('thud'); machine.balls.splash(p.home.x, p.home.z, 0.9); if (p.bump) p.bump(0.7);   // lands: squash
     p.root.position.set(p.home.x, p.home.y, p.home.z);
     G.inMachine.push(p);
-    G.tries++;
-    if (tok !== G.tok) return;
-    await A.say('t:again');
-    if (tok !== G.tok) return;
-    await A.say(`s:${G.target}`);
-    claw.setGrip(claw.OPEN * 0.55);
-    resume(tok);
   }
 
   async function timeUp() {
@@ -1555,7 +1568,7 @@
   function goTitle() {
     G.tok++; S.killTweens(); A.stopVoice(); A.motor(false);
     S.shotReset(); machine.prizeDoor.flap = 0; machine.prizeDoor.lit = false; app.classList.remove('shot');
-    G.busy = false; G.timerOn = false; stopHint();
+    G.busy = false; G.timerOn = false; stopHint(); demoOff();
     $('#prize').classList.remove('show'); burst.visible = false; burst.userData.disc.material.opacity = 0;
     for (const p of Object.values(G.all)) { if (p.root.parent) p.root.parent.remove(p.root); }
     setupPlushes();
@@ -1688,7 +1701,7 @@
      INSERTED! on the panel's screen — then the claw moves. Kept at the slot: a coin flying over from your coins crossed
      the glass and the claw. */
   async function insertCoin(tok) {
-    if (G.score > 0) { G.score--; scoreBox('minus'); scoreTag(-1); countTo(300); }
+    if (G.score > 0 && !G.demo) { G.score--; scoreBox('minus'); scoreTag(-1); countTo(300); }   // (the demo's coin is free)
     const coin = machine.coin, local = machine.group.worldToLocal(machine.slotPoint());
     const e = new T.Euler(0, 0, 0, 'YXZ');
     // (it pops up and to the LEFT of the slot: straight up it hid behind the letter coins down the right side)
@@ -1727,6 +1740,123 @@
     const el = $('#score'), box = el.parentElement;
     box.classList.remove('bump'); void box.offsetWidth; box.classList.add('bump');
     S.tween(700, k => (el.textContent = Math.round(lerp(a, b, k))), 'out');
+  }
+
+  /* ── the how-to demo (phonics-kit common rule 1: every game's first game shows how, played for real; user 2026-11-22:
+     "toy catch는 게임진행 설명이 제대로 된게 맞아? 아직 바로 게임 시작하는거 같은데"). The first game of a visit: round 1's
+     sound is asked for as in a round, the glove takes the stick and moves the claw right over a friend with that sound
+     ("Move the claw, then press the button!"), presses DOWN, and the real go runs — a coin in, the claw down, round the
+     friend's neck, up (right over its head = AIM.hold: a sure catch) — "Yes! You did it! /m/ /m/ monkey", the friend
+     drops back onto its seat, "Now you try!", and round 1 starts. It gives and costs nothing: the coin isn't taken off
+     the count, none comes back, no caught friend, no MY FRIENDS count, no record. While it runs only SKIP (bottom right,
+     #app.guide), sound and exit answer; SKIP stops it all at once and starts round 1. Later games of the visit go
+     straight in (G.taught); ?nohint leaves it out (QA). */
+  let demoAnim = null;
+  async function teachDemo(tok) {
+    G.taught = true; G.demoRan = true;
+    const L = G.targets[0], mine = G.inMachine.filter(p => p.sound === L);
+    if (!mine.length) return nextRound(tok);
+    // (of two friends with the sound, the one further from the claw: the stick has a way to go)
+    const p = mine.reduce((a, b) => (Math.abs(b.x - claw.x) > Math.abs(a.x - claw.x) ? b : a));
+    G.demo = { seats: G.inMachine.slice() };
+    G.target = L; setTarget(L);
+    machine.setScreen(['FIND', L.toUpperCase() + ' ' + L], '#ff8fd0');
+    app.classList.add('guide');                          // (SKIP shows)
+    const pause = ms => S.tween(ms, () => {}, 'linear', tok);
+    // the claw answers the stick and DOWN lights up over a friend, as in a round (input is held off: demoOnly). Right next
+    // to the friend already, the claw first slides a little way off, so the stick has something to do.
+    const X = x => Math.max(machine.X_MIN, Math.min(machine.X_MAX, x));
+    G.aimX = Math.abs(p.x - claw.x) < 1.5 ? X(p.x + (p.x > 0 ? -2.4 : 2.4)) : claw.x;
+    G.busy = false; setDrop(true);
+    await announce(L);                                   // "/m/ 소리로 시작하는 친구를 뽑아 봐!" — as round 1 will ask
+    if (tok !== G.tok) return;
+    const hand = $('#hand'), css = k => parseFloat(app.style.getPropertyValue(k));
+    const mu = css('--mu') || 8, jx = css('--joyX'), jy = css('--joyY'), dx = css('--downX'), dy = css('--downY'), W2 = hand.offsetWidth * 0.38;
+    const at = (x, y, sc = 1) => ({ transform: `translate(${x - W2}px, ${y}px)` + (sc !== 1 ? ` scale(${sc})` : '') });
+    const glove = (frames, ms) => {
+      const a = hand.animate(frames, { duration: ms, easing: 'ease-in-out', fill: 'forwards' }), o = demoAnim;
+      demoAnim = a; if (o) o.cancel();
+      return a.finished.catch(() => {});
+    };
+    const show = (async () => {
+      // the glove comes onto the knob and takes it (the knob glows)
+      glove([at(jx, jy), at(jx, jy)], 1); hand.classList.add('on'); machine.joyHint(true);
+      await pause(450);
+      if (tok !== G.tok) return;
+      await glove([at(jx, jy), at(jx, jy, 0.94)], 180);
+      // it pushes the stick toward the friend (the real stick: G.joy, 2.2 u/s at full lean) and lets it back as the aim
+      // gets there; then the aim is set right over the friend's head (the claw glides the last bit)
+      const s = Math.sign(p.x - G.aimX) || 1, J = 0.9, lean = s * J * 7 * mu;     // (7 mu = a full drag, bindInput)
+      const tilt = k => { G.joy = s * J * k; machine.setJoy(G.joy); };
+      glove([at(jx, jy, 0.94), at(jx + lean, jy, 0.94)], 250);
+      await S.tween(250, tilt, 'linear', tok);
+      if (tok !== G.tok) return;
+      await pause(Math.max(0, Math.abs(p.x - G.aimX) / (2.2 * J) - 0.25) * 1000);
+      if (tok !== G.tok) return;
+      glove([at(jx + lean, jy, 0.94), at(jx, jy)], 250);
+      await S.tween(250, k => tilt(1 - k), 'linear', tok);
+      if (tok !== G.tok) return;
+      G.joy = 0; machine.setJoy(0); machine.joyHint(false);
+      G.aimX = p.x;
+      await glove([at(jx, jy), at(dx, dy)], 650);        // over to DOWN
+      for (let i = 0; i < 40 && Math.abs(claw.x - p.x) > 0.01 && tok === G.tok; i++) await pause(50);
+    })();
+    await Promise.all([A.say('t:howto'), show]);         // "Move the claw, then press the button!"
+    if (tok !== G.tok) return;
+    await glove([at(dx, dy), at(dx, dy + 1.6 * mu, 0.94)], 160);
+    if (tok !== G.tok) return;
+    const go = drop();                                   // the real go (pressed by the glove): coin, down, grab, up
+    glove([at(dx, dy + 1.6 * mu, 0.94), at(dx, dy)], 180).then(() => { if (G.demo) hand.classList.remove('on'); });
+    const held = await go;
+    if (tok !== G.tok) return;
+    if (held) {
+      const sp = plushScreen(held);
+      FX.stars(sp.x, sp.y, 12); A.sfxPlay('sparkle'); held.cheer(2.4);
+      await A.say('t:great3');                           // "Yes! You did it!"
+      if (tok !== G.tok) return;
+      await A.seq([`s:${held.sound}`, 120, `s:${held.sound}`, 150, `w:${held.word}`]);   // "/m/ /m/ monkey", as a prize
+      if (tok !== G.tok) return;
+      await putBack(held, tok);                          // back onto its seat: the demo keeps nothing
+      if (tok !== G.tok) return;
+      claw.setGrip(claw.OPEN * 0.55);
+    }
+    await A.say('t:tryit');                              // "Now you try!"
+    if (tok !== G.tok) return;
+    endDemo(tok);
+  }
+  /* SKIP during the demo: voice, glove and claw stop at once; whatever it had moved goes back (every friend on its seat,
+     the claw up and open, the coin away, the coin count squared) and round 1 starts */
+  function skipDemo() {
+    const seats = G.demo.seats, old = G.tok, tok = ++G.tok;
+    S.killTweens(old); A.stopVoice(); A.motor(false); A.sfxPlay('tap');
+    for (const p of seats) {
+      if (p.root.parent !== machine.group) detach(p);
+      p.root.position.set(p.home.x, p.home.y, p.home.z); p.root.rotation.set(0, p.home.ry, 0); p.root.scale.setScalar(PS);
+      p.x = p.home.x; p.tilt = 0; p.excite(0);
+    }
+    G.inMachine = seats.slice();
+    claw.setHolding(false); machine.coin.visible = false;
+    const y0 = claw.y, g0 = claw.grip;
+    S.tween(400, k => { claw.set(claw.x, lerp(y0, claw.HOME_Y, k), claw.z); claw.setGrip(lerp(g0, claw.OPEN * 0.55, k)); }, 'out', tok);
+    resetScore();                                        // (coins still pouring in from the start would be lost to the new token)
+    G.interacted = true;                                 // (skipped: no round-1 glove after it)
+    endDemo(tok);
+  }
+  function endDemo(tok) {
+    demoOff();
+    G.busy = true; setDrop(false);
+    G.caught = []; G.miss = 0; G.tries = 0;
+    if (G.score !== COINS.start) { G.score = COINS.start; resetScore(); }
+    G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false };   // (the record starts at round 1)
+    G.aimX = claw.x;
+    nextRound(tok);
+  }
+  function demoOff() {
+    G.demo = null; app.classList.remove('guide');
+    const h = $('#hand'), a = demoAnim; demoAnim = null;
+    h.classList.remove('on');
+    if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
+    G.joy = 0; machine.setJoy(0); machine.joyHint(false);
   }
 
   /* ── the hint glove: drag the joystick, then press DOWN (first round, until the child touches) ─── */
@@ -1781,6 +1911,7 @@
      goes on as if the showing had ended — the claw was free all along (G.busy is false while the guide runs) */
   function skipGuide() {
     if (!app.classList.contains('guide')) return;
+    if (G.demo) return skipDemo();                       // (the first game's demo: it all stops, round 1 starts)
     A.stopVoice('t:howto');                              // (only the guide: a target sound asked for again plays on)
     A.sfxPlay('tap');
     interact();                                          // interacted: the guide loop ends; stopHint() hides glove + SKIP
@@ -1793,6 +1924,6 @@
     if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 
-  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, skipGuide, openFriends, closeFriends, album, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
+  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, skipGuide, skipDemo, openFriends, closeFriends, album, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
   boot().catch(e => { console.error(e); const l = $('#loading'); if (l) l.innerHTML = '<p style="font:700 20px sans-serif;color:#234">Could not start: ' + e.message + '</p>'; });
 })();

@@ -24,6 +24,12 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
    리본은 앞의 띠(글자) 뒤로 양끝에 더 진한 꼬리가 조금 아래로 늘어지고 제비꼬리로 끝나며, 띠 아래 모서리에 접힌 자리(진한 삼각형)가
    이어진다(`index.html` SVG `#rbTail`·`#rbFold`). 예전엔 띠 끝을 V자로 바로 잘라 '딱 잘린' 느낌이었다.
 
+**시범 게임(방문 첫 판, phonics-kit 공통 규칙 1)**: START 뒤 라운드 1 전에 장갑 손이 실제 기계로 한 번 해 보인다(`teachDemo`) —
+  라운드 1의 음가 안내 → 손이 조이스틱을 잡고 밀어 집게를 그 음가 친구 바로 위로("Move the claw, then press the button!") → DOWN을 누름 →
+  진짜 한 판(코인 투입·내려가기·목 잡기·올라오기, 정확히 머리 위라 `AIM.hold` = 반드시 잡힘) → "Yes! You did it!" "/m/ /m/ monkey" →
+  친구는 제자리로 떨어져 돌아가고 "Now you try!"(Phonics Puzzle의 `tryit` 음성) → 라운드 1. 시범은 주지도 빼지도 않는다(코인 수 그대로,
+  돌려받는 코인·뽑은 친구·MY FRIENDS·기록 없음). 도는 동안엔 SKIP·소리·나가기만 받는다(`demoOnly`). SKIP = 음성·손·집게를 바로 멈추고
+  친구·집게·코인을 되돌린 뒤 라운드 1(`skipDemo`, 그 판의 장갑 손 안내는 생략). 같은 방문의 다음 판(PLAY AGAIN, 홈 → START)은 바로 시작(`G.taught`). `?nohint`면 생략.
 첫 라운드에 아무것도 안 만지면 장갑 손이 조이스틱 → DOWN 순서로 시범("Move the claw, then press the button!"). 새 판마다(PLAY AGAIN 포함) 다시 나온다.
   시범(안내 음성 + 장갑 손)이 도는 동안에만 오른쪽 아래에 흰 반투명 유리 **SKIP** 알약(phonics-kit 공통 규칙 1). 누르면 안내 음성만 바로 끊고
   (다시 듣기로 튼 목표 음가는 계속), 장갑·조이스틱 흔들기를 멈춘 뒤 그대로 진행 — 집게는 시범 중에도 움직일 수 있다(`skipGuide`, `#app.guide`).
