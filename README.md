@@ -5,8 +5,8 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 
 ## 흐름
 1. **타이틀**: TOY CATCH 로고 · 기계 · START. 첫 터치에 배경음악 + "Hi, friends! Welcome to Toy Catch! … Press start to play!"
-2. **START** → 카메라가 투입구로 다가가 동전이 들어가는 걸 보여 주고(`S.shotTo` + `slotShot`) 기계 화면에 `INSERTED! / READY TO PLAY!` → "Ready? Let's play!" → 카메라가 돌아와 기계 쪽으로 다가간다. 코인 8개가 위에서 쏟아져 오른쪽 위 코인 칸에 들어온다.
-3. **4라운드**(m/a/s/t 무작위 순서, 시간 제한 없음 — 코인 수만큼): 위 배너 `TARGET: Mm` + `CATCH THE 'M'!`, "Catch a friend that starts with /m/ … /m/".
+2. **START** → 카메라가 투입구로 다가가 동전이 들어가는 걸 보여 주고(`S.shotTo` + `slotShot`) 기계 화면에 `INSERTED! / READY TO PLAY!` → "Ready? Let's play!" → 카메라가 돌아와 기계 쪽으로 다가간다. 코인 8개가 위에서 쏟아져 왼쪽 위 코인 칸에 들어온다(`+8`).
+3. **4라운드**(m/a/s/t 무작위 순서, 시간 제한 없음 — 코인이 있는 동안): 위 가운데 파란 알약에 목표 글자 `Mm`(젤리 글자) + 다시 듣기 스피커, 기계 화면 `FIND / M m`, 가운데에 `GO!`, "Catch a friend that starts with /m/ … /m/".
    - 집게 이동: 조이스틱 드래그 · 기계 안 드래그 · 인형 탭(그 위로 이동) · ← →.  내리기: 초록 DOWN 버튼 · Space/Enter/↓.
    - 집게는 조준한 자리에 **그대로** 내려간다(친구 쪽으로 저절로 붙지 않음). 머리 가운데와의 거리(`AIM` in game.js)로 결과가 갈린다:
      ≤0.2 확실히 잡음 · ≤0.4 헐겁게 잡혀 올라가다 기울어 **미끄러질 수 있음**(가운데서 멀수록 35→85%, "Oh no, it slipped! So close!")
@@ -14,27 +14,32 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
      한 라운드에 연속 2번 놓치면 다음 헐거운 잡기는 안 미끄러진다. 조준 중엔 빛이 집게 위 트롤리의 노란 둥근 램프에서 나와 집게가 내려갈 자리로 퍼지고(`makeSpot`: 원뿔의 먼 쪽 반만 보여 인형을 흐리지 않음, 진짜 스포트라이트가 공 위에 빛 웅덩이, 인형은 위에서 비친 듯 밝아짐), 가운데일 때만 밝아지며
      친구가 통통 뛰고 DOWN 버튼이 반짝이며 두근거린다("DOWN!" 글자·화살표는 뺐다 — 사용자 요청). 친구를 탭하면 그 친구 가운데가 아니라 **탭한 자리**로 집게가 간다.
    - 잡히면 머리를 양옆에서 감싸 올린다(뒷줄 인형도 앞줄 위로 넘어 운반). 거북·물고기처럼 옆모습인 친구는 등껍질/몸통 위를 잡는다.
-   - **정답**: 꽃가루·불꽃놀이(불꽃은 둥근 점만 — 꼬리 선 없음), 다른 인형들이 환호, "Yes! You did it!" → 앞줄 위로 운반해 왼쪽 앞 배출구에 떨어뜨림 → 인형이 크게 튀어나와 "/m/ /m/ monkey" → 왼쪽 위 트레이로. 100점(첫 시도면 +50).
+   - **정답**: 꽃가루·불꽃놀이(불꽃은 둥근 점만 — 꼬리 선 없음), 다른 인형들이 환호, "Yes! You did it!" → 앞줄 위로 운반해 왼쪽 앞 배출구에 떨어뜨림 → 인형이 크게 튀어나와 "/m/ /m/ monkey" → 왼쪽 위 트레이로. 코인 1개를 돌려받는다(`+1`, 친구에게서 금화가 튀어나와 코인 칸으로).
    - **오답**: 흔들리다 미끄러져 제자리로, "Uh-oh! cat. It starts with /k/" → "Try again! Listen." + 목표 음가.
-   - 빈 데 내리면 "Oops, nothing! Try again." 시간이 다 되면 "Time's up!" 후 다음 라운드.
-4. **결과**: 별(4개 모두 → 3, 2개 이상 → 2, 1개 → 1), 뽑은 친구들, 점수, 홈 / PLAY AGAIN.
+   - 빈 데 내리면 "Oops, nothing! Try again." 놓치거나 오답이어도 코인을 더 빼지 않는다(내릴 때 낸 1개뿐, `−1`).
+   - 한 번 한 뒤 코인이 0이면 `NO COINS!`(기계 화면 `NO COINS / GAME OVER`) → 결과. `?sec=N`일 때만 라운드 시계가 돌고, 다 되면 `TIME'S UP!` "Time's up!" 후 다음 라운드.
+4. **결과**: 별(4개 모두 → 3, 2개 이상 → 2, 1개 → 1), 제목 PERFECT! · GREAT JOB! · NICE TRY!, 뽑은 친구들, 남은 코인(0이면 숨김), 홈 / PLAY AGAIN.
    별은 점수 동전·시계와 같은 입체(`index.html` SVG `#st3*`, 선 없음): 받은 별은 두께 띠·그림자·반사가 있는 통통한 금색 별이 하나씩
    돌며 들어가고, 못 받은 자리는 카드에 눌려 들어간 별 모양 홈(안쪽 위 그늘, 아래 밝은 턱).
    리본은 앞의 띠(글자) 뒤로 양끝에 더 진한 꼬리가 조금 아래로 늘어지고 제비꼬리로 끝나며, 띠 아래 모서리에 접힌 자리(진한 삼각형)가
    이어진다(`index.html` SVG `#rbTail`·`#rbFold`). 예전엔 띠 끝을 V자로 바로 잘라 '딱 잘린' 느낌이었다.
 
-첫 라운드에 아무것도 안 만지면 장갑 손이 조이스틱 → DOWN 순서로 시범("Move the claw, then press the button!").
-  시범(안내 음성 + 장갑 손)이 도는 동안에만 위 줄 소리 버튼 왼쪽에 흰 **SKIP** 판(phonics-kit 공통 규칙 1). 누르면 안내 음성만 바로 끊고
+첫 라운드에 아무것도 안 만지면 장갑 손이 조이스틱 → DOWN 순서로 시범("Move the claw, then press the button!"). 새 판마다(PLAY AGAIN 포함) 다시 나온다.
+  시범(안내 음성 + 장갑 손)이 도는 동안에만 오른쪽 아래에 흰 반투명 유리 **SKIP** 알약(phonics-kit 공통 규칙 1). 누르면 안내 음성만 바로 끊고
   (다시 듣기로 튼 목표 음가는 계속), 장갑·조이스틱 흔들기를 멈춘 뒤 그대로 진행 — 집게는 시범 중에도 움직일 수 있다(`skipGuide`, `#app.guide`).
+한 번 만진 뒤에는 매 라운드 손을 놓고 8초 동안 아무 입력이 없으면 목표 음가 안내를 다시 들려주고 장갑 손 시범을 한 번 보여 준다.
+  기다리는 동안 15초에 한 번까지 되풀이, 아무 입력이나 하면 멈춘다(`idleHelp`, `IDLE = { after: 8, every: 15 }`, `?nohint`면 끔).
+음성 재생에는 안전 타이머가 있다: 클립 길이 + 0.8초(길이를 모르면 6초)가 지나면 끝난 것으로 본다 — 끝 신호가 안 와도 게임이 멈추지 않게(`js/audio.js`).
 판이 끝나면(결과 화면) 공통 진도 `phonics.progress`에 기록만 남긴다(`js/phonics-progress.js` = phonics-kit 사본, 레벨 고르기 없음):
 `PhonicsProgress.played('toy-catch', { stars, words(맞힌 친구 = 깬 라운드), rounds, won, score(남은 코인), goes, wrong, misses, outOfCoins, time })`.
   중간에 나가기로 나간 판은 기록하지 않는다.
-오른쪽 위 EN/한 토글: 안내 음성만 한국어로 바뀐다(음가·단어는 영어 그대로). `localStorage` `claw-lang`, 음소거 `claw-muted`.
+EN/한 토글(2026-11-22 공통 규칙): 타이틀 오른쪽 위에만 있다(게임·결과 화면엔 없음). 처음 들어오면 한국어. 바뀌는 것은 안내 음성뿐 —
+  화면 글은 두 언어 모두 영어, 음가·단어도 영어. 누르면 그 언어로 "Press start to play!". `localStorage` `claw-lang`, 음소거 `claw-muted`.
 
 ## 친구들 (seats 6)
 - 정답 친구 `m: monkey, mouse · a: ant · s: seal · t: turkey, turtle`, 오답 친구 `c: cat, cow · d: dog, duck · f: fish`(목표 글자로는 안 나옴).
 - 결과 화면: 로고와 같은 하늘색 유리판 카드(금색 테두리, 위쪽 흰 광택), 별 자리에 HUD와 같은 동전 별 3개(얻은 만큼 금화가
-  튀어나와 한 번 뒤집힘), 그 아래 금색 숫자 점수(카운트업, 박스 없음), 잡은 친구는 HUD와 같은 흰 유리 트레이, PLAY AGAIN은 파란 알약, 홈은 흰 유리 버튼. 제목은 접힌 꼬리 리본(게임의 파랑) 위에 로고식 금색 젤리
+  튀어나와 한 번 뒤집힘), 그 아래 금색 숫자 = 남은 코인(카운트업, 박스 없음, 0이면 숨김), 잡은 친구는 HUD와 같은 흰 유리 트레이, PLAY AGAIN은 파란 알약, 홈은 흰 유리 버튼. 제목은 접힌 꼬리 리본(게임의 파랑) 위에 로고식 금색 젤리
   글자(`resultTitle`, 판 없음). 비교용 `?ribbon=pink`(예전 분홍 리본), `?title=rainbow`(무지개 글자).
 - **2026-11-19 새 디자인 11종(사용자 360° GIF, `design/turntable/<이름>.gif`, git 제외)**: 친구는 GIF 장면 그대로
   보인다(`js/friends-spin.js`, `tools/spin_frames.py`) — 보는 각도에 맞는 24장 중 한 장을 카메라를 향한 카드로. 게임 그림 =
@@ -77,7 +82,7 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 - 헛집기·튕김·미끄러짐 때 집게가 케이블(`cable` 그룹)에 매달려 1~2초 흔들리다 멈춘다(`claw.wobble`, 게임 진행 시간은 그대로).
 - 동작 수정: 앉은 채 고개젓기는 엉덩이 기준 흔들림, 미끄러져 떨어질 때 기울기가 서서히 돌아옴, 배출구로 갈 때 유리벽을 뚫지
   않음, 상품→트레이 전환이 같은 크기·자리에서 이어짐.
-- 게임 중 뜨는 GO!와 TIME'S UP!도 로고식 젤리 글자(`showPrompt`, GO! 노랑 · TIME'S UP! 분홍, 판 없음, 보이는 크기의
+- 게임 중 뜨는 GO!와 NO COINS!(`?sec=N`이면 TIME'S UP!도)는 로고식 젤리 글자(`showPrompt`, GO! 노랑 · NO COINS!·TIME'S UP! 분홍, 판 없음, 보이는 크기의
   1.25배로 그림).
 - 시그니처 포즈: `js/poses.js` — 친구마다 귀·꼬리·팔·더듬이·지느러미 등 최대 4부위를 그림 비율 좌표로 정의해 셰이더에서
   움직임(그림자도 같이). 집게가 바로 위에 있으면 잔잔한 반복(내려가기 시작하면 멈춤), 상품으로 나올 때 크게 1번, 탭하면 1번,
@@ -94,10 +99,9 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
   내려가고(`doorShot`), 친구가 통에 툭 떨어져 덮개가 흔들린 뒤 덮개가 열리고, 친구가 앞으로 나와(선반 밑으로) 위로 올라가
   상품 자리로 오는 동안 카메라가 돌아간다(`prize(p, tok, true)`, 착지점은 `S.baseCam()` 기준). 카메라는 장면이 바뀔 때만
   움직인다(시작 코인·경품 통·상품) — 조준 중엔 고정. 샷 동안 양옆 글자 코인·음표·로고는 숨김(`#app.shot`).
-- 동전 모션(`game.js` coinsIn / coinsOut, 그림은 상단 점수 동전 SVG 그대로): 들어올 때는 금화가 날아와 점수 동전에 하나씩 들어가고
-  들어갈 때마다 숫자가 올라간다(시작 +100은 화면 위에서 쏟아짐, 정답은 잡힌 친구에게서 튀어나와 날아감, 꽃가루 위에 그림).
-  나갈 때는 점수 동전에서 금화가 튀어나와 왼쪽 가장자리로 떨어지며 사라진다(뽑기 −10은 1개, 못 잡음 −20은 2개, 유리·집게를
-  가리지 않음). 숫자 밑 +100 / −20 태그는 그대로. 움직임 줄이기 설정이면 금화 없이 숫자만 바뀐다.
+- 동전 모션(`game.js` coinsIn · insertCoin, 그림은 상단 코인 SVG 그대로): 들어올 때는 금화가 날아와 코인 칸 동전에 하나씩 들어가고
+  들어갈 때마다 숫자가 올라간다(시작 +8은 화면 위에서 쏟아짐, 정답 +1은 잡힌 친구에게서 튀어나와 날아감, 꽃가루 위에 그림).
+  한 번 할 때마다 숫자가 1 줄고 큰 3D 코인이 투입구로 들어간다(위 '코인 = 기회'). 숫자 밑에 +8 / +1 / −1 태그. 움직임 줄이기 설정이면 금화 없이 숫자만 바뀐다.
 - 로딩 바(`css #loading`, `game.js setBar`): 로고 판과 같은 하늘색 유리 판(밑의 주황 두께 띠는 뺐다), 판에 파인 홈을 무지개 젤리(로고 글자색,
   위 광택·아래 그늘, 사탕 줄무늬가 흐름)가 채우고, 끝에 상단 점수 동전이 굴러가며 따라간다(별이 이동 거리만큼 회전). 선 없음.
 - 3D 친구들은 기계 유리의 흰 막 때문에 뿌옇게 보여서 채도 ×1.22, 대비 ×1.04를 화면 색 단계에서 올린다(`friends.js` SAT).
@@ -124,10 +128,11 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 - 탭은 그림의 투명한 모서리가 아니라 그림 자체를 눌렀을 때만 그 친구로 간다(64px 알파 격자).
 
 ## 소리
-- 음가 7개(m a s t + 오답용 c d f) + 단어 10개: **공식 FPR K 녹음**(Phonics Match에서 다듬어진 것, turkey는 Phonics Island의 FPR K Unit 1 Lesson 4 파일).
-- 안내 문장: 사내 TTS 남자아이 목소리(aiden). 공용 문장은 Magic Block·Croco Phonics 것을 재사용, 새 문장 7개 × (영/한)은 `tools/build_voice.py`가 생성(사내망 필요, `~/.cache/toy-catch/voice_qwen`에 캐시).
-  `tools/voice_check.py`(Whisper)로 14개 모두 받아쓰기 확인.
-- 효과음(모터, 집게, 동전, 배출구, 팡파르)은 `js/audio.js`에서 합성. 배경음악은 `tools/make_bgm.py`가 합성한 30초 카니발 루프(칼리오페 + 움파 베이스, 샘플 없음).
+- 음가 7개(m a s t + 오답용 c d f) + 단어 11개: **공식 녹음**(Phonics Match에서 다듬어진 것 — monkey·mouse는 lesson pack FP.K.U1L1 녹음, turkey는 Phonics Island의 FPR K Unit 1 Lesson 4 파일).
+- 안내 문장: phonics-api TTS의 `en-US-AvaMultilingualNeural`을 예전 `aiden`의 높이·빠르기로 맞춘 파닉스 공통 튜터 목소리(`js/voice.js`의 `engine`·`voice`·`shape`).
+  공용 문장은 Magic Block·Croco Phonics 것을 재사용, 새 문장 9개 × (영/한)은 `tools/build_voice.py`가 생성 — 테이크마다 whisper로 다시 들어 보고 다르게 들리면 다시 만든다(phonics-kit `tutor_takes.py`). `--engine qwen`은 예전 사내 TTS `aiden`.
+- 효과음(모터, 집게, 동전, 배출구, 팡파르)은 `js/audio.js`에서 합성. 배경음악은 `tools/make_bgm.py`의 8비트 오락실 루프(2026-11-22, E장조 150 BPM 16마디 = 25.6초:
+  펄스파 멜로디 · 빠른 화음 아르페지오 · 삼각파 베이스 · 노이즈 드럼, 4·12마디 끝에 '집게 내려가는' 소리). 악기·믹스는 phonics-kit `bgm_engine.py`, 모두 합성(샘플 없음). 음성이 나오는 동안은 작게.
 
 ## 그림
 - `assets/img/bg.webp`, `assets/img/logo.webp`, `assets/img/friends/<kind>.webp`(+ `js/friends-art.js`): 사용자 제공
@@ -174,15 +179,15 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
   (같은 색·금색 선·옆면·두 톤·흰 점, 누르면 쑥 들어감) — `jellyWord(text, pal, { plate: false })`, 버튼 색은 `--j*` 변수.
 - 상단 상자 높이는 하나(`--hb` = 7.6u): 점수·잡은 친구 칸·시간·소리·나가기·EN/한이 모두 같은 높이이고 안의 동전·칸·글자·시계는 그 비율.
   가운데 목표 글자 알약과 스피커만 크게 둔다(사용자 요청). 바꿀 땐 `--hb` 하나만.
-- 시간 아이콘 스톱워치도 점수 동전과 같은 입체(`index.html` SVG, id `sw*`): 선 없이 그라데이션 케이스 + 아래 두께 띠, 우물처럼 들어간 문자판,
+- 시간 아이콘 스톱워치(`?sec=N`일 때만 보임)도 점수 동전과 같은 입체(`index.html` SVG, id `sw*`): 선 없이 그라데이션 케이스 + 아래 두께 띠, 우물처럼 들어간 문자판,
   원통 같은 용두·옆 버튼, 바늘 그림자(그림자는 바늘을 감싼 그룹의 필터라 바늘이 돌아도 늘 오른쪽 아래), 유리 반사. `#watchHand`는 game.js가 (32, 36) 중심으로 돌린다.
 
 ## 실행 · 도구
 ```sh
 python3 tools/serve.py 5231                    # http://127.0.0.1:5231/  (그냥 index.html 열어도 됨)
 /Users/jini/.hermes/bin/uv run --with pillow --with numpy --with scipy python tools/import_art.py   # 배경·로고·친구 10
-zsh -ic '/Users/jini/.hermes/bin/uv run --with numpy python tools/build_voice.py'
-/Users/jini/.hermes/bin/uv run --with numpy --with scipy python tools/make_bgm.py
+/Users/jini/.local/bin/uv run --with numpy python tools/build_voice.py
+/Users/jini/.local/bin/uv run --with numpy --with scipy --with pyloudnorm python tools/make_bgm.py
 ```
 URL 옵션: `?sec=10`(라운드 시계를 다시 켬, 테스트용) · `?order=m,a,s,t` · `?kinds=cat,seal,ant,turtle,monkey,dog`(뒷줄 3 → 앞줄 3, 자리 고정) · `?nohint`.
 

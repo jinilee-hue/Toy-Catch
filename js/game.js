@@ -2,8 +2,9 @@
  * Title (logo, START) → coin goes in ("INSERTED! READY TO PLAY!") → 4 rounds, one per sound m a s t in random order:
  * "Catch a friend that starts with /m/" → move the claw (joystick, drag, tap a plush, ← →) → DOWN → the claw drops,
  * grabs the plush under it and lifts it. Right sound: confetti, the others cheer, "/m/ /m/ monkey", it goes down the
- * chute and pops out as a prize. Wrong sound: "Uh-oh! turtle. It starts with /t/", it slips back. 45 s per round.
- * → result (stars, caught friends, score, Play again / Home).
+ * chute and pops out as a prize. Wrong sound: "Uh-oh! turtle. It starts with /t/", it slips back. No round clock:
+ * coins are the goes (COINS — 8 to start, one per go, one back for the right friend; none left → NO COINS!).
+ * → result (stars, caught friends, coins left, Play again / Home).
  */
 (function () {
   'use strict';
