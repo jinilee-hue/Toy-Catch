@@ -960,7 +960,9 @@
     const firstTouch = (e) => {
       A.unlock();
       if (greeted || G.screen !== 'title' || G.busy) return;
-      greeted = true; A.startBgm();
+      A.startBgm();
+      if (e.target.closest && e.target.closest('#btnFriends, #myFriends')) return;   // (MY FRIENDS has its own sounds: the hello waits)
+      greeted = true;
       if (!(e.target.closest && e.target.closest('#start'))) A.seq(['t:hello', 200, 't:pressstart']);
     };
     window.addEventListener('pointerdown', firstTouch, { capture: true });
@@ -980,6 +982,8 @@
     });
     $('#btnAgain').addEventListener('click', () => startGame(true));
     $('#btnHome').addEventListener('click', () => goTitle());
+    $('#btnFriends').addEventListener('click', openFriends);
+    $('#btnFriendsClose').addEventListener('click', closeFriends);
     // joystick: drag sideways
     const jh = $('#joyHit');
     jh.dataset.hint = JOY_HINT;
@@ -1011,6 +1015,7 @@
     cv.addEventListener('pointerup', cend); cv.addEventListener('pointercancel', cend);
     window.addEventListener('keydown', e => {
       if (e.repeat) return;
+      if ($('#myFriends').classList.contains('show')) { if (e.key === 'Escape') closeFriends(); return; }   // (START is under it)
       if (e.key === 'ArrowLeft' || e.key === 'a') { G.keys.l = 1; interact(); }
       else if (e.key === 'ArrowRight' || e.key === 'd') { G.keys.r = 1; interact(); }
       else if (e.key === ' ' || e.key === 'Enter' || e.key === 'ArrowDown') {
@@ -1305,7 +1310,7 @@
     pd.flap = 1; A.sfxPlay('open');                                             // taken out: the flap swings up
     await S.wait(220);
     if (tok !== G.tok) return;
-    G.caught.push(p.kind);
+    G.caught.push(p.kind); keepFriend(p.kind);          // (MY FRIENDS: one more of this friend)
     await prize(p, tok, true);
     pd.flap = 0; pd.lit = false;
     if (tok !== G.tok) return;
@@ -1451,6 +1456,7 @@
     const all = n >= LETTERS.length;
     const stars = all ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0;
     saveProgress(tok, n, all, stars);                    // (the game is over now, even if Exit comes during the dolly)
+    keepStars(tok, stars);
     const title = all ? 'PERFECT!' : n >= 2 ? 'GREAT JOB!' : 'NICE TRY!';
     const titleCv = resultTitle(title);                  // (drawn now, the first time, while nothing moves yet)
     await dolly(0, 900);
@@ -1495,6 +1501,55 @@
         time: Math.round((performance.now() - s.t0) / 100) / 10,   // seconds, from the coins coming in to the end
       });
     } catch (e) { console.warn('progress', e); }
+  }
+
+  /* MY FRIENDS (user 2026-11-22: every game needs a place where the things you collect go): this device keeps how many
+     times each target friend was caught and the stars — the best result and all of them together (localStorage
+     'claw-friends': { got: { monkey: 2, … }, best: 0–3, stars }). The title's friends button (top left) opens it: the 6
+     target friends, a caught one in colour with ×N (tap: "/m/ /m/ monkey", the prize's clips), not yet a silhouette with
+     '?', and the best stars under them. A friend counts as it comes out of the prize door; the stars when a game ends. */
+  const FRIENDS_KEY = 'claw-friends', TARGET_FRIENDS = LETTERS.flatMap(L => POOL[L]);
+  const album = (() => {
+    let a = null;
+    try { a = JSON.parse(localStorage.getItem(FRIENDS_KEY) || 'null'); } catch (e) { /* storage off */ }
+    a = a && typeof a === 'object' ? a : {};
+    return { got: a.got && typeof a.got === 'object' ? a.got : {}, best: +a.best || 0, stars: +a.stars || 0 };
+  })();
+  function saveAlbum() { try { localStorage.setItem(FRIENDS_KEY, JSON.stringify(album)); } catch (e) { /* storage off */ } }
+  function keepFriend(kind) { album.got[kind] = (album.got[kind] || 0) + 1; saveAlbum(); }
+  function keepStars(tok, stars) {
+    const s = G.stats;
+    if (!s || s.starsKept || tok !== G.tok) return;
+    s.starsKept = true;
+    album.best = Math.max(album.best, stars); album.stars += stars; saveAlbum();
+  }
+  let mfRun = 0;
+  function openFriends() {
+    if (G.screen !== 'title' || app.classList.contains('inserting')) return;
+    A.unlock(); A.sfxPlay('tap');
+    $('#mfTitle').replaceChildren(resultTitle('MY FRIENDS'));
+    $('#mfGrid').innerHTML = TARGET_FRIENDS.map(k => {
+      const n = album.got[k] || 0, f = G.all[k];
+      if (!n) return `<div class="mf-fr"><span class="slot"><img src="${G.icons[k]}" alt="" draggable="false"><b>?</b></span><em></em></div>`;
+      return `<button class="mf-fr got" data-k="${k}" aria-label="${f.word} \u00d7${n}"><span class="slot"><img src="${G.icons[k]}" alt="" draggable="false">`
+        + `<i class="mf-n">\u00d7${n}</i></span><em style="--lc:${JELLY[LETTER_JELLY[f.sound] || 'pink'][3]}"><b>${f.word[0]}</b>${f.word.slice(1)}</em></button>`;
+    }).join('');
+    $('#mfGrid').querySelectorAll('button.mf-fr').forEach(b => b.addEventListener('click', () => sayFriend(b)));
+    $('#mfStars').innerHTML = $('#stars').innerHTML;    // (the result's coin-stars; the earned ones pop in)
+    [...$('#mfStars').children].forEach((s, i) => s.classList.toggle('on', i < album.best));
+    $('#myFriends').classList.add('show');
+  }
+  function closeFriends() { mfRun++; A.stopVoice(); A.sfxPlay('tap'); $('#myFriends').classList.remove('show'); }
+  /* a caught friend, tapped: its sound twice and its word, as when it came out as a prize (it bumps with each) */
+  async function sayFriend(b) {
+    const f = G.all[b.dataset.k], run = ++mfRun;
+    A.unlock(); A.stopVoice();
+    for (const k of [`s:${f.sound}`, 120, `s:${f.sound}`, 150, `w:${f.word}`]) {
+      if (run !== mfRun) return;
+      if (typeof k === 'number') { await A.sleep(k); continue; }
+      b.classList.remove('say'); void b.offsetWidth; b.classList.add('say');
+      await A.say(k);
+    }
   }
 
   function goTitle() {
@@ -1738,6 +1793,6 @@
     if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 
-  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, skipGuide, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
+  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, skipGuide, openFriends, closeFriends, album, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
   boot().catch(e => { console.error(e); const l = $('#loading'); if (l) l.innerHTML = '<p style="font:700 20px sans-serif;color:#234">Could not start: ' + e.message + '</p>'; });
 })();
