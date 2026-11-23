@@ -5,7 +5,8 @@
  * grabs the plush under it and lifts it. Right sound: confetti, the others cheer, "/m/ /m/ monkey", it goes down the
  * chute and pops out as a prize. Wrong sound: "Uh-oh! turtle. It starts with /t/", it slips back. No round clock:
  * coins are the goes (COINS — 8 to start, one per go, one back for the right friend; none left → NO COINS!).
- * → result (stars, caught friends, coins left, Play again / Home).
+ * → result (stars, caught friends, coins left, LEVEL UP!, Play again / Home). Levels (LEVELS): START goes on at the saved
+ * level, 2+ stars → the next game one up (quicker claw, more wrong friends, fewer coins, wandering friends, off-centre slips).
  */
 (function () {
   'use strict';
@@ -32,6 +33,27 @@
      COINS.win back (it flies out of the friend into your coins), a miss or the wrong friend costs nothing more. No coins
      left after a go: the game ends (NO COINS! → results). No round clock any more (?sec=N brings it back, for tests). */
   const COINS = { start: 8, win: 1 };
+  /* game levels (phonics-kit README "공통 규칙: 레벨", user 2026-11-22): no picking — START goes on at the saved level; a
+     game with 2+ stars → one up, fewer → the same again, two poor games (≤ 1 star) in a row → one down. The sounds stay
+     m a s t (Unit 1); only the claw game gets harder, a little at a time. One row per level (add rows to go further):
+       speed  the claw's sideways speed (× level 1: the stick / keys and its glide to where you aim)
+       wrong  c/d/f friends on the field — at least (level 1: one, the 6th seat any friend; 2 = the 6th seat is c/d/f too)
+       coins  coins to start (= goes; the right friend still gives one back)
+       drift  the friends in the balls wander from side to side while you aim (machine units each way; 0 = still)
+              — `period` s for one there-and-back; they stop as soon as DOWN is pressed, so the go you aimed is the go you get
+       slip   { from, p }: a grab inside the sure zone (AIM.hold) but further than `from` off the middle may slip out —
+              chance rising to p at the zone's edge (two misses in a row still hold). Right over the head never slips;
+              DOWN glows only where it can't slip.
+     The how-to demo always plays level 1 (LV()). */
+  const LEVELS = [
+    { speed: 1.00, wrong: 1, coins: 8, drift: 0, period: 0, slip: null },                       // 1 as before
+    { speed: 1.15, wrong: 2, coins: 8, drift: 0, period: 0, slip: null },                       // 2 quicker claw, one more wrong friend
+    { speed: 1.30, wrong: 2, coins: 7, drift: 0, period: 0, slip: null },                       // 3 quicker, 7 coins
+    { speed: 1.30, wrong: 2, coins: 7, drift: 0.30, period: 9, slip: null },                    // 4 the friends in the balls wander, slowly
+    { speed: 1.40, wrong: 2, coins: 6, drift: 0.40, period: 7, slip: { from: 0.12, p: 0.15 } }, // 5 quicker wander, 6 coins, off-centre may slip
+    { speed: 1.50, wrong: 2, coins: 5, drift: 0.50, period: 5.5, slip: { from: 0.10, p: 0.25 } },  // 6 all a bit stronger
+  ];
+  const LEVEL_KEY = 'claw-level';                       // localStorage { level 1.., poor: poor games in a row }
   const TIMER = qs.has('sec');
   const IDLE = { after: 8, every: 15 }, NOHINT = qs.has('nohint');   // the idle help (idleHelp): s of nothing, s between
   const G = {
@@ -40,7 +62,16 @@
     icons: {}, shownSec: -1, miss: 0, rand: Math.random,
     stats: null,                                        // this game's counts for the shared progress record (saveProgress)
     taught: false, demo: null,                          // the how-to demo: shown this visit · running ({ seats }) (teachDemo)
+    level: 1, poor: 0, driftT: 0,                       // the level to play (LEVELS) · poor games in a row · the wander's clock
   };
+  {                                                     // the saved level (claw-level; else the shared record's)
+    let a = null;
+    try { a = JSON.parse(localStorage.getItem(LEVEL_KEY) || 'null'); } catch (e) { /* storage off */ }
+    if (!a && window.PhonicsProgress) a = { level: PhonicsProgress.get('toy-catch').level, poor: 0 };
+    G.level = Math.max(1, Math.min(LEVELS.length, Math.round(+(a && a.level) || 1)));
+    G.poor = Math.max(0, Math.min(1, Math.round(+(a && a.poor) || 0)));
+  }
+  const LV = () => LEVELS[G.demo ? 0 : G.level - 1];   // (the how-to demo plays level 1: it always catches)
   let machine, claw, spot, burst;
   window.__claw = G;
 
@@ -61,6 +92,7 @@
     app.classList.toggle('timer', TIMER);               // (the round clock only with ?sec=N)
     machine = Machine.build(); claw = machine.claw;
     S.machine = machine; S.scene.add(machine.group);
+    machine.setScreen(['LEVEL ' + G.level, 'M A S T']);   // (the panel's little screen: the level START goes on at)
     FX.init($('#fx'));
     setBar(55);
     await A.sleep(20);
@@ -768,7 +800,7 @@
   }
 
   /* 6 friends on the 6 seats: one for every sound (m a s t) + 2 more — at least one c/d/f friend, the other any of
-     the rest (the second m or t friend, or another c/d/f) */
+     the rest (the second m or t friend, or another c/d/f; from level 2 always another c/d/f — LEVELS wrong) */
   function setupPlushes() {
     for (const p of Object.values(G.all)) { if (p.root.parent) p.root.parent.remove(p.root); p.hold(false); p.st.cheer = 0; p.excite(0); }
     claw.setHolding(false);
@@ -778,7 +810,7 @@
     if (fixed) kinds = fixed.split(',');
     else {
       const m2 = shuffle(POOL.m), t2 = shuffle(POOL.t), o = shuffle(OTHERS);
-      kinds = [m2[0], 'ant', 'seal', t2[0], o[0], shuffle([m2[1], t2[1], ...o.slice(1)])[0]];
+      kinds = [m2[0], 'ant', 'seal', t2[0], o[0], LV().wrong >= 2 ? o[1] : shuffle([m2[1], t2[1], ...o.slice(1)])[0]];
       kinds = shuffle(kinds);
     }
     /* every friend must fit its seat: the left front seat is next to the prize chute and the outer seats are next to
@@ -805,11 +837,38 @@
       p.root.position.set(s.x, s.y, s.z);
       p.root.rotation.set(0, 0, 0);                    // the picture turns to the camera by itself
       p.root.scale.setScalar(PS);
-      p.home = { x: s.x, y: s.y, z: s.z, ry: p.root.rotation.y };
+      p.home = { x: s.x, y: s.y, z: s.z, ry: p.root.rotation.y, lo: L.lo - p.span[0] * PS, hi: L.hi - p.span[1] * PS };
       p.x = s.x; p.z = s.z;
       machine.group.add(p.root);
       G.inMachine.push(p);
     });
+    /* levels with drift: each friend in the balls gets its own stretch of the row to wander along — up to `drift` each
+       way, its half of the gap to each neighbour (they never bump), inside the chute / glass (home lo..hi) */
+    const amp = LV().drift, pit = G.inMachine.filter(p => p.home.y < 0.6).sort((a, b) => a.home.x - b.home.x);
+    G.driftT = 0;
+    pit.forEach((p, i) => {
+      const h = p.home, l = pit[i - 1], r = pit[i + 1];
+      let lo = Math.max(h.lo, h.x - amp), hi = Math.min(h.hi, h.x + amp);
+      if (l) lo = Math.max(lo, h.x - Math.max(0, (h.x + p.span[0] * PS) - (l.home.x + l.span[1] * PS)) / 2);
+      if (r) hi = Math.min(hi, h.x + Math.max(0, (r.home.x + r.span[0] * PS) - (h.x + p.span[1] * PS)) / 2);
+      lo = Math.min(lo, h.x); hi = Math.max(hi, h.x);
+      p.drift = amp && hi - lo > 0.04 ? { mid: (lo + hi) / 2, half: (hi - lo) / 2, ph: Math.random() * 6.283 } : null;
+    });
+    for (const p of G.inMachine) if (!pit.includes(p)) p.drift = null;
+  }
+  /* the friends in the balls wander (LEVELS drift) while you aim — never while the claw is busy (DOWN freezes them where
+     they are) and never in the demo (LV() = level 1). Back from a slip or a put-back they walk to their path, no jump. */
+  function wander(dt) {
+    const lv = LV(), on = lv.drift > 0 && G.screen === 'game' && !G.busy;
+    if (!on) return;
+    G.driftT += dt;
+    for (const p of G.inMachine) {
+      const d = p.drift;
+      if (!d || p.root.parent !== machine.group) continue;
+      const want = d.mid + d.half * Math.sin(G.driftT * 2 * Math.PI / lv.period + d.ph), x = p.root.position.x, step = 1.2 * dt;
+      p.root.position.x = x + Math.max(-step, Math.min(step, want - x));
+      p.x = p.root.position.x;
+    }
   }
   function buildTray() {
     $('#tray').innerHTML = LETTERS.map(() => '<div class="slot"></div>').join('');
@@ -850,16 +909,17 @@
       const tilt = e < 0.2 ? -e / 0.2 : e < 0.4 ? -1 + (e - 0.2) / 0.1 : e < 0.5 ? 1 - (e - 0.4) / 0.1 : 0;
       machine.setJoy(tilt * 0.85);
     }
+    wander(dt);                                         // (levels 4+: the friends in the balls wander)
     // the balls round the friends in the pit bounce with their hops (balls.friends)
     machine.balls.friends(G.inMachine.filter(p => p.home && p.home.y < 0.6 && p.root.parent === machine.group).map(p => ({
       x: p.root.position.x, z: p.root.position.z, ek: p.st.ek * (1 - p.st.hk), ck: p.st.ck * (1 - p.st.hk), ph: p.phase, r: p.width * PS * 0.36 })), t);
     // the claw follows the aim (title: wanders)
     if (G.screen === 'title' && !G.busy) G.aimX = Math.sin(t * 0.45) * 2.4;
     if (!G.busy && (G.screen === 'title' || G.screen === 'game')) {
-      const k = G.keys.r - G.keys.l + G.joy;
-      if (k) { G.aimX += k * 2.2 * dt; G.idle = 0; }
+      const k = G.keys.r - G.keys.l + G.joy, sp = LV().speed;   // (the level's claw speed)
+      if (k) { G.aimX += k * 2.2 * sp * dt; G.idle = 0; }
       G.aimX = Math.max(machine.X_MIN, Math.min(machine.X_MAX, G.aimX));
-      const dx = G.aimX - claw.x, maxV = 2.8 * dt;
+      const dx = G.aimX - claw.x, maxV = 2.8 * sp * dt;
       const nx = claw.x + Math.max(-maxV, Math.min(maxV, dx * Math.min(1, dt * 9)));
       const moving = Math.abs(nx - claw.x) > 0.0015;
       claw.set(nx, claw.y, lerp(claw.z, 0.15, Math.min(1, dt * 3)));
@@ -886,7 +946,8 @@
     if (G.screen === 'game' && !G.busy) {
       G.idle += dt;
       if (G.interacted && G.target && G.idle >= IDLE.after && t - idleT >= IDLE.every && !NOHINT) { idleT = t; idleHelp(); }
-      $('#drop').classList.toggle('ready', zone === 'hold'); machine.setDown({ ready: zone === 'hold' });
+      const sure = zone === 'hold' && !(LV().slip && Math.abs(claw.x - cand.x) > LV().slip.from);   // (only where it can't slip)
+      $('#drop').classList.toggle('ready', sure); machine.setDown({ ready: sure });
     }
     // the round's clock
     if (G.timerOn) {
@@ -1076,10 +1137,12 @@
     S.shotTo(null, 800, tok); setTimeout(() => app.classList.remove('shot'), 450);
     app.classList.remove('inserting');
     setScreen('game');
+    machine.setScreen(['LEVEL ' + G.level, 'READY TO PLAY!'], '#ffd23f');   // (the level this game is played at)
     G.score = 0; G.caught = []; G.round = -1; G.tries = 0; G.miss = 0; G.interacted = false; G.demoRan = false;   // (the round-1 guide again)
-    G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false };
+    G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false, level: G.level };
     resetScore();
-    setTimeout(() => { if (tok === G.tok) addScore(COINS.start); }, 500);   // this game's coins come in as the HUD shows
+    const coins = LV().coins;
+    setTimeout(() => { if (tok === G.tok) addScore(coins); }, 500);   // this game's coins come in as the HUD shows
     buildTray();
     const order = (qs.get('order') || '').split(',').filter(x => LETTERS.includes(x));
     G.targets = order.length ? order : LETTERS.slice().sort(() => Math.random() - 0.5);
@@ -1094,7 +1157,7 @@
     G.round++;
     if (G.round >= G.targets.length) return finish(tok);
     G.target = G.targets[G.round]; G.tries = 0; G.miss = 0; G.time = ROUND_SEC; G.shownSec = -1;
-    machine.setScreen(['FIND', G.target.toUpperCase() + ' ' + G.target], '#ff8fd0');
+    findScreen(G.target);
     setTarget(G.target);
     [...$('#tray').children].forEach((s, i) => s.classList.toggle('now', i === G.caught.length && i === G.round - (G.round - G.caught.length)));
     $('#timeBox').classList.remove('low');
@@ -1106,6 +1169,8 @@
     G.busy = false; G.timerOn = TIMER; G.idle = 0; setDrop(true);
     if (G.round === 0 && !G.interacted && !NOHINT && !G.demoRan) runHint(tok);   // (not right after the how-to demo: it just showed this)
   }
+  /* the panel's little screen in a round: the level over the sound to find */
+  function findScreen(L) { machine.setScreen(['LEVEL ' + G.level, 'FIND ' + L.toUpperCase() + ' ' + L], '#ff8fd0'); }
   function setTarget(L) {
     const up = L.toUpperCase();
     // the letters and the speaker button as one set: jelly letters straight on the blue pill (no plate of their own —
@@ -1198,8 +1263,11 @@
     if (tok !== G.tok) return;
     // a loose grip: it tips toward the open side on the way up and, unless the luck (or two misses in a row) holds it,
     // slips out part way
-    const loose = zone === 'weak';
-    const slips = loose && G.miss < 2 && G.rand() < 0.35 + 0.5 * (Math.abs(off) - AIM.hold) / (AIM.weak - AIM.hold);
+    // (levels 5+: a grab inside the sure zone but far off the middle may slip too — a small chance, LEVELS slip)
+    const sl = LV().slip, edge = !!(sl && held && zone === 'hold' && Math.abs(off) > sl.from);
+    const loose = zone === 'weak' || edge;
+    const slips = loose && G.miss < 2 && G.rand() < (edge ? sl.p * (Math.abs(off) - sl.from) / (AIM.hold - sl.from)
+      : 0.35 + 0.5 * (Math.abs(off) - AIM.hold) / (AIM.weak - AIM.hold));
     const kSlip = 0.3 + G.rand() * 0.35, side = -Math.sign(off) || 1;
     let slipping = null, swung = !!held;
     const yUp = claw.y;                                  // (a knock recoiled a little higher already)
@@ -1470,6 +1538,7 @@
     const stars = all ? 3 : n >= 2 ? 2 : n >= 1 ? 1 : 0;
     saveProgress(tok, n, all, stars);                    // (the game is over now, even if Exit comes during the dolly)
     keepStars(tok, stars);
+    const lv = nextLevel(tok, stars), up = !!lv && lv.to > lv.from;
     const title = all ? 'PERFECT!' : n >= 2 ? 'GREAT JOB!' : 'NICE TRY!';
     const titleCv = resultTitle(title);                  // (drawn now, the first time, while nothing moves yet)
     await dolly(0, 900);
@@ -1486,7 +1555,17 @@
       const k = G.caught.find(kind => G.all[kind].sound === L);
       return k ? `<div class="slot got"><img src="${G.icons[k]}" alt=""><em style="--lc:${JELLY[LETTER_JELLY[L] || 'pink'][3]}"><b>${G.all[k].word[0]}</b>${G.all[k].word.slice(1)}</em></div>` : `<div class="slot">${L}</div>`;
     }).join('');
-    machine.setScreen(['GREAT', 'JOB!'], '#ffd23f'); machine.chase(4);
+    // LEVEL UP! (2+ stars): a sticker by the stars with the new level, popping in after them (css .res-level)
+    $('#resLevel').hidden = !up;
+    if (up) {
+      $('#resLevelN').textContent = 'LEVEL ' + lv.to;
+      setTimeout(() => {
+        if (tok !== G.tok || G.screen !== 'result') return;
+        const r = $('#resLevel').getBoundingClientRect();
+        FX.stars(r.left + r.width / 2, r.top + r.height / 2, 10, 0.8, 0.14); A.sfxPlay('sparkle');   // (round it, not on its words)
+      }, 1500);
+    }
+    machine.setScreen(up ? ['LEVEL UP!', 'LEVEL ' + lv.to] : ['GREAT', 'JOB!'], '#ffd23f'); machine.chase(4);
     A.sfxPlay('win'); FX.rain(160);
     await A.say(all ? 't:allcaught' : 't:result');
     if (tok !== G.tok) return;
@@ -1495,7 +1574,7 @@
   }
 
   /* the shared progress record (phonics-kit phonics-progress.js, localStorage 'phonics.progress'): one entry per finished
-     game — records only, Toy Catch has no levels to pick (user: "기록 저장만"). A game left with Exit isn't recorded. */
+     game, with the level it was played at (no level picking — nextLevel). A game left with Exit isn't recorded. */
   function saveProgress(tok, n, all, stars) {
     const s = G.stats;
     if (!s || s.saved || tok !== G.tok || !window.PhonicsProgress) return;
@@ -1503,6 +1582,7 @@
     try {
       PhonicsProgress.played('toy-catch', {
         stars,                                           // 0–3, as on the result card
+        level: s.level || G.level,                       // the level it was played at (LEVELS)
         words: n,                                        // friends caught with the right sound = rounds cleared
         rounds: G.targets.length,
         won: all,
@@ -1514,6 +1594,20 @@
         time: Math.round((performance.now() - s.t0) / 100) / 10,   // seconds, from the coins coming in to the end
       });
     } catch (e) { console.warn('progress', e); }
+  }
+  /* the next game's level (LEVELS): 2+ stars → one up; fewer → the same again, and a second poor game in a row → one
+     down. Kept in 'claw-level' and, when it changes, the shared record (PhonicsProgress.setLevel). Once per finished
+     game; returns { from, to } (null: not a played game — Exit, QA) */
+  function nextLevel(tok, stars) {
+    const s = G.stats;
+    if (!s || s.leveled || tok !== G.tok) return null;
+    s.leveled = true;
+    const from = G.level;
+    if (stars >= 2) { G.level = Math.min(LEVELS.length, from + 1); G.poor = 0; }
+    else if (++G.poor >= 2) { G.level = Math.max(1, from - 1); G.poor = 0; }
+    try { localStorage.setItem(LEVEL_KEY, JSON.stringify({ level: G.level, poor: G.poor })); } catch (e) { /* storage off */ }
+    if (G.level !== from && window.PhonicsProgress) { try { PhonicsProgress.setLevel('toy-catch', G.level); } catch (e) { console.warn('progress', e); } }
+    return { from, to: G.level };
   }
 
   /* MY FRIENDS (user 2026-11-22: every game needs a place where the things you collect go): this device keeps how many
@@ -1573,7 +1667,7 @@
     for (const p of Object.values(G.all)) { if (p.root.parent) p.root.parent.remove(p.root); }
     setupPlushes();
     claw.set(claw.x, claw.HOME_Y, 0.15); claw.setGrip(claw.OPEN * 0.55);
-    machine.setScreen(['LEVEL 1', 'M A S T']);
+    machine.setScreen(['LEVEL ' + G.level, 'M A S T']);
     machine.coin.visible = false;
     resetScore();
     app.classList.remove('inserting');
@@ -1724,7 +1818,7 @@
     S.tween(700, k => machine.slotFlash(Math.sin(Math.PI * k)), 'linear');
     await S.tween(170, k => put(local.y + 0.18 - 0.26 * k, local.z, 1.1 - 0.5 * k, 4), 'in', tok);
     coin.visible = false;
-    setTimeout(() => { if (tok === G.tok && G.target) machine.setScreen(['FIND', G.target.toUpperCase() + ' ' + G.target], '#ff8fd0'); }, 900);
+    setTimeout(() => { if (tok === G.tok && G.target) findScreen(G.target); }, 900);
   }
   /* no coins left after a go: the game ends */
   async function outOfCoins(tok) {
@@ -1760,7 +1854,7 @@
     const p = mine.reduce((a, b) => (Math.abs(b.x - claw.x) > Math.abs(a.x - claw.x) ? b : a));
     G.demo = { seats: G.inMachine.slice() };
     G.target = L; setTarget(L);
-    machine.setScreen(['FIND', L.toUpperCase() + ' ' + L], '#ff8fd0');
+    findScreen(L);
     app.classList.add('guide');                          // (SKIP shows)
     const pause = ms => S.tween(ms, () => {}, 'linear', tok);
     // the claw answers the stick and DOWN lights up over a friend, as in a round (input is held off: demoOnly). Right next
@@ -1846,8 +1940,8 @@
     demoOff();
     G.busy = true; setDrop(false);
     G.caught = []; G.miss = 0; G.tries = 0;
-    if (G.score !== COINS.start) { G.score = COINS.start; resetScore(); }
-    G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false };   // (the record starts at round 1)
+    if (G.score !== LV().coins) { G.score = LV().coins; resetScore(); }   // (demoOff above: the level's coins, not the demo's)
+    G.stats = { goes: 0, wrong: 0, misses: 0, t0: performance.now(), saved: false, level: G.level };   // (the record starts at round 1)
     G.aimX = claw.x;
     nextRound(tok);
   }
@@ -1924,6 +2018,6 @@
     if (a) setTimeout(() => { try { a.cancel(); } catch (e) { /* done */ } }, 350);   // after the fade: no jump to the corner
   }
 
-  window.__clawApi = { G, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, skipGuide, skipDemo, openFriends, closeFriends, album, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
+  window.__clawApi = { G, LEVELS, drop, startGame, goTitle, candidate, setTarget, finish, gripOf, knockHub, skipGuide, skipDemo, openFriends, closeFriends, album, nextRound: () => nextRound(G.tok), get machine() { return machine; } };
   boot().catch(e => { console.error(e); const l = $('#loading'); if (l) l.innerHTML = '<p style="font:700 20px sans-serif;color:#234">Could not start: ' + e.message + '</p>'; });
 })();

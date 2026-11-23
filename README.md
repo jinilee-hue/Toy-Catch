@@ -6,7 +6,7 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 ## 흐름
 1. **타이틀**: TOY CATCH 로고 · 기계 · START. 첫 터치에 배경음악 + "Hi, friends! Welcome to Toy Catch! … Press start to play!"
 2. **START** → 카메라가 투입구로 다가가 동전이 들어가는 걸 보여 주고(`S.shotTo` + `slotShot`) 기계 화면에 `INSERTED! / READY TO PLAY!` → "Ready? Let's play!" → 카메라가 돌아와 기계 쪽으로 다가간다. 코인 8개가 위에서 쏟아져 왼쪽 위 코인 칸에 들어온다(`+8`).
-3. **4라운드**(m/a/s/t 무작위 순서, 시간 제한 없음 — 코인이 있는 동안): 위 가운데 파란 알약에 목표 글자 `Mm`(젤리 글자) + 다시 듣기 스피커, 기계 화면 `FIND / M m`, 가운데에 `GO!`, "Catch a friend that starts with /m/ … /m/".
+3. **4라운드**(m/a/s/t 무작위 순서, 시간 제한 없음 — 코인이 있는 동안): 위 가운데 파란 알약에 목표 글자 `Mm`(젤리 글자) + 다시 듣기 스피커, 기계 화면 `LEVEL n / FIND M m`, 가운데에 `GO!`, "Catch a friend that starts with /m/ … /m/".
    - 집게 이동: 조이스틱 드래그 · 기계 안 드래그 · 인형 탭(그 위로 이동) · ← →.  내리기: 초록 DOWN 버튼 · Space/Enter/↓.
    - 집게는 조준한 자리에 **그대로** 내려간다(친구 쪽으로 저절로 붙지 않음). 머리 가운데와의 거리(`AIM` in game.js)로 결과가 갈린다:
      ≤0.2 확실히 잡음 · ≤0.4 헐겁게 잡혀 올라가다 기울어 **미끄러질 수 있음**(가운데서 멀수록 35→85%, "Oh no, it slipped! So close!")
@@ -36,9 +36,16 @@ m · a · s · t 첫소리 동물 인형을 집게로 뽑는 파닉스 게임(FP
 한 번 만진 뒤에는 매 라운드 손을 놓고 8초 동안 아무 입력이 없으면 목표 음가 안내를 다시 들려주고 장갑 손 시범을 한 번 보여 준다.
   기다리는 동안 15초에 한 번까지 되풀이, 아무 입력이나 하면 멈춘다(`idleHelp`, `IDLE = { after: 8, every: 15 }`, `?nohint`면 끔).
 음성 재생에는 안전 타이머가 있다: 클립 길이 + 0.8초(길이를 모르면 6초)가 지나면 끝난 것으로 본다 — 끝 신호가 안 와도 게임이 멈추지 않게(`js/audio.js`).
-판이 끝나면(결과 화면) 공통 진도 `phonics.progress`에 기록만 남긴다(`js/phonics-progress.js` = phonics-kit 사본, 레벨 고르기 없음):
-`PhonicsProgress.played('toy-catch', { stars, words(맞힌 친구 = 깬 라운드), rounds, won, score(남은 코인), goes, wrong, misses, outOfCoins, time })`.
+판이 끝나면(결과 화면) 공통 진도 `phonics.progress`에 기록을 남긴다(`js/phonics-progress.js` = phonics-kit 사본):
+`PhonicsProgress.played('toy-catch', { stars, level(그 판의 레벨), words(맞힌 친구 = 깬 라운드), rounds, won, score(남은 코인), goes, wrong, misses, outOfCoins, time })`.
   중간에 나가기로 나간 판은 기록하지 않는다.
+**레벨**(phonics-kit 공통 규칙: 레벨, 2026-11-22): 고르지 않는다 — START는 저장된 레벨로 이어 하고(`localStorage` `claw-level` `{level, poor}`,
+  기계 화면 `LEVEL n`), 별 2개 이상이면 다음 판 +1(결과 카드 별 옆에 `LEVEL UP!` + 새 레벨), 못 하면 같은 레벨, 연속 2판 별 ≤1이면 −1.
+  바뀌면 `PhonicsProgress.setLevel('toy-catch', n)`. 표는 `game.js`의 `LEVELS`(행 추가로 확장), 학습 범위(m·a·s·t)는 그대로:
+  1 지금 그대로 · 2 집게 1.15배 + 오답 친구 1명 더(6번째 자리도 c/d/f) · 3 1.3배, 코인 7 · 4 공 속 앞줄 친구들이 천천히 좌우로 오감(±0.3, 9초)
+  · 5 1.4배, 더 빨리(±0.4, 7초), 코인 6, 확실 구역 안이라도 가운데서 0.12 넘게 벗어나면 조금 미끄러질 수 있음(가장자리 15%)
+  · 6 1.5배, ±0.5·5.5초, 코인 5, 0.10부터 25%. DOWN을 누르면 친구들이 멈춘다(조준한 그대로 잡힘), 가운데 잡기는 안 미끄러짐,
+  DOWN 반짝임은 미끄러지지 않는 자리에서만. 시범 게임은 늘 레벨 1로 돈다(`LV()`).
 EN/한 토글(2026-11-22 공통 규칙): 타이틀 오른쪽 위에만 있다(게임·결과 화면엔 없음). 처음 들어오면 한국어. 바뀌는 것은 안내 음성뿐 —
   화면 글은 두 언어 모두 영어, 음가·단어도 영어. 누르면 그 언어로 "Press start to play!". `localStorage` `claw-lang`, 음소거 `claw-muted`.
 
