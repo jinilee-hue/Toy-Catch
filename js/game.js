@@ -517,9 +517,12 @@
      through the CSS tilt, which samples without mipmaps, so thin edges broke into dashes (fitStart draws them at the
      size they show, ~1.3 canvas px per screen px, and again when that size changes). */
   let startGen = 0, startK = 0;
+  // (a phone held sideways: css shows START at least 148 px wide — draw it at that size there)
+  const PHONE_L = matchMedia('(orientation: landscape) and (max-height: 500px) and (pointer: coarse)');
   function fitStart(mu) {
     if (!(mu > 0)) return;
-    const K = Math.min(3, Math.max(1, 1.3 * (39.7 * mu / 610) * (window.devicePixelRatio || 1)));
+    const w = PHONE_L.matches ? Math.max(39.7 * mu, 148) : 39.7 * mu;
+    const K = Math.min(3, Math.max(1, 1.3 * (w / 610) * (window.devicePixelRatio || 1)));
     if (startK && Math.abs(K - startK) / startK < 0.2) return;
     buildStart(K);
   }
