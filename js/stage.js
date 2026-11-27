@@ -72,6 +72,8 @@
   /* frame the machine: its marquee top at `top` (fraction from the screen top), marquee top → glass floor = `span`
      of the height; never wider than 95 % of the screen. `push` (0…1) dollies in a little (the game view). */
   S.target = V(0, 2.45, 0);
+  // phones held sideways only (tablets / PCs never match: css has the same query)
+  const PHONE_L = matchMedia('(orientation: landscape) and (max-height: 500px) and (pointer: coarse)');
   S.resize = function () {
     const c = S.canvas, w = c.clientWidth || innerWidth, h = c.clientHeight || innerHeight;
     const pr = pickRatio(w, h);
@@ -90,7 +92,8 @@
       const span = (a.y - b.y) / 2;                               // fraction of the height
       const wl = wide[0].clone().project(cam), wr = wide[1].clone().project(cam);
       const wspan = (wr.x - wl.x) / 2;
-      const want = f.span * (1 + 0.04 * f.push);          // (game view: a little less zoom, so the DOWN button fits)
+      const want = f.span * (1 + 0.04 * f.push) * (PHONE_L.matches ? 0.95 : 1);   // (game view: a little less zoom, so the DOWN button fits;
+                                                          //  phones: 5 % smaller, so the panel's buttons sit ≥ 14 px up)
       const kH = span / want, kW = wspan / 0.95;
       d *= Math.max(kH, kW);
     }

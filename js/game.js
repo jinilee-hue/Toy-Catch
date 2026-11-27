@@ -453,6 +453,9 @@
      screen's pixel ratio — drawn at 220 px and shrunk ~2x by the browser, their thin gold line and bevel broke into dark
      dashes (user: "상단에 음가 스펠링도 테두리 어두운색이 깨져보이는 현상이 있어"); layout swaps them when that size changes */
   const TG_U = 10.6, jellyCache = {};
+  // phones held sideways only (tablets / PCs never match: css has the same query) — bigger play controls there
+  const PHONE_L = matchMedia('(orientation: landscape) and (max-height: 500px) and (pointer: coarse)');
+  const TG_PHONE = 54;                                     // css: .tg-letter .jelly 54 px tall on phones
   /* the game's pop-up words — GO! at each round, TIME'S UP! — in the same jelly letters (user: "게임에 들어가는 go
      텍스트들도 스타일 다 맞춰줘"; they were plain text with a white stroke): GO! the logo's yellow (the result title's),
      TIME'S UP! its pink. size = the letters' font size in --mu; drawn at ~1.25x the size they show here, once per size */
@@ -470,7 +473,7 @@
     el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   }
   function targetJelly(L) {
-    const u = Math.min(innerHeight / 100, innerWidth / 177.78), h = Math.round(TG_U * u * (window.devicePixelRatio || 1) * 1.25);
+    const u = Math.min(innerHeight / 100, innerWidth / 177.78), h = Math.round((PHONE_L.matches ? TG_PHONE : TG_U * u) * (window.devicePixelRatio || 1) * 1.25);
     const key = L + ':' + Math.round(h / 6);
     return jellyCache[key] || (jellyCache[key] = jellyWord(L.toUpperCase() + L, JELLY[LETTER_JELLY[L] || 'pink'], { plate: false, H: h }));
   }
@@ -517,11 +520,11 @@
      through the CSS tilt, which samples without mipmaps, so thin edges broke into dashes (fitStart draws them at the
      size they show, ~1.3 canvas px per screen px, and again when that size changes). */
   let startGen = 0, startK = 0;
-  // (a phone held sideways: css shows START at least 148 px wide — draw it at that size there)
-  const PHONE_L = matchMedia('(orientation: landscape) and (max-height: 500px) and (pointer: coarse)');
+  // (a phone held sideways: css shows START --startW wide, as big as fits between the LEVEL screen and the joystick
+  // (layout) — draw it at that size there)
   function fitStart(mu) {
     if (!(mu > 0)) return;
-    const w = PHONE_L.matches ? Math.max(39.7 * mu, 148) : 39.7 * mu;
+    const w = PHONE_L.matches ? Math.max(39.7 * mu, parseFloat(app.style.getPropertyValue('--startW')) || 140) : 39.7 * mu;
     const K = Math.min(3, Math.max(1, 1.3 * (w / 610) * (window.devicePixelRatio || 1)));
     if (startK && Math.abs(K - startK) / startK < 0.2) return;
     buildStart(K);
@@ -886,11 +889,20 @@
     curMu = mu;
     const st = app.style;
     st.setProperty('--mx', C.x + 'px'); st.setProperty('--mt', C.y + 'px'); st.setProperty('--mu', mu + 'px');
+    const d = S.project(M.dropPoint()), j = S.project(M.joyPoint());
+    if (PHONE_L.matches) {
+      // phones: START (610:216) as wide as fits between the panel's LEVEL screen and the joystick, round the drop point,
+      // 4 px clear of each, up to 181 px (= 64 px tall)
+      const box = new T.Box3(), xs = (o) => { box.setFromObject(o); let a = 1e9, b = -1e9;
+        for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) { const q = S.project(V(x, y, z)); a = Math.min(a, q.x); b = Math.max(b, q.x); }
+        return [a, b]; };
+      const half = Math.min(d.x - xs(M.scr)[1], xs(M.joy)[0] - d.x) - 4;
+      st.setProperty('--startW', Math.max(120, Math.min(181, 2 * half)).toFixed(1) + 'px');
+    }
     // the START canvases at the size they show — on the title only: the camera's push-in into the game changes mu, and
     // a rebuild of the (hidden) START mid-move was a hitch
     if (G.screen === 'title') fitStart(mu);
     if (G.target && G.screen === 'game') { const cv = targetJelly(G.target); if ($('#tgLetter').firstChild !== cv) $('#tgLetter').replaceChildren(cv); }
-    const d = S.project(M.dropPoint()), j = S.project(M.joyPoint());
     st.setProperty('--dropX', d.x + 'px'); st.setProperty('--dropY', Math.min(h - 10 * mu, d.y) + 'px');
     st.setProperty('--joyX', j.x + 'px'); st.setProperty('--joyY', j.y + 'px');
     // the 3D DOWN button's box on screen (for the invisible HTML button over it and the hint glove)

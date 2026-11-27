@@ -573,25 +573,37 @@ button { font-family: inherit; border: 0; padding: 0; background: none; cursor: 
    tap target ≥ 40 px (top-bar jellies 44 px, START / DOWN ≥ 52 px) and the edge buttons clear the notch. The HUD boxes
    keep one shared height (--hb), so the row grows together; game.js fitStart draws START at the size it shows here. ── */
 @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
-  :root { --hb: max(calc(7.6 * var(--u)), 44px); }
-  .hud-l { left: calc(4.5 * var(--u) + env(safe-area-inset-left, 0px)); }
-  .sys { right: calc(3 * var(--u) + env(safe-area-inset-right, 0px)); }
-  #app[data-screen="game"] .sys { right: calc(4.5 * var(--u) + env(safe-area-inset-right, 0px)); }
-  .friends-btn { left: calc(3 * var(--u) + env(safe-area-inset-left, 0px)); }
-  .skip { right: calc(3 * var(--u) + env(safe-area-inset-right, 0px)); }
-  /* the target pill: its speaker 44 px, the letters and the pill grown with it, still centred on the HUD row */
-  .target { top: calc(9.6 * var(--u) - 26px); }
-  .tg-main { height: 52px; padding: 0 6px 0 15px; gap: 6px; }
-  .tg-letter .jelly { height: 42px; margin-top: -2px; }
-  .tg-snd { width: 44px; height: 44px; }
-  /* START and the DOWN button's tap box: at least 52 px tall (START's slab keeps its 610:216 shape) */
-  .start { width: max(calc(39.7 * var(--mu)), 148px); }
-  .drop { width: max(var(--downW), 92px); height: max(var(--downH), 56px); }
-  /* result + MY FRIENDS: Home / PLAY AGAIN 48 px, the ×N pill's number 12.5 px */
-  .res-home { width: 48px; height: 48px; }
-  .res-again { height: 48px; }
+  /* every button / HUD box ≥ 12 px from the top and the sides (+ the safe area: viewport-fit=cover), ≥ 14 px from the
+     bottom (+ the home bar), ≥ 8 px from its neighbour */
+  :root { --hb: max(calc(7.6 * var(--u)), 44px); --edge: 12px; --edgeB: calc(14px + env(safe-area-inset-bottom, 0px));
+    --rowY: calc(48px + env(safe-area-inset-top, 0px)); }   /* (the HUD row's middle) */
+  /* (+2 px: the jellies sit half their 4 px side higher than their box) */
+  .sys { top: calc(var(--edge) + 2px + env(safe-area-inset-top, 0px)); right: calc(var(--edge) + env(safe-area-inset-right, 0px)); gap: 8px; }
+  .friends-btn { top: calc(var(--edge) + 2px + env(safe-area-inset-top, 0px)); left: calc(var(--edge) + env(safe-area-inset-left, 0px)); }
+  .hud-l { left: calc(var(--edge) + env(safe-area-inset-left, 0px)); top: calc(var(--rowY) - var(--hb) / 2); gap: 8px; }
+  #app[data-screen="game"] .sys { top: calc(var(--rowY) - var(--hb) / 2); right: calc(var(--edge) + env(safe-area-inset-right, 0px)); }
+  .skip { right: calc(var(--edge) + env(safe-area-inset-right, 0px)); bottom: var(--edgeB); }
+  /* the target pill: its speaker 64 px (listen, for small fingers), the letters and the pill grown with it, on the row */
+  .target { top: calc(var(--rowY) - 36px); }
+  .tg-main { height: 72px; padding: 0 4px 0 12px; gap: 6px; }
+  .tg-letter .jelly { height: 54px; margin-top: -2px; }   /* (game.js TG_PHONE draws them at this size) */
+  .tray .slot { width: calc(.76 * var(--hb)); height: calc(.76 * var(--hb)); }   /* (the widest pill, Mm, stays clear of the tray) */
+  .tg-snd { width: 64px; height: 64px; }
+  /* START: as big as fits between the panel's LEVEL screen and the joystick (game.js layout → --startW; 610:216 shape) */
+  .start { width: max(calc(39.7 * var(--mu)), var(--startW, 140px)); }
+  /* the play controls' tap boxes (invisible, over the 3D DOWN — 30 % bigger here, machine.js — and the joystick): at
+     least 88 px square, their bottoms ≥ 14 px up, the joystick's 8 px right of DOWN's */
+  .drop { width: max(var(--downW), 92px); height: max(var(--downH), 88px); top: min(var(--downY), calc(100% - var(--edgeB) - 44px)); }
+  .joy-hit { width: max(calc(26 * var(--mu)), 88px); height: max(calc(24 * var(--mu)), 88px); top: min(var(--joyY), calc(100% - var(--edgeB) - 44px));
+    left: max(var(--joyX), calc(var(--downX) + max(var(--downW), 92px) / 2 + 52px)); }
+  /* result: Home / PLAY AGAIN 64 px tall; MY FRIENDS: the ×N pill's number 12.5 px, rows 9 px apart */
+  .btns { gap: 14px; }   /* (PLAY AGAIN breathes to 1.045: still ≥ 8 px from Home) */
+  .res-home { width: 64px; height: 64px; }
+  .res-again { height: 64px; padding: 0 22px 0 16px; gap: 6px; font-size: 22px; }
+  .res-again svg { width: 26px; height: 26px; }
   .mf-n { --hb: max(calc(5 * var(--u)), 19px); }
   .mf .mf-card { width: calc(96 * var(--u)); }   /* (its corner ✕ stays clear of the bigger EN/한 toggle) */
+  .mf-grid { row-gap: 9px; }
 }
 
 /* rotate hint: phones held upright only (tablets / PCs never match) */

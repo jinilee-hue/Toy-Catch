@@ -394,6 +394,12 @@
     const DOWN_SX = 1.4;                                         // wider than deep: an oval (user: "가로 사이즈를 더 늘려줘")
     const down = grp(panel, 0, 0.02, DOWN_Z);
     down.scale.x = DOWN_SX;
+    // phones held sideways only (tablets / PCs never match): DOWN 30 % bigger for small fingers — it still clears the
+    // LEVEL screen and the joystick (game.js layout fits the tap boxes round it)
+    const PHONE_L = window.matchMedia('(orientation: landscape) and (max-height: 500px) and (pointer: coarse)');
+    const fitDown = () => { if (PHONE_L.matches) down.scale.set(DOWN_SX * 1.3, 1.3, 1.3); else down.scale.set(DOWN_SX, 1, 1); };
+    if (PHONE_L.matches) fitDown();
+    PHONE_L.addEventListener('change', fitDown);
     const downIn = grp(down);                                    // scaled in/out
     mesh(new T.CylinderGeometry(DOWN_R, DOWN_R * 1.03, 0.1, 96), M.candy('#c3cfdc', { rough: 0.35 }), downIn, [0, 0.04, 0]);
     mesh(new T.CylinderGeometry(DOWN_R - 0.06, DOWN_R - 0.045, 0.16, 96), M.candy('#f2f6fa', { rough: 0.3 }), downIn, [0, 0.1, 0]);
@@ -516,6 +522,7 @@
 
     const api = {
       group, W, D, H, SHELF_Y, claw, chute, bulbs, coin, coinPlate, joy, stick, panel, btnRed, btnYel, glassF, back, ceil, lamp,
+      scr: sg,                                                   // (the LEVEL screen: phones fit START between it and the joystick)
       prizeDoor,
       /* six seats in a zig-zag (back row on the shelf, front row in the balls): every back seat sits in the gap between
          two front ones, so all six letters show; neighbours are ~1.1 apart along x */
@@ -546,7 +553,7 @@
       /* the DOWN button: setDown({ show, on, ready }), pressDown(); downRim() = its rim's points in world space */
       setDown(o) { if ('show' in o) downSt.show = o.show ? 1 : 0; if ('on' in o) downSt.on = !!o.on; if ('ready' in o) downSt.ready = !!o.ready; },
       pressDown() { downSt.press = 0.16; },
-      downRim: (n = 24) => { const out = []; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; out.push(down.localToWorld(V(Math.cos(a) * DOWN_R * 1.03, 0, Math.sin(a) * DOWN_R * 1.03)), down.localToWorld(V(Math.cos(a) * DOWN_CAP * 0.7, CAP_Y + DOWN_H * 0.7, Math.sin(a) * DOWN_CAP * 0.7))); } return out; },
+      downRim: (n = 24) => { if (PHONE_L.matches || down.scale.y !== 1) fitDown(); /* (phones: the size first — the media query's change event can come after the resize) */ const out = []; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; out.push(down.localToWorld(V(Math.cos(a) * DOWN_R * 1.03, 0, Math.sin(a) * DOWN_R * 1.03)), down.localToWorld(V(Math.cos(a) * DOWN_CAP * 0.7, CAP_Y + DOWN_H * 0.7, Math.sin(a) * DOWN_CAP * 0.7))); } return out; },
       /* local points of the panel (for the HTML buttons over it) */
       dropPoint: () => panel.localToWorld(V(0, 0.05, 0.1)),
       joyPoint: () => joy.localToWorld(V(0, 0.45, 0)),
